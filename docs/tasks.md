@@ -47,32 +47,32 @@ The whole project is composed of multiple modules, each module is a sub folder a
   - [x] 1.0.3 Create `main.py` with a basic FastAPI app instance.
   - [x] 1.0.4 Set up `ruff` for linting and formatting.
   - [x] 1.0.5 Create a `Makefile` for common commands (run, test, lint, format, lint, autofix, help).
-- [ ] 1.1 Database Setup
+- [x] 1.1 Database Setup
   - [x] 1.1.1 Add `sqlmodel` and `alembic` to dependencies.
   - [x] 1.1.2 Configure Alembic for database migrations.
-  - [ ] 1.1.3 Implement initial database connection logic with SQLModel.
+  - [x] 1.1.3 Implement initial database connection logic with SQLModel.
 - [ ] 1.2 Caching & Background Tasks
   - [ ] 1.2.1 Add `redis` and `celery` to dependencies.
   - [ ] 1.2.2 Configure Celery to use Redis as a broker.
   - [ ] 1.2.3 Set up a basic Celery task for testing.
-- [ ] 1.3 Error Handling & Logging
-  - [ ] 1.3.1 Design a structured error response format.
-  - [ ] 1.3.2 Implement a centralized exception handler middleware.
-  - [ ] 1.3.3 Configure structured logging (e.g., using `structlog`).
+- [x] 1.3 Error Handling & Logging
+  - [x 1.3.1 Design a structured error response format.
+  - [x] 1.3.2 Implement a centralized exception handler middleware.
+  - [x] 1.3.3 Configure structured logging (e.g., using `structlog`).
 - [ ] 1.4 Testing Setup
-  - [ ] 1.4.1 Add `pytest`, `pytest-asyncio`, `coverage` to dev dependencies.
-  - [ ] 1.4.2 Configure pytest in `pyproject.toml`.
-  - [ ] 1.4.3 Create initial test structure in `tests/`.
+  - [x] 1.4.1 Add `pytest`, `pytest-asyncio`, `coverage` to dev dependencies.
+  - [x] 1.4.2 Configure pytest in `pyproject.toml`.
+  - [x] 1.4.3 Create initial test structure in `tests/`.
 
 ### Phase 2: Folder Structure & Conventions
-- [ ] 2.0 Establish Module Structure
-  - [ ] 2.0.1 Create a `core` or `app` directory for modules.
-  - [ ] 2.0.2 Define a template for new modules (`__init__.py`, `schemas.py`, `services.py`, `routes.py`).
-  - [ ] 2.0.3 Document the folder structure in `README.md`.
+- [x] 2.0 Establish Module Structure
+  - [x] 2.0.1 Create a `core` or `app` directory for modules.
+  - [x] 2.0.2 Define a template for new modules (`__init__.py`, `schemas.py`, `services.py`, `routes.py`).
+  - [x] 2.0.3 Document the folder structure in `README.md`.
 
 ### Phase 3: Module Implementation
 - [ ] 3.1 Module: Events (Pub/Sub)
-  - [ ] 3.1.1 Design the event schema (event name, payload).
+  - [x] 3.1.1 Design the event schema (event name, payload).
   - [ ] 3.1.2 Implement a Celery-based event publisher service.
   - [ ] 3.1.3 Implement a mechanism for modules to subscribe to events.
 - [ ] 3.2 Module: User

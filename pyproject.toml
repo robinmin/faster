@@ -167,7 +167,11 @@ namespace_packages = true
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
-filterwarnings = ["ignore:coroutine '.*' was never awaited:RuntimeWarning"]
+filterwarnings = [
+	# "ignore:coroutine '.*' was never awaited:RuntimeWarning",
+	# "ignore:Unmanaged access of declarative attribute.*:sqlalchemy.exc.SAWarning",
+	# "ignore:Field name.*shadows an attribute in parent.*:UserWarning",
+]
 
 [dependency-groups]
 dev = [

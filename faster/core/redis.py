@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from datetime import datetime, timezone
+from enum import Enum
 import functools
 import json
 import logging
 from typing import Any, Generic, Literal, ParamSpec, TypeVar, cast
+import uuid
 
 from pydantic import BaseModel
 from redis.asyncio.client import Pipeline, PubSub, Redis
@@ -374,11 +377,10 @@ def cached(
                     return cast(R, json.loads(cached_result))
                 except json.JSONDecodeError:
                     logger.warning(f"Failed to decode cached value for key: {cache_key}. Recomputing.")
-                    # Fall through to recompute
 
             logger.debug(f"Cache miss for key: {cache_key}. Recomputing.")
             result = await func(*args, **kwargs)
-            await redis_manager.set_value(cache_key, json.dumps(result), expire)
+            await redis_manager.set_value(cache_key, json.dumps(result, default=str), expire)
             return result
 
         return wrapper
@@ -428,11 +430,45 @@ def locked(
     return decorator
 
 
+class EventStatus(Enum):
+    """Enumeration for event statuses."""
+
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SUCCESS = "success"
+    PROCESSING = "processing"
+
+
 class Event(BaseModel, Generic[T]):
     """Base event model for all application events."""
 
     event_type: str
+    event_id: str
+    timestamp: datetime
+    status: EventStatus = EventStatus.PENDING
+    source: str
     payload: T
+
+    metadata: dict[str, Any] = {}
+
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+
+        if not self.event_type:
+            self.event_type = self.__class__.__name__
+
+        if not self.event_id:
+            self.event_id = uuid.uuid4().hex
+
+        if not self.timestamp:
+            self.timestamp = datetime.now(timezone.utc)
+
+        if not self.source:
+            self.source = "app"
+
+        if not self.payload:
+            self.payload: dict[str, Any] = {}  # type: ignore
 
 
 class EventBus:
@@ -443,16 +479,16 @@ class EventBus:
     def __init__(self, redis_manager: RedisManager) -> None:
         self._redis_manager = redis_manager
 
-    async def publish(self, channel: str, event: Event[Any]) -> int:
+    async def fire_event(self, event: Event[Any], channel: str | None = None) -> int:
         """
-        Publishes an event to a specified channel.
+        Fire an event to a specified channel.
         """
         message = event.model_dump_json()
-        return await self._redis_manager.publish(channel, message)
+        return await self._redis_manager.publish(channel if channel else event.event_type, message)
 
-    async def subscribe(self, channel: str) -> AsyncGenerator[Event[Any], None]:
+    async def process_events(self, channel: str) -> AsyncGenerator[Event[Any], None]:
         """
-        Subscribes to a channel and yields events as they are received.
+        Process events from a specified channel.
         """
         pubsub = await self._redis_manager.subscribe(channel)
         if pubsub:

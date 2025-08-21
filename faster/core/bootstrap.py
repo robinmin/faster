@@ -7,18 +7,26 @@ import sys
 from types import FrameType
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPError
 import uvicorn
 
+from faster.core.auth import router as auth_router
 from faster.core.database import database_manager
+from faster.core.exceptions import (
+    AppError,
+    app_exception_handler,
+    custom_validation_exception_handler,
+    http_exception_handler,
+)
 from faster.core.redis import redis_manager
 
 from .config import Settings, default_settings
 from .logging import setup_logging
-from .schemas import APIResponse
 
 logger = logging.getLogger(__name__)
 
@@ -39,52 +47,6 @@ async def default_shutdown_handler() -> bool:
     """
     logger.info("[faster]: Default shutdown handler executed.")
     return True
-
-
-async def default_exception_handler(request: Request, exc: Exception) -> APIResponse[Any]:
-    """
-    Default exception handler for all unhandled exceptions.
-    Logs the exception and returns a a generic JSON response.
-    """
-    status_code = 500
-    detail = "Internal Server Error"
-
-    logger.error(f"Exception caught: {status_code} - {detail} - {exc}", exc_info=True)
-    return APIResponse(
-        status="error",
-        message=detail,
-        status_code=status_code,
-    )
-
-
-class AppError(Exception):
-    def __init__(self, message: str, code: str, status_code: int = 400):
-        self.message = message
-        self.code = code
-        self.status_code = status_code
-
-
-async def app_exception_handler(request: Request, exc: Exception) -> APIResponse[Any]:
-    status_code = 500
-    code = "internal_error"
-    message = "Internal Server Error"
-
-    if isinstance(exc, AppError):
-        status_code = exc.status_code
-        code = exc.code
-        message = exc.message
-
-    logger.error(
-        "app_error",
-        exc_info=True,
-        extra={"code": code, "message": message, "path": request.url.path},
-    )
-    return APIResponse(
-        status="error",
-        message=message,
-        status_code=status_code,
-        data={code: code},
-    )
 
 
 def create_app(
@@ -126,6 +88,7 @@ def create_app(
             settings.database_echo,
             is_debug=settings.is_debug,
         )
+        app.state.database_manager = database_manager
 
         # Initialize Redis
         if settings.redis_url:
@@ -135,6 +98,7 @@ def create_app(
                 settings.redis_max_connections,
                 settings.redis_decode_responses,
             )
+            app.state.redis_manager = redis_manager
 
         # Determine and run the final startup handler
         logger.info("Starting application...")
@@ -179,12 +143,13 @@ def create_app(
     )
 
     # TODO: Include routers from your modules here
-    # from my_module import routers as my_module_routers
-    # app.include_router(my_module_routers.router)
+    # Include the authentication router
+    app.include_router(auth_router)
 
     # Add custom exception handlers here
-    app.add_exception_handler(AppError, app_exception_handler)
-    app.add_exception_handler(Exception, default_exception_handler)
+    app.add_exception_handler(AppError, app_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(StarletteHTTPError, http_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore[arg-type]
 
     return app
 

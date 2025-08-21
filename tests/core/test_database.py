@@ -143,3 +143,27 @@ class TestHealthCheck:
             result = await health_check()
             assert result is True
             mock_logger.info.assert_called_once_with("Database health check successful.")
+
+    @pytest.mark.asyncio
+    async def test_database_manager_integration(self) -> None:
+        """Test database manager integration with an in-memory SQLite database."""
+        db_manager = DatabaseManager()
+        await db_manager.initialize("sqlite+aiosqlite:///:memory:", is_debug=True)
+
+        # Create a new record
+        new_item = SampleModel(name="integration_test")
+        async with db_manager.get_session() as session:
+            session.add(new_item)
+            await session.commit()
+            await session.refresh(new_item)
+
+        assert new_item.id is not None
+
+        # Read the record back
+        async with db_manager.get_session() as session:
+            retrieved_item = await session.get(SampleModel, new_item.id)
+
+        assert retrieved_item is not None
+        assert retrieved_item.name == "integration_test"
+
+        await db_manager.close()

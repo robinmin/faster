@@ -12,8 +12,10 @@ from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.testclient import TestClient
 import pytest
 from pytest_mock import MockerFixture
+from starlette.exceptions import HTTPException as StarletteHTTPError
 
 from faster.core import bootstrap
 from faster.core.config import Settings
@@ -211,7 +213,10 @@ class TestCreateApp:
         ],
     )
     def test_middleware_options(
-        self, mock_settings: Settings, middleware_cls: Any, expected_options: dict[str, Any]
+        self,
+        mock_settings: Settings,
+        middleware_cls: Any,
+        expected_options: dict[str, Any],
     ) -> None:
         # Arrange & Act
         app = bootstrap.create_app(settings=mock_settings)
@@ -306,8 +311,8 @@ class TestRunApp:
         """Fixture to mock the asyncio event loop."""
         loop_mock = MagicMock(spec=asyncio.AbstractEventLoop)
 
-        async def _run_until_complete_side_effect(coro):
-            await coro
+        def _run_until_complete_side_effect(coro):
+            asyncio.run(coro)
 
         loop_mock.run_until_complete.side_effect = _run_until_complete_side_effect
         loop_mock.add_signal_handler = MagicMock()
@@ -315,7 +320,10 @@ class TestRunApp:
         return loop_mock
 
     def test_run_app_creates_uvicorn_server_with_correct_config(
-        self, mock_settings: Settings, mock_uvicorn: dict[str, MagicMock], mock_loop: MagicMock
+        self,
+        mock_settings: Settings,
+        mock_uvicorn: dict[str, MagicMock],
+        mock_loop: MagicMock,
     ) -> None:
         # Arrange
         app = bootstrap.create_app(settings=mock_settings)
@@ -336,7 +344,10 @@ class TestRunApp:
         mock_loop.run_until_complete.assert_called_once()
 
     def test_run_app_respects_debug_settings(
-        self, mock_debug_settings: Settings, mock_uvicorn: dict[str, MagicMock], mock_loop: MagicMock
+        self,
+        mock_debug_settings: Settings,
+        mock_uvicorn: dict[str, MagicMock],
+        mock_loop: MagicMock,
     ) -> None:
         # Arrange
         app = bootstrap.create_app(settings=mock_debug_settings)
@@ -388,7 +399,11 @@ class TestRunApp:
         )
 
     def test_run_app_sets_up_signal_handlers(
-        self, mock_settings: Settings, mock_uvicorn: dict[str, MagicMock], mock_loop: MagicMock, mocker: MockerFixture
+        self,
+        mock_settings: Settings,
+        mock_uvicorn: dict[str, MagicMock],
+        mock_loop: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
         mocker.patch("sys.platform", "linux")
@@ -401,3 +416,26 @@ class TestRunApp:
         calls = mock_loop.add_signal_handler.call_args_list
         assert any(call.args[0] == 2 for call in calls)
         assert any(call.args[0] == 15 for call in calls)
+
+
+class TestExceptionHandlers:
+    """Test the custom exception handlers."""
+
+    def test_exception_handler_returns_structured_error(self, mock_debug_settings: Settings) -> None:
+        # Arrange
+        app = bootstrap.create_app(settings=mock_debug_settings)
+
+        @app.get("/error")
+        async def error_endpoint() -> None:
+            raise StarletteHTTPError(status_code=400, detail="This is a test error")
+
+        client = TestClient(app)
+
+        # Act
+        response = client.get("/error")
+
+        # Assert
+        assert response.status_code == 400
+        json_response = response.json()
+        assert json_response["status"] == "http error"
+        assert json_response["message"] == "This is a test error"

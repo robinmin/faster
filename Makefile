@@ -10,7 +10,7 @@ run: ## Run the FastAPI application
 	uv run uvicorn main:app --reload
 
 test: ## Run tests
-	uv run pytest --cov=faster --cov-report=html:build/htmlcov
+	PYTHONPATH=. uv run pytest --cov=faster --cov-report=html:build/htmlcov
 
 lint: format ## Lint the code
 	uv run ruff check faster/ tests/ main.py
@@ -53,6 +53,10 @@ clean: ## Clean up build artifacts and cached files
 		.pytest_cache \
 		.ruff_cache \
 		.coverage
+
+lock: ## Update the lock file
+	uv pip compile pyproject.toml -o requirements.txt
+	uv lock --update
 
 # install:
 # 	uv sync

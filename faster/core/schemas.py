@@ -26,6 +26,16 @@ class APIContent(BaseModel, Generic[T]):
     model_config = ConfigDict(from_attributes=True)
 
 
+class APIErrorContent(BaseModel):
+    """Base response model for all API error responses."""
+
+    status: str = "error"
+    message: str | None = None
+    errors: list[dict[str, Any]] | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class APIResponse(JSONResponse, Generic[T]):
     media_type = "application/json"
 

@@ -1,4 +1,4 @@
 {
     "makefile.configureOnOpen": false,
-    "CodeGPT.apiKey": "Anthropic",
+    // "CodeGPT.apiKey": "Anthropic",
 }
