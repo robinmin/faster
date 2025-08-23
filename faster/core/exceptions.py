@@ -72,3 +72,17 @@ async def custom_validation_exception_handler(_: Request, exc: RequestValidation
         status_code=422,
         data=[{"field": k, "messages": v} for k, v in error_details.items()],
     )
+
+
+class DBError(AppError):
+    """Custom DB exception for uniform error handling."""
+
+
+async def db_exception_handler(request: Request, exp: DBError) -> APIResponse[Any]:
+    """Global exception handler for DBError."""
+    return APIResponse(
+        status="db error",
+        message=exp.message,
+        status_code=exp.status_code,
+        data=exp.errors if exp.errors else None,
+    )

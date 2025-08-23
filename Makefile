@@ -1,4 +1,4 @@
-.PHONY: help run test lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean
+.PHONY: help run redis-start test lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean
 
 help: ## Show this help message
 	@echo "Usage: make [target]"

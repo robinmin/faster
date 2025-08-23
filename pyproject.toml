@@ -22,6 +22,7 @@ dependencies = [
 	"tenacity>=9.1.2",
 	"uvicorn[standard]>=0.35.0",
 	"aiosqlite>=0.20.0",
+	"python-jose[cryptography]>=3.5.0",
 ]
 
 [project.optional-dependencies]
@@ -167,11 +168,8 @@ namespace_packages = true
 explicit_package_bases = true
 
 [tool.pytest.ini_options]
-filterwarnings = [
-	# "ignore:coroutine '.*' was never awaited:RuntimeWarning",
-	# "ignore:Unmanaged access of declarative attribute.*:sqlalchemy.exc.SAWarning",
-	# "ignore:Field name.*shadows an attribute in parent.*:UserWarning",
-]
+filterwarnings = []
+pythonpath = "."    # If your package is in a 'src' directory
 
 [dependency-groups]
 dev = [

@@ -1,183 +1,181 @@
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 import logging
-from typing import Any, TypeVar
+from typing import TypedDict
 
-from sqlalchemy import inspect, text
-from sqlalchemy.exc import OperationalError
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel, select
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from faster.core.exceptions import DBError
+
 logger = logging.getLogger(__name__)
-# Type variable for generic models
-T = TypeVar("T", bound=SQLModel)
 
 
-def is_sqlite_db(database_url: str | None) -> bool:
-    """Check if the database URL is for SQLite."""
-    return database_url.startswith("sqlite") if database_url else False
+class EngineKwargs(TypedDict, total=False):
+    echo: bool
+    future: bool
+    connect_args: dict[str, bool]
+    pool_size: int
+    max_overflow: int
 
 
 class DatabaseManager:
-    """Database connection manager."""
-
     def __init__(self) -> None:
-        self.async_engine: AsyncEngine | None = None
-        self.AsyncSessionLocal: async_sessionmaker[AsyncSession] | None = None
+        self.master_engine: AsyncEngine | None = None
+        self.replica_engine: AsyncEngine | None = None
+        self.master_session: sessionmaker | None = None
+        self.replica_session: sessionmaker | None = None
 
-    async def initialize(
+    def _make_engine(self, url: str, pool_size: int, max_overflow: int, echo: bool) -> AsyncEngine:
+        engine_kwargs: EngineKwargs = {"echo": echo, "future": True}
+
+        if url.startswith("sqlite"):
+            engine_kwargs["connect_args"] = {"check_same_thread": False}
+        else:
+            engine_kwargs["pool_size"] = pool_size
+            engine_kwargs["max_overflow"] = max_overflow
+
+        return create_async_engine(url, **engine_kwargs)
+
+    def setup(
         self,
-        database_url: str | None = None,
-        database_pool_size: int = 20,
-        database_max_overflow: int = 0,
-        database_echo: bool = False,
-        is_debug: bool = False,
+        master_url: str,
+        pool_size: int = 10,
+        max_overflow: int = 20,
+        echo: bool = False,
+        replica_url: str | None = None,
     ) -> None:
-        """Initialize the database connection."""
-        engine_kwargs: dict[str, Any] = {
-            "echo": database_echo,
-            "pool_pre_ping": True,
-        }
+        """Initialize engines and sessionmakers."""
+        try:
+            self.master_engine = self._make_engine(master_url, pool_size, max_overflow, echo)
+            self.master_session = sessionmaker(self.master_engine, expire_on_commit=False, class_=AsyncSession)
+            logger.info("Master DB engine initialized", extra={"url": master_url})
 
-        # Only apply pool settings if not using in-memory SQLite
-        if not is_sqlite_db(database_url):
-            engine_kwargs["pool_size"] = database_pool_size
-            engine_kwargs["max_overflow"] = database_max_overflow
+            if replica_url:
+                self.replica_engine = self._make_engine(replica_url, pool_size, max_overflow, echo)
+                self.replica_session = sessionmaker(self.replica_engine, expire_on_commit=False, class_=AsyncSession)
+                logger.info("Replica DB engine initialized", extra={"url": replica_url})
 
-        if database_url is None:
-            raise ValueError("Database URL cannot be None during initialization.")
-        self.async_engine = create_async_engine(database_url, **engine_kwargs)
-
-        self.AsyncSessionLocal = async_sessionmaker(
-            self.async_engine,
-            class_=AsyncSession,
-            expire_on_commit=False,
-            autocommit=False,
-            autoflush=False,
-        )
-
-        # Create all tables (development environment)
-        if is_debug:
-            if self.async_engine is None:
-                raise RuntimeError("Database engine not initialized.")
-            async with self.async_engine.begin() as conn:
-                await conn.run_sync(SQLModel.metadata.create_all)
-            logger.info("Database tables created in debug mode.")
+        except Exception as exp:
+            msg = f"Failed to initialize database engines: {exp}"
+            logger.error(msg)
+            raise DBError(msg) from exp
 
     async def close(self) -> None:
-        """Close the database connection."""
-        if self.async_engine:
-            await self.async_engine.dispose()
-            logger.info("Database connection closed.")
+        """Dispose master and replica engines to cleanup connections."""
+        if self.master_engine:
+            await self.master_engine.dispose()
+            logger.info("Master DB engine disposed")
+            self.master_engine = None
+            self.master_session = None
+        if self.replica_engine:
+            await self.replica_engine.dispose()
+            logger.info("Replica DB engine disposed")
+            self.replica_engine = None
+            self.replica_session = None
 
-    @asynccontextmanager
-    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
-        """Get a database session context."""
-        if self.AsyncSessionLocal is None:
-            raise RuntimeError("Database session factory not initialized.")
-        async with self.AsyncSessionLocal() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
+    # -----------------------------
+    # FastAPI dependency
+    # -----------------------------
+    async def get_db(self, readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
+        """
+        Get a FastAPI dependency session.
+        Example:
+        @app.get("/users")
+            async def get_users(db: AsyncSession = Depends(get_db)):
+                query = select(User)
+                return await db.execute(query).scalars().all()
+        """
+        session_factory = self.replica_session if readonly and self.replica_session else self.master_session
+        if session_factory is None:
+            raise DBError("Database not initialized. Call setup first.")
 
-    @asynccontextmanager
-    async def transaction(self) -> AsyncGenerator[AsyncSession, None]:
-        """Transaction context manager."""
-        if self.AsyncSessionLocal is None:
-            raise RuntimeError("Database session factory not initialized.")
-        async with self.AsyncSessionLocal() as session, session.begin():
+        session = session_factory()
+        try:
             yield session
+        finally:
+            await session.close()
 
-    async def read(self, model: type[T], **kwargs: Any) -> list[T] | None:
-        """Execute a read-only query using the internal session."""
-        async with self.get_session() as session:
+    # -----------------------------
+    # Transaction manager
+    # -----------------------------
+    @asynccontextmanager
+    async def get_transaction(self, readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
+        """
+        FastAPI dependency transaction.
+        Example:
+            @app.get("/users")
+            async def get_users(db: AsyncSession = Depends(get_db)):
+                async with db.begin() as session:
+                    users = await session.execute(select(User).order_by(User.id))
+                    return users.scalars().all()
+        """
+        session_factory = self.replica_session if readonly and self.replica_session else self.master_session
+        if session_factory is None:
+            raise DBError("Database not initialized. Call setup first.")
+
+        session = session_factory()
+        try:
+            async with session.begin():
+                yield session
+        except Exception as exp:
+            await session.rollback()
+            msg = f"Transaction failed, rolling back: {exp}"
+            logger.error(msg)
+            raise DBError(msg) from exp
+        finally:
+            await session.close()
+
+    # -----------------------------
+    # Init models
+    # -----------------------------
+    async def init_db_models(self, drop_all: bool = False) -> None:
+        if self.master_engine is None:
+            raise DBError("Database not initialized. Call setup first.")
+
+        async with self.master_engine.begin() as conn:
             try:
-                statement = select(model).filter_by(**kwargs)
-                compiled_sql = str(statement.compile(compile_kwargs={"literal_binds": True}))
-                logger.debug(f"[SQL] <--: {compiled_sql}")
-                results = await session.exec(statement)
-                return list(results)
-            except Exception as e:
-                logger.error(
-                    f"Error during db_read for model {model.__name__} with filters {kwargs}: {e}",
-                    exc_info=True,
-                )
-            return None
+                if drop_all:
+                    logger.warning("Dropping all tables...")
+                    await conn.run_sync(SQLModel.metadata.drop_all)
+                logger.info("Creating all tables...")
+                await conn.run_sync(SQLModel.metadata.create_all)
+                logger.info("Tables created successfully.")
+            except Exception as exp:
+                msg = f"Failed to initialize database models: {exp}"
+                logger.error(msg)
+                raise DBError(msg) from exp
 
-    async def write(self, instance: T) -> bool:
-        """Execute a write operation (add or update) using the internal session."""
-        async with self.get_session() as session:
-            result = True
-            try:
-                session.add(instance)
-                instance_state = inspect(instance)
-                assert instance_state is not None
-                operation_type = "insert" if instance_state.pending else "update"
-                pk_value = instance_state.identity
-                logger.debug(
-                    f"Executing db_write ({operation_type}) for instance {instance.__class__.__name__} (PK: {pk_value})"
-                )
+    async def check_health(self) -> dict[str, bool]:
+        """Check connectivity by running 'SELECT 1 as result' on master and replica (if available)."""
+        results: dict[str, bool] = {}
+        try:
+            if self.master_engine:
+                async with self.master_engine.connect() as conn:
+                    row = await conn.execute(text("SELECT 1 as result"))
+                    results["master"] = bool(row.scalar_one())
+            else:
+                results["master"] = False
+        except Exception as exp:
+            logger.exception(f"Health check failed for master DB: {exp}")
+            results["master"] = False
 
-                await session.commit()
-                await session.refresh(instance)
-                logger.debug(
-                    f"db_write successful for instance {instance.__class__.__name__} (PK: {instance_state.identity})"
-                )
-            except Exception as e:
-                await session.rollback()
-                logger.error(
-                    f"Error during db_write for instance {instance.__class__.__name__}: {e}",
-                    exc_info=True,
-                )
-                result = False
-            return result
+        try:
+            if self.replica_engine:
+                async with self.replica_engine.connect() as conn:
+                    row = await conn.execute(text("SELECT 1 as result"))
+                    results["replica"] = bool(row.scalar_one())
+            else:
+                results["replica"] = False
+        except Exception as exp:
+            logger.exception(f"Health check failed for replica DB : {exp}")
+            results["replica"] = False
+
+        return results
 
 
-database_manager = DatabaseManager()
-
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency that provides an async database session."""
-    async with database_manager.get_session() as session:
-        yield session
-
-
-async def db_transaction(session: AsyncSession, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    """Execute a function within a database transaction."""
-    async with database_manager.transaction() as tx_session:
-        result = await func(tx_session, *args, **kwargs)
-        return result
-
-
-async def db_read(model: type[T], filters: dict[str, Any] | None = None, **kwargs: Any) -> list[T] | None:
-    """Read data from the database using the internal session."""
-    if filters is None:
-        filters = {}
-    filters.update(kwargs)
-    return await database_manager.read(model, **filters)
-
-
-async def db_write(instance: T) -> bool:
-    """Write data to the database using the internal session."""
-    return await database_manager.write(instance)
-
-
-async def health_check() -> bool:
-    """Perform a database health check by executing a simple query."""
-    if database_manager.async_engine is None:
-        logger.warning("Database engine not initialized for health check.")
-        return False
-    try:
-        async with database_manager.async_engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-        logger.info("Database health check successful.")
-        return True
-    except OperationalError as e:
-        logger.error(f"Database health check failed: {e}")
-        return False
+# Singleton instance of DatabaseManager
+db_mgr = DatabaseManager()

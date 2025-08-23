@@ -30,7 +30,6 @@ def mock_settings(mocker: MockerFixture) -> Settings:
     mock_settings_instance.app_description = "A modern and fast Python web framework"
     mock_settings_instance.environment = "production"
     mock_settings_instance.api_prefix = "/api/v1"
-    mock_settings_instance.enable_docs = True
     mock_settings_instance.host = "127.0.0.1"
     mock_settings_instance.port = 8888
     mock_settings_instance.workers = 2
@@ -59,10 +58,12 @@ def mock_settings(mocker: MockerFixture) -> Settings:
     mock_settings_instance.supabase_url = None
     mock_settings_instance.supabase_anon_key = None
     mock_settings_instance.supabase_service_key = None
+    mock_settings_instance.supabase_jwks_url = None
+    mock_settings_instance.supabase_audience = None
     mock_settings_instance.stripe_secret_key = None
     mock_settings_instance.stripe_webhook_secret = None
     mock_settings_instance.stripe_publishable_key = None
-    mock_settings_instance.secret_key = None
+    mock_settings_instance.jwt_secret_key = None
     mock_settings_instance.jwt_algorithm = "HS256"
     mock_settings_instance.jwt_expiry_minutes = 60
     mock_settings_instance.cors_origins = ["http://test.com"]
@@ -90,7 +91,6 @@ def mock_debug_settings(mocker: MockerFixture) -> Settings:
     mock_settings_instance.app_description = "A modern and fast Python web framework"
     mock_settings_instance.environment = "development"
     mock_settings_instance.api_prefix = "/api/v1"
-    mock_settings_instance.enable_docs = True
     mock_settings_instance.host = "0.0.0.0"
     mock_settings_instance.port = 8000
     mock_settings_instance.workers = 4
@@ -119,10 +119,12 @@ def mock_debug_settings(mocker: MockerFixture) -> Settings:
     mock_settings_instance.supabase_url = None
     mock_settings_instance.supabase_anon_key = None
     mock_settings_instance.supabase_service_key = None
+    mock_settings_instance.supabase_jwks_url = None
+    mock_settings_instance.supabase_audience = None
     mock_settings_instance.stripe_secret_key = None
     mock_settings_instance.stripe_webhook_secret = None
     mock_settings_instance.stripe_publishable_key = None
-    mock_settings_instance.secret_key = None
+    mock_settings_instance.jwt_secret_key = None
     mock_settings_instance.jwt_algorithm = "HS256"
     mock_settings_instance.jwt_expiry_minutes = 60
     mock_settings_instance.cors_origins = ["*"]
@@ -170,9 +172,9 @@ class TestCreateApp:
 
     @pytest.fixture(autouse=True)
     def setup(self, mocker: MockerFixture) -> None:
-        # Patch database_manager.initialize to prevent actual database connection during tests
-        mocker.patch("faster.core.database.database_manager.initialize", new_callable=AsyncMock)
-        mocker.patch("faster.core.database.database_manager.close", new_callable=AsyncMock)
+        # Patch db_mgr.setup to prevent actual database connection during tests
+        mocker.patch("faster.core.database.db_mgr.setup", new_callable=MagicMock)
+        mocker.patch("faster.core.database.db_mgr.close", new_callable=AsyncMock)
 
     def test_create_app_returns_fastapi_instance(self, mock_settings: Settings) -> None:
         # Arrange & Act
@@ -238,7 +240,7 @@ class TestCreateApp:
     @pytest.mark.asyncio
     async def test_lifespan_calls_default_handlers(self, mocker: MockerFixture, mock_settings: Settings) -> None:
         # Arrange
-        mocker.patch("faster.core.bootstrap.setup_logging")
+        mocker.patch("faster.core.bootstrap.setup_logger")
         startup_spy = mocker.spy(bootstrap, "default_startup_handler")
         shutdown_spy = mocker.spy(bootstrap, "default_shutdown_handler")
         app = bootstrap.create_app(settings=mock_settings)
@@ -425,10 +427,11 @@ class TestExceptionHandlers:
         # Arrange
         app = bootstrap.create_app(settings=mock_debug_settings)
 
-        @app.get("/error")
+        @app.get("/error", tags=["public"])
         async def error_endpoint() -> None:
             raise StarletteHTTPError(status_code=400, detail="This is a test error")
 
+        app.state.endpoints = bootstrap.get_all_endpoints(app)
         client = TestClient(app)
 
         # Act

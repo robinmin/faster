@@ -1,18 +1,14 @@
-from __future__ import annotations
-
-from collections.abc import AsyncGenerator, Awaitable, Callable
-from datetime import datetime, timezone
-from enum import Enum
+from collections.abc import Awaitable, Callable
 import functools
 import json
 import logging
-from typing import Any, Generic, Literal, ParamSpec, TypeVar, cast
-import uuid
+from typing import Any, ParamSpec, TypeVar, cast
 
-from pydantic import BaseModel
+# import redis.asyncio as redis
 from redis.asyncio.client import Pipeline, PubSub, Redis
 from redis.asyncio.connection import ConnectionPool
 from redis.asyncio.lock import Lock
+from redis.exceptions import ConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -22,77 +18,152 @@ R = TypeVar("R")
 
 
 class RedisManager:
-    """
-    A Redis manager that acts as a proxy to the Redis client,
-    handling the connection pool and providing wrapper methods for Redis operations.
-    """
+    def __init__(self) -> None:
+        self.master_pool: ConnectionPool | None = None
+        self.replica_pool: ConnectionPool | None = None
+        self.master: Redis | None = None
+        self.replica: Redis | None = None
 
-    _pool: ConnectionPool | None = None
-    _client: Redis | None = None
-
-    async def __aenter__(self) -> RedisManager:
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        pass
-
-    def _get_client(self) -> Redis:
-        """
-        Returns the Redis client, raising an error if not initialized.
-        """
-        if not self._client:
-            raise ConnectionError("Redis client is not initialized.")
-        return self._client
-
-    async def initialize(
+    async def setup(
         self,
-        redis_url: str,
-        redis_max_connections: int = 50,
-        redis_decode_responses: bool = True,
+        master_url: str,
+        replica_url: str | None = None,
+        decode_responses: bool = True,
+        max_connections: int = 10,
     ) -> None:
         """
-        Initializes the Redis connection pool and client.
-        This method should be called during application startup.
+        Initialize Redis connection pools and clients.
+        If connection fails, log error and continue without raising.
         """
-        if not self._pool:
-            self._pool = ConnectionPool.from_url(
-                redis_url,
-                max_connections=redis_max_connections,
-                decode_responses=redis_decode_responses,
+        # Master pool connection
+        try:
+            self.master_pool = ConnectionPool.from_url(
+                master_url,
+                decode_responses=decode_responses,
+                max_connections=max_connections,
             )
-            self._client = Redis(connection_pool=self._pool)
+            self.master = Redis(connection_pool=self.master_pool)
+            await self.master.ping()
+            logger.info("Redis master connected", extra={"url": master_url})
+        except ConnectionError as e:
+            logger.error(f"Failed to connect to Redis master at {master_url}: {e}")
+            self.master_pool = None
+            self.master = None
+        except Exception as e:
+            logger.exception(f"Unexpected error while connecting to Redis master: {e}")
+            self.master_pool = None
+            self.master = None
+
+        # Replica pool connection (optional)
+        if replica_url:
+            self.replica = None  # Ensure replica is None initially
+            try:
+                self.replica_pool = ConnectionPool.from_url(
+                    replica_url,
+                    decode_responses=decode_responses,
+                    max_connections=max_connections,
+                )
+                self.replica = Redis(connection_pool=self.replica_pool)
+                await self.replica.ping()
+                logger.info("Redis replica connected", extra={"url": replica_url})
+            except ConnectionError as e:
+                logger.error(f"Failed to connect to Redis replica at {replica_url}: {e}")
+                self.replica_pool = None
+                self.replica = None
+            except Exception as e:
+                logger.exception(f"Unexpected error while connecting to Redis replica: {e}")
+                self.replica_pool = None
+                self.replica = None
 
     async def close(self) -> None:
-        """
-        Closes the Redis connection pool.
-        This method should be called during application shutdown.
-        """
-        if self._pool:
-            await self._pool.disconnect()
-            self._pool = None
-            self._client = None
+        """Close Redis clients and their pools."""
+        try:
+            if self.master:
+                await self.master.close()
+                logger.info("Redis master client closed")
+                self.master = None
+            if self.master_pool:
+                await self.master_pool.disconnect()
+                logger.info("Redis master pool closed")
+                self.master_pool = None
+        except Exception:
+            logger.exception("Error closing master Redis connections/pools")
 
-    # --- Proxy Methods for Redis Commands ---
+        try:
+            if self.replica:
+                await self.replica.close()
+                logger.info("Redis replica client closed")
+                self.replica = None
+            if self.replica_pool:
+                await self.replica_pool.disconnect()
+                logger.info("Redis replica pool closed")
+                self.replica_pool = None
+        except Exception:
+            logger.exception("Error closing replica Redis connections/pools")
+
+    async def check_health(self) -> dict[str, bool]:
+        """
+        Ping master and replica to check connectivity.
+        Returns a dict: {"master": True/False, "replica": True/False}
+        """
+        results = {"master": False, "replica": False}
+
+        try:
+            if self.master:
+                pong = await self.master.ping()
+                results["master"] = pong is True
+            else:
+                logger.debug("Redis master not initialized")
+        except Exception:
+            logger.exception("Redis master health check failed")
+
+        try:
+            if self.replica:
+                pong = await self.replica.ping()
+                results["replica"] = pong is True
+            else:
+                logger.debug("Redis replica not initialized")
+        except Exception:
+            logger.exception("Redis replica health check failed")
+
+        return results
+
+    def _get_client(self, readonly: bool = False) -> Redis | None:
+        """
+        Get the appropriate Redis client.
+        - readonly=True uses replica if available
+        """
+        if readonly and self.replica:
+            return self.replica
+        if self.master:
+            return self.master
+        return None
+
+    #########################################################################
+    # Proxy Methods for Redis Commands
+    #########################################################################
 
     async def ping(self) -> bool:
         """
         Ping the Redis server.
         """
-        client: Redis = self._get_client()
-        return cast(bool, await client.ping())
+        client = self._get_client()
+        return cast(bool, await client.ping()) if client else False
 
     async def get(self, key: str) -> str | None:
         """
         Get the value of a key.
         """
-        client: Redis = self._get_client()
-        return cast(str | None, await client.get(key))
+        client = self._get_client()
+        return cast(str | None, await client.get(key)) if client else None
 
     async def set_value(self, key: str, value: str | bytes | int | float, expire: int | None = None) -> bool:
         """
         Set the value of a key with an optional expiration in seconds.
         """
-        client: Redis = self._get_client()
+        client = self._get_client()
+        if not client:
+            return False
         result = await client.set(key, value, ex=expire)
         return result is True
 
@@ -100,43 +171,43 @@ class RedisManager:
         """
         Delete one or more keys.
         """
-        client: Redis = self._get_client()
-        return cast(int, await client.delete(*keys))
+        client = self._get_client()
+        return cast(int, await client.delete(*keys)) if client else 0
 
     async def exists(self, *keys: str) -> int:
         """
         Check if one or more keys exist.
         """
-        client: Redis = self._get_client()
-        return cast(int, await client.exists(*keys))
+        client = self._get_client()
+        return cast(int, await client.exists(*keys)) if client else 0
 
     async def expire(self, key: str, seconds: int) -> bool:
         """
         Set an expiration time on a key in seconds.
         """
-        client: Redis = self._get_client()
-        return cast(bool, await client.expire(key, seconds))
+        client = self._get_client()
+        return cast(bool, await client.expire(key, seconds)) if client else False
 
     async def ttl(self, key: str) -> int:
         """
         Get the time-to-live for a key in seconds.
         """
-        client: Redis = self._get_client()
-        return cast(int, await client.ttl(key))
+        client = self._get_client()
+        return cast(int, await client.ttl(key)) if client else 0
 
     async def incr(self, key: str, amount: int = 1) -> int:
         """
         Increment the integer value of a key by a given amount.
         """
-        client: Redis = self._get_client()
-        return cast(int, await client.incr(key, amount=amount))
+        client = self._get_client()
+        return cast(int, await client.incr(key, amount=amount)) if client else 0
 
     async def decr(self, key: str, amount: int = 1) -> int:
         """
         Decrement the integer value of a key by a given amount.
         """
-        client: Redis = self._get_client()
-        return cast(int, await client.decr(key, amount=amount))
+        client = self._get_client()
+        return cast(int, await client.decr(key, amount=amount)) if client else 0
 
     async def hset(
         self,
@@ -148,135 +219,138 @@ class RedisManager:
         """
         Set a field in a hash, or multiple fields from a mapping.
         """
-        client: Redis = self._get_client()
-        coro = client.hset(name, key=key, value=value, mapping=mapping)
-        result = await cast(Awaitable[int], coro)
-        return result
+        client = self._get_client()
+        if not client:
+            return 0
+        return await client.hset(name, key=key, value=value, mapping=mapping)
 
     async def hget(self, name: str, key: str) -> str | None:
         """
         Get the value of a field in a hash.
         """
-        client: Redis = self._get_client()
-        coro = client.hget(name, key)
-        result = await cast(Awaitable[str | None], coro)
-        return result
+        client = self._get_client()
+        if not client:
+            return None
+        return cast(str | None, await client.hget(name, key))
 
     async def hgetall(self, name: str) -> dict[str, str]:
         """
         Get all fields and values in a hash.
         """
-        client: Redis = self._get_client()
-        coro = client.hgetall(name)
-        result = await cast(Awaitable[dict[Any, Any]], coro)
-        return cast(dict[str, str], result)
+        client = self._get_client()
+        if not client:
+            return {}
+        return cast(dict[str, str], await client.hgetall(name))
 
     async def hdel(self, name: str, *keys: str) -> int:
         """
         Delete one or more fields from a hash.
         """
-        client: Redis = self._get_client()
-        coro = client.hdel(name, *keys)
-        result = await cast(Awaitable[int], coro)
-        return result
+        client = self._get_client()
+        if not client:
+            return 0
+        return await client.hdel(name, *keys)
 
     async def lpush(self, name: str, *values: Any) -> int:
         """
         Prepend one or more values to a list.
         """
-        client: Redis = self._get_client()
-        coro = client.lpush(name, *values)
-        result = await cast(Awaitable[int], coro)
-        return result
+        client = self._get_client()
+        if not client:
+            return 0
+        return await client.lpush(name, *values)
 
     async def rpush(self, name: str, *values: Any) -> int:
         """
         Append one or more values to a list.
         """
-        client: Redis = self._get_client()
-        coro = client.rpush(name, *values)
-        result = await cast(Awaitable[int], coro)
-        return result
+        client = self._get_client()
+        if not client:
+            return 0
+        return await client.rpush(name, *values)
 
     async def lpop(self, name: str) -> str | None:
         """
         Remove and return the first element of a list.
         """
-        client: Redis = self._get_client()
-        coro = client.lpop(name)
-        result = await cast(Awaitable[str | list[Any] | None], coro)
-        return cast(str | None, result)
+        client = self._get_client()
+        if not client:
+            return None
+        return cast(str | None, await client.lpop(name))
 
     async def rpop(self, name: str) -> str | None:
         """
         Remove and return the last element of a list.
         """
-        client: Redis = self._get_client()
-        coro = client.rpop(name)
-        result = await cast(Awaitable[str | list[Any] | None], coro)
-        return cast(str | None, result)
+        client = self._get_client()
+        if not client:
+            return None
+        return cast(str | None, await client.rpop(name))
 
     async def lrange(self, name: str, start: int, end: int) -> list[str]:
         """
         Get a range of elements from a list.
         """
-        client: Redis = self._get_client()
-        coro = client.lrange(name, start, end)
-        result = await cast(Awaitable[list[Any]], coro)
-        return cast(list[str], result)
+        client = self._get_client()
+        if not client:
+            return []
+        return cast(list[str], await client.lrange(name, start, end))
 
     async def llen(self, name: str) -> int:
         """
         Get the length of a list.
         """
-        client: Redis = self._get_client()
-        coro = client.llen(name)
-        result = await cast(Awaitable[int], coro)
-        return result
+        client = self._get_client()
+        if not client:
+            return 0
+        return await client.llen(name)
 
     async def sadd(self, name: str, *values: Any) -> int:
         """
         Add one or more members to a set.
         """
-        client: Redis = self._get_client()
-        coro = client.sadd(name, *values)
-        result = await cast(Awaitable[int], coro)
-        return result
+        client = self._get_client()
+        if not client:
+            return 0
+        return await client.sadd(name, *values)
 
     async def srem(self, name: str, *values: Any) -> int:
         """
         Remove one or more members from a set.
         """
-        client: Redis = self._get_client()
-        coro = client.srem(name, *values)
-        result = await cast(Awaitable[int], coro)
-        return result
+        client = self._get_client()
+        if not client:
+            return 0
+        return await client.srem(name, *values)
 
     async def smembers(self, name: str) -> set[str]:
         """
         Get all members of a set.
         """
-        client: Redis = self._get_client()
-        coro = client.smembers(name)
-        result = await cast(Awaitable[set[Any]], coro)
-        return cast(set[str], result)
+        client = self._get_client()
+        if not client:
+            return set()
+        return cast(set[str], await client.smembers(name))
 
     async def sismember(self, name: str, value: Any) -> bool:
         """
         Check if a member exists in a set.
         """
-        client: Redis = self._get_client()
-        coro = client.sismember(name, value)
-        result = await cast(Awaitable[Literal[0, 1]], coro)
+        client = self._get_client()
+        if not client:
+            return False
+        result = await client.sismember(name, value)
         return bool(result)
 
     async def acquire_lock(self, name: str, timeout: float | None = None, blocking: bool = True) -> Lock | None:
         """
         Acquire a lock and return the lock object if successful.
         """
-        client: Redis = self._get_client()
-        lock = client.lock(name, timeout=timeout)
-        if bool(await lock.acquire(blocking=blocking)):
+        client = self._get_client()
+        if not client:
+            return None
+        lock: Lock = client.lock(name, timeout=timeout)
+        if await lock.acquire(blocking=blocking):
             return lock
         return None
 
@@ -290,47 +364,35 @@ class RedisManager:
         """
         Publish a message to a channel.
         """
-        client: Redis = self._get_client()
-        return cast(int, await client.publish(channel, message))
+        client = self._get_client()
+        return cast(int, await client.publish(channel, message)) if client else 0
 
     async def subscribe(self, *channels: str) -> PubSub | None:
         """
         Subscribe to one or more channels and return the PubSub object.
         """
-        client: Redis = self._get_client()
+        client = self._get_client()
+        if not client:
+            return None
         pubsub = client.pubsub(ignore_subscribe_messages=True)
         await pubsub.subscribe(*channels)
         return cast(PubSub | None, pubsub)
 
-    def pipeline(self, transaction: bool = True) -> Pipeline:
+    def pipeline(self, transaction: bool = True) -> Pipeline | None:
         """
         Create a pipeline for executing multiple commands.
         """
         client = self._get_client()
-        return client.pipeline(transaction=transaction)
-
-    async def health_check(self) -> bool:
-        """
-        Perform a health check on the Redis connection.
-        Returns True if the connection is healthy, False otherwise.
-        """
-        try:
-            return await self.ping()
-        except Exception as exp:
-            logger.error(f"Redis health check failed: {exp}")
-        return False
+        return client.pipeline(transaction=transaction) if client else None
 
 
-# Singleton instance of the RedisManager
-redis_manager = RedisManager()
+# singleton instance of RedisManager
+redis_mgr = RedisManager()
 
 
-async def get_redis() -> AsyncGenerator[RedisManager, None]:
-    """FastAPI dependency that provides an async redis_manager instance."""
-    async with redis_manager:
-        yield redis_manager
-
-
+###############################################################
+# Utility decorators
+###############################################################
 def cached(
     expire: int = 300,
     key_prefix: str = "cache",
@@ -370,7 +432,7 @@ def cached(
                 kwargs_str = json.dumps(kwargs, sort_keys=True, default=str)
                 cache_key = f"{key_prefix}:{func.__name__}:{args_str}:{kwargs_str}"
 
-            cached_result = await redis_manager.get(cache_key)
+            cached_result = await redis_mgr.get(cache_key)
             if cached_result:
                 logger.debug(f"Cache hit for key: {cache_key}")
                 try:
@@ -380,7 +442,7 @@ def cached(
 
             logger.debug(f"Cache miss for key: {cache_key}. Recomputing.")
             result = await func(*args, **kwargs)
-            await redis_manager.set_value(cache_key, json.dumps(result, default=str), expire)
+            await redis_mgr.set_value(cache_key, json.dumps(result, default=str), expire)
             return result
 
         return wrapper
@@ -414,7 +476,7 @@ def locked(
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             key = lock_name if lock_name else f"lock:{func.__name__}"
-            lock = await redis_manager.acquire_lock(key, timeout=timeout)
+            lock = await redis_mgr.acquire_lock(key, timeout=timeout)
             if not lock:
                 logger.warning(f"Failed to acquire lock: {key}")
                 # Depending on desired behavior, you might raise an exception here
@@ -423,87 +485,90 @@ def locked(
             try:
                 return await func(*args, **kwargs)
             finally:
-                await redis_manager.release_lock(lock)
+                await redis_mgr.release_lock(lock)
 
         return wrapper
 
     return decorator
 
 
-class EventStatus(Enum):
-    """Enumeration for event statuses."""
-
-    PENDING = "pending"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SUCCESS = "success"
-    PROCESSING = "processing"
-
-
-class Event(BaseModel, Generic[T]):
-    """Base event model for all application events."""
-
-    event_type: str
-    event_id: str
-    timestamp: datetime
-    status: EventStatus = EventStatus.PENDING
-    source: str
-    payload: T
-
-    metadata: dict[str, Any] = {}
-
-    def __init__(self, **data: Any) -> None:
-        super().__init__(**data)
-
-        if not self.event_type:
-            self.event_type = self.__class__.__name__
-
-        if not self.event_id:
-            self.event_id = uuid.uuid4().hex
-
-        if not self.timestamp:
-            self.timestamp = datetime.now(timezone.utc)
-
-        if not self.source:
-            self.source = "app"
-
-        if not self.payload:
-            self.payload: dict[str, Any] = {}  # type: ignore
-
-
-class EventBus:
+###############################################################
+# Utility functions for redis operations
+###############################################################
+async def blacklist_add(item: str, expire: int | None = None) -> bool:
     """
-    An event bus that uses Redis Pub/Sub to decouple event producers and consumers.
+    Add an item to the blacklist.
     """
-
-    def __init__(self, redis_manager: RedisManager) -> None:
-        self._redis_manager = redis_manager
-
-    async def fire_event(self, event: Event[Any], channel: str | None = None) -> int:
-        """
-        Fire an event to a specified channel.
-        """
-        message = event.model_dump_json()
-        return await self._redis_manager.publish(channel if channel else event.event_type, message)
-
-    async def process_events(self, channel: str) -> AsyncGenerator[Event[Any], None]:
-        """
-        Process events from a specified channel.
-        """
-        pubsub = await self._redis_manager.subscribe(channel)
-        if pubsub:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    try:
-                        event_data = json.loads(message["data"])
-                        yield Event[Any](**event_data)
-                    except json.JSONDecodeError:
-                        logger.error(f"Failed to decode event message: {message['data']}")
-                    except Exception as e:
-                        logger.error(f"Error processing event: {e}")
-        else:
-            logger.warning(f"Failed to subscribe to channel: {channel}")
+    return await redis_mgr.set_value(f"blacklist:{item}", "1", expire)
 
 
-# Singleton instance of the EventBus
-event_bus = EventBus(redis_manager)
+async def blacklist_exists(item: str) -> bool:
+    """
+    Check if an item is blacklisted.
+    """
+    result = await redis_mgr.exists(f"blacklist:{item}")
+    return result > 0
+
+
+async def blacklist_delete(item: str) -> bool:
+    """
+    Remove an item from the blacklist.
+    """
+    result = await redis_mgr.delete(f"blacklist:{item}")
+    return result > 0
+
+
+async def userinfo_get(user_id: str) -> str | None:
+    """
+    Get user information from the database.
+    """
+    return await redis_mgr.get(f"user:{user_id}")
+
+
+async def userinfo_set(user_id: str, user_data: str, expire: int = 300) -> bool:
+    """
+    Set user information in the database.
+    """
+    return await redis_mgr.set_value(f"user:{user_id}", user_data, expire)
+
+
+async def user2role_get(user_id: str) -> list[str]:
+    """
+    Get user role from the database.
+    """
+    roles = await redis_mgr.smembers(f"user:{user_id}:role")
+    return list(roles)
+
+
+async def user2role_set(user_id: str, roles: list[str] | None = None) -> bool:
+    """
+    Set user role in the database.
+    """
+    key = f"user:{user_id}:role"
+    if roles is None:
+        result = await redis_mgr.delete(key)
+        return result > 0
+
+    result = await redis_mgr.sadd(key, *roles)
+    return result == len(roles)
+
+
+async def tag2role_get(tag: str) -> list[str]:
+    """
+    Get tag role from the database.
+    """
+    roles = await redis_mgr.smembers(f"tag:{tag}:role")
+    return list(roles)
+
+
+async def tag2role_set(tag: str, roles: list[str] | None = None) -> bool:
+    """
+    Set tag role in the database.
+    """
+    key = f"tag:{tag}:role"
+    if roles is None:
+        result = await redis_mgr.delete(key)
+        return result > 0
+
+    result = await redis_mgr.sadd(key, *roles)
+    return result == len(roles)

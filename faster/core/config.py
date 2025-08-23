@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     )
     environment: str = Field(default="development", description="Runtime environment")
     api_prefix: str = Field(default="/api/v1", description="API prefix")
-    enable_docs: bool = Field(default=True, description="Enable API documentation")
 
     # Server settings
     host: str = Field(default="0.0.0.0", description="Server host")
@@ -53,6 +52,8 @@ class Settings(BaseSettings):
     supabase_url: str | None = Field(default=None, description="Supabase project URL")
     supabase_anon_key: str | None = Field(default=None, description="Supabase anonymous key")
     supabase_service_key: str | None = Field(default=None, description="Supabase service key")
+    supabase_jwks_url: str | None = Field(default=None, description="Supabase JWKs URL")
+    supabase_audience: str | None = Field(default=None, description="Supabase audience")
 
     # Stripe settings
     stripe_secret_key: str | None = Field(default=None, description="Stripe secret key")
@@ -60,9 +61,11 @@ class Settings(BaseSettings):
     stripe_publishable_key: str | None = Field(default=None, description="Stripe publishable key")
 
     # Security settings
-    secret_key: str | None = Field(default=None, description="Application secret key")
+    jwt_secret_key: str | None = Field(default=None, description="JWT secret key")
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expiry_minutes: int = Field(default=60, description="JWT expiry time in minutes")
+
+    # CORS settings
     cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
     cors_credentials: bool = Field(default=True, description="Allow CORS credentials")
     cors_enabled: bool = Field(default=True, description="Enable CORS")
@@ -87,7 +90,6 @@ class Settings(BaseSettings):
         super().model_post_init(__context)
         required_fields = [
             "database_url",
-            "redis_url",
             "celery_broker_url",
             "celery_result_backend",
             "supabase_url",
@@ -96,7 +98,7 @@ class Settings(BaseSettings):
             "stripe_secret_key",
             "stripe_webhook_secret",
             "stripe_publishable_key",
-            "secret_key",
+            "jwt_secret_key",
         ]
         for field_name in required_fields:
             if getattr(self, field_name) is None:

@@ -1,4 +1,5 @@
 # Python-generated files
+logs/
 __pycache__/
 *.py[oc]
 build/
@@ -9,6 +10,7 @@ migrations/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+faster/core/authv0/
 
 # Virtual environments
 .venv/
