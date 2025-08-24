@@ -118,13 +118,13 @@ mccabe = { max-complexity = 10 }
 	"S101",    # Use of assert (expected in tests)
 ]
 # Ignore import rules in __init__.py files
-"__init__.py" = ["F401"]
+"__init__.py" = [
+	"F401", # Unused import (expected in __init__.py files)
+]
 
 [tool.ruff.lint.isort]
 # Configure import sorting
-known-first-party = [
-	"your_package_name",
-] # Replace with your actual package name
+known-first-party = ["faster"]    # Replace with your actual package name
 force-sort-within-sections = true
 split-on-trailing-comma = true
 
@@ -163,7 +163,7 @@ extend-immutable-calls = [
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["faster/**/*.py", "tests/**/*.py"]
+files = ["faster/**/*.py", "main.py", "tests/**/*.py"]
 namespace_packages = true
 explicit_package_bases = true
 
