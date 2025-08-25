@@ -9,7 +9,7 @@ async def blacklist_add(item: str, expire: int | None = None) -> bool:
     """
     Add an item to the blacklist.
     """
-    return await get_redis().set(f"blacklist:{item}", "1", expire)
+    return bool(await get_redis().set(f"blacklist:{item}", "1", expire))
 
 
 async def blacklist_exists(item: str) -> bool:
@@ -39,7 +39,7 @@ async def userinfo_set(user_id: str, user_data: str, expire: int = 300) -> bool:
     """
     Set user information in the database.
     """
-    return await get_redis().set(f"user:{user_id}", user_data, expire)
+    return bool(await get_redis().set(f"user:{user_id}", user_data, expire))
 
 
 async def user2role_get(user_id: str) -> list[str]:

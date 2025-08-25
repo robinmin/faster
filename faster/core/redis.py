@@ -108,12 +108,14 @@ class RedisSafeContext:
         **kwargs: P.kwargs,
     ) -> R | Any:
         """Execute Redis operation safely with default fallback."""
+        # Extract default value from kwargs if provided
+        default = kwargs.pop("default", None)
         try:
             return await operation(*args, **kwargs)
         except (RedisOperationError, RedisError, Exception) as e:
             if self.log_errors:
                 logger.warning(f"Redis operation failed: {e}")
-            return None
+            return default
 
 
 @asynccontextmanager
@@ -396,7 +398,12 @@ class RedisClient(RedisInterface):
         xx: bool = False,
     ) -> bool:
         try:
-            return bool(await self.client.set(key, value, ex=ex, nx=nx, xx=xx))
+            result = await self.client.set(key, value, ex=ex, nx=nx, xx=xx)
+            # For nx=True or xx=True, Redis returns None when condition is not met
+            # We should preserve this behavior
+            if (nx or xx) and result is None:
+                return False
+            return bool(result)
         except (RedisError, Exception) as e:
             logger.error(f"Redis SET operation failed for key '{key}': {e}")
             raise RedisOperationError(f"SET operation failed: {e}") from e

@@ -197,7 +197,7 @@ class TestRedisClient:
         assert await fake_redis_client.get(key) == "v1"
 
         # Act & Assert (nx on existent key)
-        assert await fake_redis_client.set(key, "v2", nx=True) is None
+        assert await fake_redis_client.set(key, "v2", nx=True) is False
         assert await fake_redis_client.get(key) == "v1"
 
         # Act & Assert (xx on existent key)
@@ -206,7 +206,7 @@ class TestRedisClient:
 
         # Act & Assert (xx on non-existent key)
         await fake_redis_client.delete(key)
-        assert await fake_redis_client.set(key, "v4", xx=True) is None
+        assert await fake_redis_client.set(key, "v4", xx=True) is False
         assert await fake_redis_client.get(key) is None
 
     async def test_delete(self, fake_redis_client: RedisClient):
@@ -341,6 +341,60 @@ class TestRedisClient:
         assert await fake_redis_client.exists("k1") == 0
         assert await fake_redis_client.exists("h1") == 0
 
+    async def test_publish_and_subscribe(self, fake_redis_client: RedisClient):
+        """Covers PUBLISH and SUBSCRIBE operations."""
+        # Arrange
+        channel = "test_channel"
+        message = "test_message"
+
+        # Act & Assert (subscribe)
+        pubsub = await fake_redis_client.subscribe(channel)
+        assert pubsub is not None
+
+        # Act & Assert (publish)
+        subscribers = await fake_redis_client.publish(channel, message)
+        # With fakeredis, the number of subscribers might be 0 or 1 depending on implementation
+        # but it should be a non-negative integer
+        assert isinstance(subscribers, int)
+        assert subscribers >= 0
+
+        # Clean up
+        await pubsub.aclose()
+
+    async def test_subscribe_multiple_channels(self, fake_redis_client: RedisClient):
+        """Covers SUBSCRIBE with multiple channels."""
+        # Arrange
+        channels = ["channel1", "channel2", "channel3"]
+
+        # Act
+        pubsub = await fake_redis_client.subscribe(*channels)
+
+        # Assert
+        assert pubsub is not None
+
+        # Clean up
+        await pubsub.aclose()
+
+    async def test_publish_error_wrapping(self, fake_redis_client: RedisClient):
+        """Covers error wrapping for PUBLISH operation."""
+        # Arrange
+        with patch.object(fake_redis_client.client, "publish", new_callable=AsyncMock) as mock_publish:
+            mock_publish.side_effect = RedisError("Publish error")
+
+            # Act & Assert
+            with pytest.raises(RedisOperationError, match="Publish error"):
+                await fake_redis_client.publish("channel", "message")
+
+    async def test_subscribe_error_wrapping(self, fake_redis_client: RedisClient):
+        """Covers error wrapping for SUBSCRIBE operation."""
+        # Arrange
+        with patch.object(fake_redis_client.client, "pubsub") as mock_pubsub:
+            mock_pubsub.side_effect = RedisError("Subscribe error")
+
+            # Act & Assert
+            with pytest.raises(RedisOperationError, match="Subscribe error"):
+                await fake_redis_client.subscribe("channel")
+
     @pytest.mark.parametrize(
         "method_name, args",
         [
@@ -367,6 +421,7 @@ class TestRedisClient:
             ("decr", ("name",)),
             ("ping", ()),
             ("flushdb", ()),
+            ("publish", ("channel", "message")),
         ],
     )
     async def test_operation_error_wrapping(self, fake_redis_client: RedisClient, method_name, args):
@@ -484,7 +539,10 @@ class TestHealthAndDependency:
         Assert: Returns an unhealthy status dictionary with the error message.
         """
         await manager.setup(provider="fake")
-        with patch("faster.core.redis.RedisClient.ping", side_effect=RedisOperationError("Ping failed")):
+        with patch(
+            "faster.core.redis.RedisClient.ping",
+            side_effect=RedisOperationError("Ping failed"),
+        ):
             health = await manager.check_health()
         assert health == {
             "provider": "fake",
