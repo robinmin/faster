@@ -10,8 +10,7 @@ import uuid
 
 from pydantic import BaseModel, Field, model_validator
 
-from .redis import RedisManager
-from .redis import redis_mgr as redis_manager
+from .redis import RedisClient, get_redis
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -55,10 +54,10 @@ class EventBus:
     An event bus that uses Redis Pub/Sub to decouple event producers and consumers.
     """
 
-    def __init__(self, redis_manager: RedisManager) -> None:
-        self._redis_manager = redis_manager
+    def __init__(self, redis_client: RedisClient) -> None:
+        self._redis_client = redis_client
 
-    async def fire_event(self, event: Event[Any], channel: str | None = None) -> int:
+    async def fire_event(self, event: Event[Any], channel: str | None = None) -> Any:
         """
         Fire an event to a specified channel.
         """
@@ -66,13 +65,13 @@ class EventBus:
         event_channel = channel if channel else event.event_type
         if not event_channel:
             raise ValueError("Cannot fire event without a channel or event_type.")
-        return await self._redis_manager.publish(event_channel, message)
+        return await self._redis_client.publish(event_channel, message)
 
     async def process_events(self, channel: str) -> AsyncGenerator[Event[Any], None]:
         """
         Process events from a specified channel.
         """
-        pubsub = await self._redis_manager.subscribe(channel)
+        pubsub = await self._redis_client.subscribe(channel)
         if pubsub:
             async for message in pubsub.listen():
                 if message["type"] == "message":
@@ -88,7 +87,7 @@ class EventBus:
 
 
 # Singleton instance of the EventBus
-event_bus = EventBus(redis_manager)
+event_bus = EventBus(get_redis())
 
 
 # def subscribe_events(channel: str) -> Callable[..., Any]:

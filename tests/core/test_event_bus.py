@@ -1,5 +1,9 @@
-# tests/core/test_event_bus.py
 from __future__ import annotations
+
+# This must be at the top of the file, before any other imports from `faster`
+import os
+
+os.environ["REDIS_PROVIDER"] = "fake"
 
 import asyncio
 from collections.abc import AsyncGenerator
@@ -12,7 +16,7 @@ import uuid
 from pydantic import BaseModel
 import pytest
 
-from faster.core.event_bus import Event, EventBus, EventStatus
+from faster.core.event_bus import Event, EventStatus, event_bus
 
 # Constants for testing
 TEST_CHANNEL = "test_channel"
@@ -28,18 +32,13 @@ class User(BaseModel):
 
 
 @pytest.fixture
-def mock_redis_manager(mocker: MagicMock) -> MagicMock:
-    """Fixture to create a mock RedisManager."""
-    mock = MagicMock()
-    mock.publish = AsyncMock(return_value=1)
-    mock.subscribe = AsyncMock()
-    return mock
-
-
-@pytest.fixture
-def event_bus(mock_redis_manager: MagicMock) -> EventBus:
-    """Fixture to create an EventBus instance with a mocked RedisManager."""
-    return EventBus(redis_manager=mock_redis_manager)
+def mock_redis_client(mocker: MagicMock) -> MagicMock:
+    """Fixture to create a mock Redis client and patch the event_bus."""
+    mock_client = MagicMock()
+    mock_client.publish = AsyncMock(return_value=1)
+    mock_client.subscribe = AsyncMock()
+    mocker.patch.object(event_bus, "_redis_client", mock_client)
+    return mock_client
 
 
 class TestEventModel:
@@ -139,9 +138,7 @@ class TestEventModel:
 class TestEventBus:
     """Tests for the EventBus."""
 
-    async def test_fire_event_uses_event_type_as_default_channel(
-        self, event_bus: EventBus, mock_redis_manager: MagicMock
-    ):
+    async def test_fire_event_uses_event_type_as_default_channel(self, mock_redis_client: MagicMock):
         """
         Tests that fire_event uses the event's type as the default channel
         if no channel is specified.
@@ -153,12 +150,12 @@ class TestEventBus:
         await event_bus.fire_event(event)
 
         # Assert
-        mock_redis_manager.publish.assert_awaited_once()
-        args, _ = mock_redis_manager.publish.call_args
+        mock_redis_client.publish.assert_awaited_once()
+        args, _ = mock_redis_client.publish.call_args
         assert args[0] == TEST_EVENT_TYPE
         assert isinstance(args[1], str)
 
-    async def test_fire_event_uses_provided_channel(self, event_bus: EventBus, mock_redis_manager: MagicMock):
+    async def test_fire_event_uses_provided_channel(self, mock_redis_client: MagicMock):
         """
         Tests that fire_event uses the explicitly provided channel for publishing.
         """
@@ -169,15 +166,15 @@ class TestEventBus:
         await event_bus.fire_event(event, channel=TEST_CHANNEL)
 
         # Assert
-        mock_redis_manager.publish.assert_awaited_once_with(TEST_CHANNEL, event.model_dump_json())
+        mock_redis_client.publish.assert_awaited_once_with(TEST_CHANNEL, event.model_dump_json())
 
-    async def test_fire_event_returns_publish_result(self, event_bus: EventBus, mock_redis_manager: MagicMock):
+    async def test_fire_event_returns_publish_result(self, mock_redis_client: MagicMock):
         """
         Tests that fire_event returns the result from the redis_manager's
         publish call.
         """
         # Arrange
-        mock_redis_manager.publish.return_value = 5  # Simulate 5 subscribers
+        mock_redis_client.publish.return_value = 5  # Simulate 5 subscribers
         event = Event[dict](event_type=TEST_EVENT_TYPE, payload={})
 
         # Act
@@ -186,9 +183,7 @@ class TestEventBus:
         # Assert
         assert result == 5
 
-    async def test_process_events_yields_correctly_decoded_events(
-        self, event_bus: EventBus, mock_redis_manager: MagicMock, mocker: MagicMock
-    ):
+    async def test_process_events_yields_correctly_decoded_events(self, mock_redis_client: MagicMock):
         """
         Tests that process_events correctly subscribes, listens, and yields
         deserialized Event objects.
@@ -212,21 +207,19 @@ class TestEventBus:
 
         mock_pubsub = MagicMock()
         mock_pubsub.listen.return_value = message_generator()
-        mock_redis_manager.subscribe.return_value = mock_pubsub
+        mock_redis_client.subscribe.return_value = mock_pubsub
 
         # Act
         processed_events = [ev async for ev in event_bus.process_events(TEST_CHANNEL)]
 
         # Assert
-        mock_redis_manager.subscribe.assert_awaited_once_with(TEST_CHANNEL)
+        mock_redis_client.subscribe.assert_awaited_once_with(TEST_CHANNEL)
         assert len(processed_events) == 1
         event = processed_events[0]
         assert event.event_type == event_data["event_type"]
         assert event.payload == event_data["payload"]
 
-    async def test_process_events_handles_json_decode_error(
-        self, event_bus: EventBus, mock_redis_manager: MagicMock, mocker: MagicMock
-    ):
+    async def test_process_events_handles_json_decode_error(self, mock_redis_client: MagicMock, mocker: MagicMock):
         """
         Tests that process_events logs an error and continues if a message
         is not valid JSON.
@@ -239,7 +232,7 @@ class TestEventBus:
 
         mock_pubsub = MagicMock()
         mock_pubsub.listen.return_value = message_generator()
-        mock_redis_manager.subscribe.return_value = mock_pubsub
+        mock_redis_client.subscribe.return_value = mock_pubsub
         mock_logger = mocker.patch("faster.core.event_bus.logger")
 
         # Act
@@ -249,16 +242,12 @@ class TestEventBus:
         assert len(processed_events) == 0
         mock_logger.error.assert_called_once_with(f"Failed to decode event message: {invalid_message['data']}")
 
-    async def test_process_events_handles_general_exception(
-        self, event_bus: EventBus, mock_redis_manager: MagicMock, mocker: MagicMock
-    ):
+    async def test_process_events_handles_general_exception(self, mock_redis_client: MagicMock, mocker: MagicMock):
         """
         Tests that process_events logs an error and continues if an unexpected
         exception occurs during event processing.
         """
         # Arrange
-        # Mock the result of Event[Any] to raise an exception when called.
-        # This correctly simulates an instantiation failure for generic models.
         mock_event_class = mocker.patch("faster.core.event_bus.Event")
         mock_event_class.__getitem__.return_value.side_effect = Exception("Unexpected processing error")
 
@@ -270,7 +259,7 @@ class TestEventBus:
 
         mock_pubsub = MagicMock()
         mock_pubsub.listen.return_value = message_generator()
-        mock_redis_manager.subscribe.return_value = mock_pubsub
+        mock_redis_client.subscribe.return_value = mock_pubsub
         mock_logger = mocker.patch("faster.core.event_bus.logger")
 
         # Act
@@ -281,19 +270,16 @@ class TestEventBus:
         mock_logger.error.assert_called_once()
         assert "Error processing event: " in mock_logger.error.call_args[0][0]
 
-    async def test_process_events_handles_subscription_failure(
-        self, event_bus: EventBus, mock_redis_manager: MagicMock, mocker: MagicMock
-    ):
+    async def test_process_events_handles_subscription_failure(self, mock_redis_client: MagicMock, mocker: MagicMock):
         """
         Tests that process_events logs a warning if the subscription to a
         channel fails.
         """
         # Arrange
-        mock_redis_manager.subscribe.return_value = None
+        mock_redis_client.subscribe.return_value = None
         mock_logger = mocker.patch("faster.core.event_bus.logger")
 
         # Act
-        # Use asyncio.sleep to allow the async generator to run
         async def consume():
             return [ev async for ev in event_bus.process_events(TEST_CHANNEL)]
 

@@ -38,10 +38,12 @@ class Settings(BaseSettings):
     database_echo: bool = Field(default=False, description="Enable SQL logging")
 
     # Redis settings
+    redis_provider: str = Field(default="local", description="Redis provider type (e.g., local, upstash, fake)")
     redis_url: str | None = Field(default=None, description="Redis connection URL")
+    redis_password: str | None = Field(default=None, description="Redis password for local, and token for Upstash")
     redis_max_connections: int = Field(default=50, description="Maximum number of Redis connections")
     redis_decode_responses: bool = Field(default=True, description="Automatically decode Redis responses")
-    redis_required: bool = Field(default=False, description="Whether Redis is required")
+    redis_enabled: bool = Field(default=True, description="Whether Redis is enabled")
 
     # Celery settings
     celery_broker_url: str | None = Field(default=None, description="Celery Broker URL")
@@ -61,6 +63,7 @@ class Settings(BaseSettings):
     stripe_publishable_key: str | None = Field(default=None, description="Stripe publishable key")
 
     # Security settings
+    auth_endabled: bool = Field(default=True, description="Enable authentication")
     jwt_secret_key: str | None = Field(default=None, description="JWT secret key")
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expiry_minutes: int = Field(default=60, description="JWT expiry time in minutes")
