@@ -4,7 +4,7 @@ help: ## Show this help message
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | sort | sed -e 's/:.*##\s*/: /' -e 's/\s*$//' | awk '{printf "  %-20s %s\n", $1, substr($0, index($0,$2))}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "} {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 run: ## Run the FastAPI application
 	uv run uvicorn main:app --reload
@@ -56,7 +56,7 @@ clean: ## Clean up build artifacts and cached files
 
 lock: ## Update the lock file
 	uv pip compile pyproject.toml -o requirements.txt
-	uv lock --update
+# 	uv lock --upgrade
 
 # install:
 # 	uv sync
