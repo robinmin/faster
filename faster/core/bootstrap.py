@@ -7,7 +7,7 @@ import sys
 from types import FrameType
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -15,14 +15,15 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPError
 import uvicorn
 
-from faster.core.auth import router as auth_router
-from faster.core.auth.middlewares import AuthMiddleware
-from faster.core.auth.services import AuthService
+from .auth import router as auth_router
+from .auth.middlewares import AuthMiddleware
+from .auth.services import AuthService
 
 ###############################################################################
 # import instances
-from faster.core.database import db_mgr
-from faster.core.exceptions import (
+from .config import Settings, default_settings
+from .database import db_mgr
+from .exceptions import (
     AppError,
     DBError,
     app_exception_handler,
@@ -30,11 +31,16 @@ from faster.core.exceptions import (
     db_exception_handler,
     http_exception_handler,
 )
-from faster.core.redis import redis_mgr
-
-from .config import Settings, default_settings
 from .logging import setup_logger
+from .redis import redis_mgr
 from .utilities import get_all_endpoints
+
+PROPAGATE_LOGGERS = [
+    "uvicorn",
+    "uvicorn.error",
+    "uvicorn.access",
+    "sqlalchemy.engine",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -70,20 +76,15 @@ async def _setup_all(app: FastAPI, settings: Settings) -> None:
         )
 
     # Initialize Redis
-    if settings.redis_url:
-        logger.info("Initializing Redis...")
-        try:
-            await redis_mgr.setup(
-                settings.redis_url,
-                decode_responses=bool(settings.redis_decode_responses),
-                max_connections=settings.redis_max_connections,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to initialize Redis: {e}")
-            if settings.redis_required:
-                raise
-            # Continue without Redis if it's not required
-            logger.info("Continuing without Redis as it's not required")
+    logger.info("Initializing Redis...")
+    await redis_mgr.setup(
+        provider=settings.redis_provider,
+        redis_url=settings.redis_url,
+        password=settings.redis_password,
+        max_connections=settings.redis_max_connections,
+        decode_responses=settings.redis_decode_responses,
+        fallback_to_fake=settings.is_debug,
+    )
 
 
 async def _close_all(app: FastAPI) -> None:
@@ -94,6 +95,40 @@ async def _close_all(app: FastAPI) -> None:
     # Close Redis connection
     logger.info("Closing Redis connection...")
     await redis_mgr.close()
+
+
+def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] | None = None) -> None:
+    # Configure and add middleware to the FastAPI application
+    # NOTE: Middleware must be added before initializing database/Redis to avoid "Cannot add middleware after an application has started" error
+    if settings.gzip_enabled:
+        app.add_middleware(GZipMiddleware, minimum_size=settings.gzip_min_size)
+
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts or ["*"])
+
+    if settings.auth_endabled:
+        app.add_middleware(
+            AuthMiddleware,
+            auth_service=AuthService(
+                jwt_secret=settings.jwt_secret_key or "",
+                algorithms=(settings.jwt_algorithm.split(",") if settings.jwt_algorithm else None),
+                expiry_minutes=settings.jwt_expiry_minutes,
+            ),
+        )
+
+    if settings.cors_enabled:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_credentials=settings.cors_credentials,
+            allow_methods=settings.cors_allow_methods,
+            allow_headers=settings.cors_allow_headers,
+            expose_headers=settings.cors_expose_headers,
+        )
+
+    # Add custom middlewares
+    if middlewares:
+        for middleware in middlewares:
+            app.add_middleware(middleware)
 
 
 async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False) -> None:
@@ -118,13 +153,12 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
             logger.info(f"\tDB: {db_health}")
 
         # Only show Redis error if it's required or if there was an attempt to connect
-        if "master" not in redis_health or not redis_health["master"]:
-            if settings.redis_required or (settings.redis_url and redis_health.get("master") is False):
-                logger.error(f"\tRedis: {redis_health}")
-            elif settings.redis_url:
-                logger.warning(f"\tRedis: {redis_health}")
-        else:
+        if redis_health.get("ping"):
             logger.info(f"\tRedis: {redis_health}")
+        elif settings.redis_enabled or (settings.redis_url and redis_health.get("ping") is False):
+            logger.error(f"\tRedis: {redis_health}")
+        elif settings.redis_url:
+            logger.warning(f"\tRedis: {redis_health}")
 
         if settings.is_debug:
             logger.debug("=========================================================")
@@ -141,6 +175,8 @@ def create_app(
     settings: Settings | None = None,
     startup_handler: Callable[..., Awaitable[bool]] | None = None,
     shutdown_handler: Callable[..., Awaitable[bool]] | None = None,
+    routers: list[APIRouter] | None = None,
+    middlewares: list[Any] | None = None,
     **kwargs: Any,
 ) -> FastAPI:
     """
@@ -165,37 +201,38 @@ def create_app(
         settings.log_level,
         settings.log_format,
         settings.log_file,
-        ["uvicorn", "uvicorn.error", "uvicorn.access", "sqlalchemy.engine"],
+        PROPAGATE_LOGGERS,
     )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Starting application...")
-        logger.info("Initializing resources...")
-        await _setup_all(app, settings)
         try:
+            logger.info("Initializing resources...")
+            await _setup_all(app, settings)
+
             final_startup_handler = startup_handler or default_startup_handler
             if not await final_startup_handler():
-                logger.error(f"Startup handler {getattr(final_startup_handler, '__name__', 'unknown')} failed.")
-        except Exception as e:
-            logger.error(f"Error during startup: {e}")
+                raise RuntimeError(f"Startup handler {getattr(final_startup_handler, '__name__', 'unknown')} failed.")
 
-        await refresh_status(app, settings, settings.is_debug)
+            await refresh_status(app, settings, settings.is_debug)
+        except Exception as exp:
+            logger.critical(f"Application startup failed: {exp}")
 
         ########################################################################
         yield
         ########################################################################
 
-        logger.info("Shutting down resources...")
-        await _close_all(app)
-
-        logger.info("Shutting down application...")
         try:
+            logger.info("Shutting down resources...")
+            await _close_all(app)
+
+            logger.info("Shutting down application...")
             final_shutdown_handler = shutdown_handler or default_shutdown_handler
             if not await final_shutdown_handler():
                 logger.error(f"Shutdown handler {getattr(final_shutdown_handler, '__name__', 'unknown')} failed.")
         except Exception as e:
-            logger.error(f"Error during shutdown: {e}")
+            logger.critical(f"Error during shutdown: {e}")
 
     app = FastAPI(
         lifespan=lifespan,
@@ -210,36 +247,18 @@ def create_app(
     )
     app.state.settings = settings
 
-    # Configure and add middleware to the FastAPI application
-    # NOTE: Middleware must be added before initializing database/Redis to avoid "Cannot add middleware after an application has started" error
-    if settings.gzip_enabled:
-        app.add_middleware(GZipMiddleware, minimum_size=settings.gzip_min_size)
+    # Setup middlewares
+    _steup_middlewares(app, settings, middlewares)
 
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts or ["*"])
-
-    if settings.jwt_secret_key:
-        app.add_middleware(
-            AuthMiddleware,
-            auth_service=AuthService(
-                jwt_secret=settings.jwt_secret_key,
-                algorithms=(settings.jwt_algorithm.split(",") if settings.jwt_algorithm else None),
-                expiry_minutes=settings.jwt_expiry_minutes,
-            ),
-        )
-
-    if settings.cors_enabled:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=settings.cors_origins,
-            allow_credentials=settings.cors_credentials,
-            allow_methods=settings.cors_allow_methods,
-            allow_headers=settings.cors_allow_headers,
-            expose_headers=settings.cors_expose_headers,
-        )
-
-    # Include routers and exception handlers
+    # Include default routers
     app.include_router(auth_router)
 
+    # Include custom routers
+    if routers:
+        for router in routers:
+            app.include_router(router)
+
+    # Include exception handlers
     app.add_exception_handler(AppError, app_exception_handler)  # type: ignore
     app.add_exception_handler(DBError, db_exception_handler)  # type: ignore
     app.add_exception_handler(StarletteHTTPError, http_exception_handler)  # type: ignore
