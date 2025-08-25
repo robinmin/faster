@@ -14,6 +14,19 @@ from .services import AuthService
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ALLOWED_PATHS = [
+    "/docs",  # Swagger UI
+    "/docs/oauth2-redirect",  # Swagger OAuth2 redirect
+    "/redoc",  # ReDoc UI
+    "/openapi.json",  # OpenAPI schema
+    "/health",  # Health check endpoint
+    "/metrics",  # Prometheus metrics endpoint
+    "/favicon.ico",  # Favicon
+    "/static",  # Static files
+    "/static/",  # Static files
+    "/static/*",  # Static files
+]
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, auth_service: AuthService) -> None:
@@ -34,7 +47,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # logger.debug(f"[auth] {current_endpoint} - {tags}")
 
         # Skip public endpoints
-        if "public" in tags:
+        if "public" in tags or (request.app.stage.settings.is_debug and request.url.path in DEFAULT_ALLOWED_PATHS):
             logger.debug(f"[auth] Skipping public endpoint : {current_path}")
             return await call_next(request)
 
@@ -44,7 +57,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.error(f"[auth] Not authenticated - 401: {current_path}")
             return JSONResponse(
                 {"status": "http error", "message": "Not authenticated"},
-                status_code=401,
+                status_code=status.HTTP_401_UNAUTHORIZED,
             )
         token = auth_header.split(" ")[1]
 
@@ -53,7 +66,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             payload = self.auth_service.verify_jwt(token)
         except Exception as e:
             logger.error(f"[auth] Invalid token: {e} - 401: {current_path}")
-            return JSONResponse({"detail": f"Invalid token: {e}"}, status_code=401)
+            return JSONResponse(
+                {"detail": f"Invalid token: {e}"},
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
 
         user_id = payload["sub"]
 
@@ -61,7 +77,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         allowed = await self.auth_service.check_access(user_id, tags)
         if not allowed:
             logger.debug(f"[auth] Forbidden - 403: {current_path} to user {user_id}")
-            return JSONResponse({"detail": "Forbidden: insufficient role"}, status_code=403)
+            return JSONResponse(
+                {"detail": "Forbidden: insufficient role"},
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
 
         # Attach auth info to request.state
         email = payload.get("email")
@@ -82,5 +101,5 @@ class AuthMiddleware(BaseHTTPMiddleware):
 def get_auth_user(request: Request) -> AuthUser:
     user = cast(AuthUser | None, getattr(request.state, "auth_user", None))
     if not user:
-        raise HTTPException(401, "Not authenticated")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
     return user
