@@ -2,7 +2,7 @@ from typing import Any
 
 from jose import jwt
 
-from faster.core.redis import tag2role_get, user2role_get
+from faster.core.redisex import tag2role_get, user2role_get
 
 
 class AuthService:
