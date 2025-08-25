@@ -51,7 +51,7 @@ def mock_settings(mocker: MockerFixture) -> Settings:
     mock_settings_instance.redis_url = None
     mock_settings_instance.redis_max_connections = 50
     mock_settings_instance.redis_decode_responses = True
-    mock_settings_instance.redis_required = False
+    mock_settings_instance.redis_enabled = False
     mock_settings_instance.celery_broker_url = None
     mock_settings_instance.celery_result_backend = None
     mock_settings_instance.celery_task_always_eager = False
@@ -112,7 +112,7 @@ def mock_debug_settings(mocker: MockerFixture) -> Settings:
     mock_settings_instance.redis_url = None
     mock_settings_instance.redis_max_connections = 50
     mock_settings_instance.redis_decode_responses = True
-    mock_settings_instance.redis_required = False
+    mock_settings_instance.redis_enabled = False
     mock_settings_instance.celery_broker_url = None
     mock_settings_instance.celery_result_backend = None
     mock_settings_instance.celery_task_always_eager = False
