@@ -5,17 +5,18 @@ from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+from starlette.types import ASGIApp
 
 from faster.core.utilities import get_current_endpoint
 
-from .models import AuthUser
+from .schemas import AuthUser
 from .services import AuthService
 
 logger = logging.getLogger(__name__)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app: RequestResponseEndpoint, auth_service: AuthService) -> None:
+    def __init__(self, app: ASGIApp, auth_service: AuthService) -> None:
         super().__init__(app)
         self.auth_service = auth_service
 
