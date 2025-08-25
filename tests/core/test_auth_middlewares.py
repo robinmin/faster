@@ -1,4 +1,3 @@
-# tests/core/test_auth_middlewares.py
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import HTTPException, Request, status
@@ -6,7 +5,7 @@ from fastapi.responses import JSONResponse
 import pytest
 
 from faster.core.auth.middlewares import AuthMiddleware, get_auth_user
-from faster.core.auth.models import AuthUser
+from faster.core.auth.schemas import AuthUser
 from faster.core.auth.services import AuthService
 
 # Constants
@@ -59,7 +58,10 @@ class TestAuthMiddleware:
     """Tests for the AuthMiddleware."""
 
     async def test_middleware_success_for_protected_endpoint(
-        self, middleware: AuthMiddleware, mock_request: MagicMock, mock_auth_service: MagicMock
+        self,
+        middleware: AuthMiddleware,
+        mock_request: MagicMock,
+        mock_auth_service: MagicMock,
     ):
         """
         Tests that the middleware successfully processes a valid request
@@ -81,7 +83,10 @@ class TestAuthMiddleware:
         assert response.status_code == 200
 
     async def test_middleware_skips_public_endpoint(
-        self, middleware: AuthMiddleware, mock_request: MagicMock, mock_auth_service: MagicMock
+        self,
+        middleware: AuthMiddleware,
+        mock_request: MagicMock,
+        mock_auth_service: MagicMock,
     ):
         """
         Tests that the middleware skips authentication and authorization for
@@ -119,7 +124,10 @@ class TestAuthMiddleware:
         assert "Not authenticated" in response.body.decode()
 
     async def test_middleware_returns_401_if_invalid_token(
-        self, middleware: AuthMiddleware, mock_request: MagicMock, mock_auth_service: MagicMock
+        self,
+        middleware: AuthMiddleware,
+        mock_request: MagicMock,
+        mock_auth_service: MagicMock,
     ):
         """
         Tests that a 401 Unauthorized response is returned if the JWT is invalid.
@@ -135,7 +143,10 @@ class TestAuthMiddleware:
         assert "Invalid token" in response.body.decode()
 
     async def test_middleware_returns_403_if_access_denied(
-        self, middleware: AuthMiddleware, mock_request: MagicMock, mock_auth_service: MagicMock
+        self,
+        middleware: AuthMiddleware,
+        mock_request: MagicMock,
+        mock_auth_service: MagicMock,
     ):
         """
         Tests that a 403 Forbidden response is returned if the user lacks
