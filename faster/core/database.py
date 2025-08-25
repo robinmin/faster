@@ -4,8 +4,7 @@ import logging
 from typing import TypedDict
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -26,8 +25,8 @@ class DatabaseManager:
     def __init__(self) -> None:
         self.master_engine: AsyncEngine | None = None
         self.replica_engine: AsyncEngine | None = None
-        self.master_session: sessionmaker | None = None
-        self.replica_session: sessionmaker | None = None
+        self.master_session: async_sessionmaker[AsyncSession] | None = None
+        self.replica_session: async_sessionmaker[AsyncSession] | None = None
 
     def _make_engine(self, url: str, pool_size: int, max_overflow: int, echo: bool) -> AsyncEngine:
         engine_kwargs: EngineKwargs = {"echo": echo, "future": True}
@@ -51,12 +50,12 @@ class DatabaseManager:
         """Initialize engines and sessionmakers."""
         try:
             self.master_engine = self._make_engine(master_url, pool_size, max_overflow, echo)
-            self.master_session = sessionmaker(self.master_engine, expire_on_commit=False, class_=AsyncSession)
+            self.master_session = async_sessionmaker(self.master_engine, class_=AsyncSession)
             logger.info("Master DB engine initialized", extra={"url": master_url})
 
             if replica_url:
                 self.replica_engine = self._make_engine(replica_url, pool_size, max_overflow, echo)
-                self.replica_session = sessionmaker(self.replica_engine, expire_on_commit=False, class_=AsyncSession)
+                self.replica_session = async_sessionmaker(self.replica_engine, class_=AsyncSession)
                 logger.info("Replica DB engine initialized", extra={"url": replica_url})
 
         except Exception as exp:
