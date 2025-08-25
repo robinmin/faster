@@ -33,8 +33,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.auth_service = auth_service
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:  # noqa: PLR0911
         current_path = request.url.path
+        # Allow default paths in debug mode
+        if current_path in DEFAULT_ALLOWED_PATHS and request.app.state.settings.is_debug:
+            return await call_next(request)
+
         current_endpoint = get_current_endpoint(request, request.app.state.endpoints)
         if not current_endpoint:
             logger.error(f"[auth] Not Found - 404: {current_path}")
@@ -47,7 +51,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # logger.debug(f"[auth] {current_endpoint} - {tags}")
 
         # Skip public endpoints
-        if "public" in tags or (request.app.stage.settings.is_debug and request.url.path in DEFAULT_ALLOWED_PATHS):
+        if "public" in tags:
             logger.debug(f"[auth] Skipping public endpoint : {current_path}")
             return await call_next(request)
 
