@@ -1,14 +1,41 @@
-from collections.abc import Awaitable, Callable
-import functools
-import json
-import logging
-from typing import Any, ParamSpec, TypeVar, cast
+"""
+Redis multi-provider library with simple exception recovery mechanisms.
 
-# import redis.asyncio as redis
-from redis.asyncio.client import Pipeline, PubSub, Redis
-from redis.asyncio.connection import ConnectionPool
-from redis.asyncio.lock import Lock
-from redis.exceptions import ConnectionError
+This module provides a unified interface for Redis operations with simple error recovery:
+- Core operations always raise exceptions for explicit error handling
+- Decorators and context managers for graceful error recovery
+- Clean separation of concerns
+
+Usage:
+    # Basic usage (raises exceptions)
+    client = await redis_manager.get_client()
+    await client.set("key", "value")
+    value = await client.get("key")
+
+    # With error recovery using decorator
+    @redis_safe(default="default_value")
+    async def get_user_preference(client, user_id):
+        return await client.get(f"user:{user_id}:preference")
+
+    # With error recovery using context manager
+    async with redis_safe_context() as safe:
+        result = await safe.execute(client.get, "cache_key", default=None)
+"""
+
+from abc import ABC, abstractmethod
+import builtins
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from enum import Enum
+from functools import wraps
+import logging
+import re
+from typing import Any, ParamSpec, TypeVar
+
+import fakeredis.aioredis
+import redis.asyncio as redis
+from redis.asyncio.client import PubSub
+from redis.exceptions import RedisError
 
 logger = logging.getLogger(__name__)
 
@@ -17,558 +44,851 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-class RedisManager:
-    def __init__(self) -> None:
-        self.master_pool: ConnectionPool | None = None
-        self.replica_pool: ConnectionPool | None = None
-        self.master: Redis | None = None
-        self.replica: Redis | None = None
+class RedisProvider(str, Enum):
+    """Supported Redis providers."""
 
-    async def setup(
-        self,
-        master_url: str,
-        replica_url: str | None = None,
-        decode_responses: bool = True,
-        max_connections: int = 10,
-    ) -> None:
-        """
-        Initialize Redis connection pools and clients.
-        If connection fails, log error and continue without raising.
-        """
-        # Master pool connection
-        try:
-            self.master_pool = ConnectionPool.from_url(
-                master_url,
-                decode_responses=decode_responses,
-                max_connections=max_connections,
-            )
-            self.master = Redis(connection_pool=self.master_pool)
-            await self.master.ping()
-            logger.info("Redis master connected", extra={"url": master_url})
-        except ConnectionError as e:
-            logger.error(f"Failed to connect to Redis master at {master_url}: {e}")
-            self.master_pool = None
-            self.master = None
-        except Exception as e:
-            logger.exception(f"Unexpected error while connecting to Redis master: {e}")
-            self.master_pool = None
-            self.master = None
+    LOCAL = "local"
+    UPSTASH = "upstash"
+    FAKE = "fake"
 
-        # Replica pool connection (optional)
-        if replica_url:
-            self.replica = None  # Ensure replica is None initially
+
+class RedisConnectionError(Exception):
+    """Raised when Redis connection fails."""
+
+
+class RedisOperationError(Exception):
+    """Raised when Redis operation fails."""
+
+
+###############################################################################
+# Utility decorators - Error Recovery Mechanisms
+###############################################################################
+def redis_safe(
+    default: Any = None, log_errors: bool = True
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R | Any]]]:
+    """
+    Decorator for safe Redis operations that return default value on error.
+
+    Args:
+        default: Default value to return on error
+        log_errors: Whether to log errors
+
+    Usage:
+        @redis_safe(default=[])
+        async def get_user_tags(client, user_id):
+            tags = await client.get(f"user:{user_id}:tags")
+            return json.loads(tags) if tags else []
+    """
+
+    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R | Any]]:
+        @wraps(func)
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | Any:
             try:
-                self.replica_pool = ConnectionPool.from_url(
-                    replica_url,
-                    decode_responses=decode_responses,
-                    max_connections=max_connections,
-                )
-                self.replica = Redis(connection_pool=self.replica_pool)
-                await self.replica.ping()
-                logger.info("Redis replica connected", extra={"url": replica_url})
-            except ConnectionError as e:
-                logger.error(f"Failed to connect to Redis replica at {replica_url}: {e}")
-                self.replica_pool = None
-                self.replica = None
-            except Exception as e:
-                logger.exception(f"Unexpected error while connecting to Redis replica: {e}")
-                self.replica_pool = None
-                self.replica = None
+                return await func(*args, **kwargs)
+            except (RedisOperationError, RedisError, Exception) as e:
+                if log_errors:
+                    logger.warning(f"Redis operation failed in {func.__name__}: {e}")
+                return default
 
-    async def close(self) -> None:
-        """Close Redis clients and their pools."""
+        return wrapper
+
+    return decorator
+
+
+class RedisSafeContext:
+    """Context manager for safe Redis operations."""
+
+    def __init__(self, log_errors: bool = True):
+        self.log_errors = log_errors
+
+    async def execute(
+        self,
+        operation: Callable[P, Awaitable[R]],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> R | Any:
+        """Execute Redis operation safely with default fallback."""
         try:
-            if self.master:
-                await self.master.close()
-                logger.info("Redis master client closed")
-                self.master = None
-            if self.master_pool:
-                await self.master_pool.disconnect()
-                logger.info("Redis master pool closed")
-                self.master_pool = None
-        except Exception:
-            logger.exception("Error closing master Redis connections/pools")
+            return await operation(*args, **kwargs)
+        except (RedisOperationError, RedisError, Exception) as e:
+            if self.log_errors:
+                logger.warning(f"Redis operation failed: {e}")
+            return None
 
-        try:
-            if self.replica:
-                await self.replica.close()
-                logger.info("Redis replica client closed")
-                self.replica = None
-            if self.replica_pool:
-                await self.replica_pool.disconnect()
-                logger.info("Redis replica pool closed")
-                self.replica_pool = None
-        except Exception:
-            logger.exception("Error closing replica Redis connections/pools")
 
-    async def check_health(self) -> dict[str, bool]:
-        """
-        Ping master and replica to check connectivity.
-        Returns a dict: {"master": True/False, "replica": True/False}
-        """
-        results = {"master": False, "replica": False}
+@asynccontextmanager
+async def redis_safe_context(
+    log_errors: bool = True,
+) -> AsyncIterator[RedisSafeContext]:
+    """
+    Context manager for safe Redis operations.
 
-        try:
-            if self.master:
-                pong = await self.master.ping()
-                results["master"] = pong is True
-            else:
-                logger.debug("Redis master not initialized")
-        except Exception:
-            logger.exception("Redis master health check failed")
+    Usage:
+        async with redis_safe_context() as safe:
+            result = await safe.execute(client.get, "key", default="fallback")
+    """
+    yield RedisSafeContext(log_errors=log_errors)
 
-        try:
-            if self.replica:
-                pong = await self.replica.ping()
-                results["replica"] = pong is True
-            else:
-                logger.debug("Redis replica not initialized")
-        except Exception:
-            logger.exception("Redis replica health check failed")
 
-        return results
+def redis_fallback(
+    fallback_func: Callable[..., Awaitable[R]],
+) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+    """
+    Decorator that calls fallback function on Redis error.
 
-    def _get_client(self, readonly: bool = False) -> Redis | None:
-        """
-        Get the appropriate Redis client.
-        - readonly=True uses replica if available
-        """
-        if readonly and self.replica:
-            return self.replica
-        if self.master:
-            return self.master
-        return None
+    Usage:
+        @redis_fallback(lambda user_id: database.get_user(user_id))
+        async def get_user_from_cache(client, user_id):
+            data = await client.get(f"user:{user_id}")
+            return json.loads(data) if data else None
+    """
 
-    #########################################################################
-    # Proxy Methods for Redis Commands
-    #########################################################################
+    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+        @wraps(func)
+        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            try:
+                return await func(*args, **kwargs)
+            except (RedisOperationError, RedisError, Exception) as e:
+                logger.warning(f"Redis operation failed in {func.__name__}, using fallback: {e}")
+                # Extract non-client arguments for fallback
+                fallback_args = args[1:] if args else ()
+                return await fallback_func(*fallback_args, **kwargs)
 
+        return wrapper
+
+    return decorator
+
+
+# def cached(
+#     expire: int = 300,
+#     key_prefix: str = "cache",
+#     key_builder: Callable[..., str] | None = None,
+# ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+#     """
+#     A decorator to cache the results of a function in Redis.
+
+#     Args:
+#         expire: Expiration time in seconds for the cached item. Defaults to 300 seconds (5 minutes).
+#         key_prefix: Prefix for the cache key. Defaults to "cache".
+#         key_builder: An optional callable to build the cache key.
+#                         It should accept the same arguments as the decorated function
+#                         and return a string.
+#     Returns:
+#         A decorator that caches the result of the function.
+#     Example:
+#         @cached(expire=600, key_prefix="my_cache")
+#         async def my_function(arg1, arg2):
+#             # Function logic here
+#             return result
+
+#         # Call the function with arguments
+#         result = await my_function(arg1, arg2)
+#         # The result will be cached and retrieved from Redis if the key exists.
+#     """
+
+#     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+#         @functools.wraps(func)
+#         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+#             if key_builder:
+#                 cache_key = key_builder(*args, **kwargs)
+#             else:
+#                 # Generate a default cache key based on function name and arguments
+#                 # Convert args and kwargs to a consistent string representation
+#                 args_str = json.dumps(args, sort_keys=True, default=str)
+#                 kwargs_str = json.dumps(kwargs, sort_keys=True, default=str)
+#                 cache_key = f"{key_prefix}:{func.__name__}:{args_str}:{kwargs_str}"
+
+#             cached_result = await redis_mgr.get(cache_key)
+#             if cached_result:
+#                 logger.debug(f"Cache hit for key: {cache_key}")
+#                 try:
+#                     return cast(R, json.loads(cached_result))
+#                 except json.JSONDecodeError:
+#                     logger.warning(f"Failed to decode cached value for key: {cache_key}. Recomputing.")
+
+#             logger.debug(f"Cache miss for key: {cache_key}. Recomputing.")
+#             result = await func(*args, **kwargs)
+#             await redis_mgr.set_value(cache_key, json.dumps(result, default=str), expire)
+#             return result
+
+#         return wrapper
+
+#     return decorator
+
+
+# def locked(
+#     lock_name: str | None = None,
+#     timeout: float | None = None,
+# ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+#     """
+#     A decorator to acquire a distributed lock before executing the decorated function.
+
+#     Args:
+#         lock_name: The name of the lock. If None, the lock name will be derived from the function name.
+#         timeout: The maximum time in seconds to hold the lock. If None, the lock will be held indefinitely.
+#     Returns:
+#         A decorator that acquires a lock before executing the function.
+#     Example:
+#         @locked(lock_name="my_lock", timeout=10)
+#         async def my_function(arg1, arg2):
+#             # Function logic here
+#             return result
+
+#         # The function will only execute if the lock is acquired successfully.
+#         If the lock cannot be acquired, it will log a warning and proceed without the lock.
+#     """
+
+#     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
+#         @functools.wraps(func)
+#         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+#             key = lock_name if lock_name else f"lock:{func.__name__}"
+#             lock = await redis_mgr.acquire_lock(key, timeout=timeout)
+#             if not lock:
+#                 logger.warning(f"Failed to acquire lock: {key}")
+#                 # Depending on desired behavior, you might raise an exception here
+#                 # or return a default value. For now, we'll proceed without the lock.
+#                 return await func(*args, **kwargs)
+#             try:
+#                 return await func(*args, **kwargs)
+#             finally:
+#                 await redis_mgr.release_lock(lock)
+
+#         return wrapper
+
+#     return decorator
+
+
+###############################################################################
+# Core Redis Interface and Implementation
+###############################################################################
+class RedisInterface(ABC):
+    """Abstract interface for Redis operations."""
+
+    @abstractmethod
+    async def get(self, key: str) -> Any:
+        """Get value by key."""
+
+    @abstractmethod
+    async def set(
+        self,
+        key: str,
+        value: str,
+        ex: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+    ) -> bool:
+        """Set key-value with optional expiration and conditions."""
+
+    @abstractmethod
+    async def delete(self, *keys: str) -> int:
+        """Delete one or more keys."""
+
+    @abstractmethod
+    async def exists(self, *keys: str) -> int:
+        """Check if keys exist."""
+
+    @abstractmethod
+    async def expire(self, key: str, time: int) -> bool:
+        """Set expiration time for key."""
+
+    @abstractmethod
+    async def ttl(self, key: str) -> int:
+        """Get time to live for key."""
+
+    @abstractmethod
+    async def hget(self, name: str, key: str) -> str | None:
+        """Get hash field value."""
+
+    @abstractmethod
+    async def hset(self, name: str, mapping: dict[str, Any]) -> int:
+        """Set hash fields."""
+
+    @abstractmethod
+    async def hgetall(self, name: str) -> dict[str, str]:
+        """Get all hash fields and values."""
+
+    @abstractmethod
+    async def hdel(self, name: str, *keys: str) -> int:
+        """Delete hash fields."""
+
+    @abstractmethod
+    async def lpush(self, name: str, *values: str) -> int:
+        """Push values to list head."""
+
+    @abstractmethod
+    async def rpush(self, name: str, *values: str) -> int:
+        """Push values to list tail."""
+
+    @abstractmethod
+    async def lpop(self, name: str) -> str | list[Any] | None:
+        """Pop value from list head."""
+
+    @abstractmethod
+    async def rpop(self, name: str) -> str | list[Any] | None:
+        """Pop value from list tail."""
+
+    @abstractmethod
+    async def llen(self, name: str) -> int:
+        """Get list length."""
+
+    @abstractmethod
+    async def sadd(self, name: str, *values: str) -> int:
+        """Add members to set."""
+
+    @abstractmethod
+    async def srem(self, name: str, *values: str) -> int:
+        """Remove members from set."""
+
+    @abstractmethod
+    async def smembers(self, name: str) -> builtins.set[Any]:
+        """Get all set members."""
+
+    @abstractmethod
+    async def sismember(self, name: str, value: str) -> bool:
+        """Check if value is set member."""
+
+    @abstractmethod
+    async def incr(self, name: str, amount: int = 1) -> int:
+        """Increment key value."""
+
+    @abstractmethod
+    async def decr(self, name: str, amount: int = 1) -> int:
+        """Decrement key value."""
+
+    @abstractmethod
     async def ping(self) -> bool:
-        """
-        Ping the Redis server.
-        """
-        client = self._get_client()
-        return cast(bool, await client.ping()) if client else False
+        """Test connection."""
 
-    async def get(self, key: str) -> str | None:
-        """
-        Get the value of a key.
-        """
-        client = self._get_client()
-        return cast(str | None, await client.get(key)) if client else None
+    @abstractmethod
+    async def flushdb(self) -> bool:
+        """Clear current database."""
 
-    async def set_value(self, key: str, value: str | bytes | int | float, expire: int | None = None) -> bool:
-        """
-        Set the value of a key with an optional expiration in seconds.
-        """
-        client = self._get_client()
-        if not client:
-            return False
-        result = await client.set(key, value, ex=expire)
-        return result is True
+    @abstractmethod
+    async def publish(self, channel: str, message: str) -> int:
+        """Publish message to channel."""
+
+    @abstractmethod
+    async def subscribe(self, *channels: str) -> PubSub:
+        """Subscribe to channel."""
+
+
+class RedisClient(RedisInterface):
+    """Redis client wrapper implementing the RedisInterface."""
+
+    def __init__(self, client: redis.Redis | fakeredis.aioredis.FakeRedis):
+        self.client = client
+        self._is_fake = isinstance(client, fakeredis.aioredis.FakeRedis)
+
+    async def get(self, key: str) -> Any:
+        try:
+            result = await self.client.get(key)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis GET operation failed for key '{key}': {e}")
+            raise RedisOperationError(f"GET operation failed: {e}") from e
+
+    async def set(
+        self,
+        key: str,
+        value: str,
+        ex: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+    ) -> bool:
+        try:
+            return bool(await self.client.set(key, value, ex=ex, nx=nx, xx=xx))
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis SET operation failed for key '{key}': {e}")
+            raise RedisOperationError(f"SET operation failed: {e}") from e
 
     async def delete(self, *keys: str) -> int:
-        """
-        Delete one or more keys.
-        """
-        client = self._get_client()
-        return cast(int, await client.delete(*keys)) if client else 0
+        try:
+            if not keys:
+                return 0
+            return int(await self.client.delete(*keys))
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis DELETE operation failed for keys {keys}: {e}")
+            raise RedisOperationError(f"DELETE operation failed: {e}") from e
 
     async def exists(self, *keys: str) -> int:
-        """
-        Check if one or more keys exist.
-        """
-        client = self._get_client()
-        return cast(int, await client.exists(*keys)) if client else 0
+        try:
+            if not keys:
+                return 0
+            return int(await self.client.exists(*keys))
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis EXISTS operation failed for keys {keys}: {e}")
+            raise RedisOperationError(f"EXISTS operation failed: {e}") from e
 
-    async def expire(self, key: str, seconds: int) -> bool:
-        """
-        Set an expiration time on a key in seconds.
-        """
-        client = self._get_client()
-        return cast(bool, await client.expire(key, seconds)) if client else False
+    async def expire(self, key: str, time: int) -> bool:
+        try:
+            return bool(await self.client.expire(key, time))
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis EXPIRE operation failed for key '{key}': {e}")
+            raise RedisOperationError(f"EXPIRE operation failed: {e}") from e
 
     async def ttl(self, key: str) -> int:
-        """
-        Get the time-to-live for a key in seconds.
-        """
-        client = self._get_client()
-        return cast(int, await client.ttl(key)) if client else 0
-
-    async def incr(self, key: str, amount: int = 1) -> int:
-        """
-        Increment the integer value of a key by a given amount.
-        """
-        client = self._get_client()
-        return cast(int, await client.incr(key, amount=amount)) if client else 0
-
-    async def decr(self, key: str, amount: int = 1) -> int:
-        """
-        Decrement the integer value of a key by a given amount.
-        """
-        client = self._get_client()
-        return cast(int, await client.decr(key, amount=amount)) if client else 0
-
-    async def hset(
-        self,
-        name: str,
-        key: str | None = None,
-        value: Any | None = None,
-        mapping: dict[str, Any] | None = None,
-    ) -> int:
-        """
-        Set a field in a hash, or multiple fields from a mapping.
-        """
-        client = self._get_client()
-        if not client:
-            return 0
-        return await client.hset(name, key=key, value=value, mapping=mapping)
+        try:
+            return int(await self.client.ttl(key))
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis TTL operation failed for key '{key}': {e}")
+            raise RedisOperationError(f"TTL operation failed: {e}") from e
 
     async def hget(self, name: str, key: str) -> str | None:
-        """
-        Get the value of a field in a hash.
-        """
-        client = self._get_client()
-        if not client:
-            return None
-        return cast(str | None, await client.hget(name, key))
+        try:
+            result = self.client.hget(name, key)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis HGET operation failed for hash '{name}', key '{key}': {e}")
+            raise RedisOperationError(f"HGET operation failed: {e}") from e
+
+    async def hset(self, name: str, mapping: dict[str, Any]) -> int:
+        try:
+            if not mapping:
+                return 0
+            result = self.client.hset(name, mapping=mapping)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis HSET operation failed for hash '{name}': {e}")
+            raise RedisOperationError(f"HSET operation failed: {e}") from e
 
     async def hgetall(self, name: str) -> dict[str, str]:
-        """
-        Get all fields and values in a hash.
-        """
-        client = self._get_client()
-        if not client:
-            return {}
-        return cast(dict[str, str], await client.hgetall(name))
+        try:
+            result = self.client.hgetall(name)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis HGETALL operation failed for hash '{name}': {e}")
+            raise RedisOperationError(f"HGETALL operation failed: {e}") from e
 
     async def hdel(self, name: str, *keys: str) -> int:
-        """
-        Delete one or more fields from a hash.
-        """
-        client = self._get_client()
-        if not client:
-            return 0
-        return await client.hdel(name, *keys)
+        try:
+            if not keys:
+                return 0
+            result = self.client.hdel(name, *keys)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis HDEL operation failed for hash '{name}', keys {keys}: {e}")
+            raise RedisOperationError(f"HDEL operation failed: {e}") from e
 
-    async def lpush(self, name: str, *values: Any) -> int:
-        """
-        Prepend one or more values to a list.
-        """
-        client = self._get_client()
-        if not client:
-            return 0
-        return await client.lpush(name, *values)
+    async def lpush(self, name: str, *values: str) -> int:
+        try:
+            if not values:
+                return 0
+            result = self.client.lpush(name, *values)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis LPUSH operation failed for list '{name}': {e}")
+            raise RedisOperationError(f"LPUSH operation failed: {e}") from e
 
-    async def rpush(self, name: str, *values: Any) -> int:
-        """
-        Append one or more values to a list.
-        """
-        client = self._get_client()
-        if not client:
-            return 0
-        return await client.rpush(name, *values)
+    async def rpush(self, name: str, *values: str) -> int:
+        try:
+            if not values:
+                return 0
+            result = self.client.rpush(name, *values)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis RPUSH operation failed for list '{name}': {e}")
+            raise RedisOperationError(f"RPUSH operation failed: {e}") from e
 
-    async def lpop(self, name: str) -> str | None:
-        """
-        Remove and return the first element of a list.
-        """
-        client = self._get_client()
-        if not client:
-            return None
-        return cast(str | None, await client.lpop(name))
+    async def lpop(self, name: str) -> str | list[Any] | None:
+        try:
+            result = self.client.lpop(name)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis LPOP operation failed for list '{name}': {e}")
+            raise RedisOperationError(f"LPOP operation failed: {e}") from e
 
-    async def rpop(self, name: str) -> str | None:
-        """
-        Remove and return the last element of a list.
-        """
-        client = self._get_client()
-        if not client:
-            return None
-        return cast(str | None, await client.rpop(name))
-
-    async def lrange(self, name: str, start: int, end: int) -> list[str]:
-        """
-        Get a range of elements from a list.
-        """
-        client = self._get_client()
-        if not client:
-            return []
-        return cast(list[str], await client.lrange(name, start, end))
+    async def rpop(self, name: str) -> str | list[Any] | None:
+        try:
+            result = self.client.rpop(name)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis RPOP operation failed for list '{name}': {e}")
+            raise RedisOperationError(f"RPOP operation failed: {e}") from e
 
     async def llen(self, name: str) -> int:
-        """
-        Get the length of a list.
-        """
-        client = self._get_client()
-        if not client:
-            return 0
-        return await client.llen(name)
+        try:
+            result = self.client.llen(name)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis LLEN operation failed for list '{name}': {e}")
+            raise RedisOperationError(f"LLEN operation failed: {e}") from e
 
-    async def sadd(self, name: str, *values: Any) -> int:
-        """
-        Add one or more members to a set.
-        """
-        client = self._get_client()
-        if not client:
-            return 0
-        return await client.sadd(name, *values)
+    async def sadd(self, name: str, *values: str) -> int:
+        try:
+            if not values:
+                return 0
+            result = self.client.sadd(name, *values)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis SADD operation failed for set '{name}': {e}")
+            raise RedisOperationError(f"SADD operation failed: {e}") from e
 
-    async def srem(self, name: str, *values: Any) -> int:
-        """
-        Remove one or more members from a set.
-        """
-        client = self._get_client()
-        if not client:
-            return 0
-        return await client.srem(name, *values)
+    async def srem(self, name: str, *values: str) -> int:
+        try:
+            if not values:
+                return 0
+            result = self.client.srem(name, *values)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis SREM operation failed for set '{name}': {e}")
+            raise RedisOperationError(f"SREM operation failed: {e}") from e
 
-    async def smembers(self, name: str) -> set[str]:
-        """
-        Get all members of a set.
-        """
-        client = self._get_client()
-        if not client:
-            return set()
-        return cast(set[str], await client.smembers(name))
+    async def smembers(self, name: str) -> builtins.set[Any]:
+        try:
+            result = self.client.smembers(name)
+            return await result if isinstance(result, Awaitable) else result
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis SMEMBERS operation failed for set '{name}': {e}")
+            raise RedisOperationError(f"SMEMBERS operation failed: {e}") from e
 
-    async def sismember(self, name: str, value: Any) -> bool:
-        """
-        Check if a member exists in a set.
-        """
-        client = self._get_client()
-        if not client:
-            return False
-        result = await client.sismember(name, value)
-        return bool(result)
+    async def sismember(self, name: str, value: str) -> bool:
+        try:
+            result = self.client.sismember(name, value)
+            return bool(await result if isinstance(result, Awaitable) else result)
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis SISMEMBER operation failed for set '{name}', value '{value}': {e}")
+            raise RedisOperationError(f"SISMEMBER operation failed: {e}") from e
 
-    async def acquire_lock(self, name: str, timeout: float | None = None, blocking: bool = True) -> Lock | None:
-        """
-        Acquire a lock and return the lock object if successful.
-        """
-        client = self._get_client()
-        if not client:
-            return None
-        lock: Lock = client.lock(name, timeout=timeout)
-        if await lock.acquire(blocking=blocking):
-            return lock
-        return None
+    async def incr(self, name: str, amount: int = 1) -> int:
+        try:
+            return int(await self.client.incr(name, amount))
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis INCR operation failed for key '{name}': {e}")
+            raise RedisOperationError(f"INCR operation failed: {e}") from e
 
-    async def release_lock(self, lock: Lock) -> None:
-        """
-        Release a lock.
-        """
-        await lock.release()
+    async def decr(self, name: str, amount: int = 1) -> int:
+        try:
+            return int(await self.client.decr(name, amount))
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis DECR operation failed for key '{name}': {e}")
+            raise RedisOperationError(f"DECR operation failed: {e}") from e
 
-    async def publish(self, channel: str, message: Any) -> int:
+    async def ping(self) -> bool:
+        try:
+            result = await self.client.ping()
+            return result is True or result in [b"PONG", "PONG"]
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis PING operation failed: {e}")
+            raise RedisOperationError(f"PING operation failed: {e}") from e
+
+    async def flushdb(self) -> bool:
+        try:
+            await self.client.flushdb()
+            return True
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis FLUSHDB operation failed: {e}")
+            raise RedisOperationError(f"FLUSHDB operation failed: {e}") from e
+
+    async def close(self) -> None:
+        """Close the Redis connection."""
+        try:
+            if hasattr(self.client, "close") and not self._is_fake:
+                await self.client.close()
+                logger.debug("Redis connection closed")
+        except Exception as e:
+            logger.warning(f"Error closing Redis connection: {e}")
+
+    async def publish(self, channel: str, message: str) -> int:
         """
         Publish a message to a channel.
-        """
-        client = self._get_client()
-        return cast(int, await client.publish(channel, message)) if client else 0
 
-    async def subscribe(self, *channels: str) -> PubSub | None:
-        """
-        Subscribe to one or more channels and return the PubSub object.
-        """
-        client = self._get_client()
-        if not client:
-            return None
-        pubsub = client.pubsub(ignore_subscribe_messages=True)
-        await pubsub.subscribe(*channels)
-        return cast(PubSub | None, pubsub)
+        Args:
+            channel: The channel name
+            message: The message to publish
 
-    def pipeline(self, transaction: bool = True) -> Pipeline | None:
+        Returns:
+            Number of subscribers that received the message
         """
-        Create a pipeline for executing multiple commands.
+        try:
+            result = await self.client.publish(channel, message)
+            logger.debug(f"Published message to channel '{channel}', reached {result} subscribers")
+            return int(result)
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis PUBLISH operation failed for channel '{channel}': {e}")
+            raise RedisOperationError(f"PUBLISH operation failed: {e}") from e
+
+    async def subscribe(self, *channels: str) -> PubSub:
         """
-        client = self._get_client()
-        return client.pipeline(transaction=transaction) if client else None
+        Subscribe to channels and return a pub/sub object.
+
+        Args:
+            *channels: Channel names to subscribe to
+
+        Returns:
+            RedisPubSub: Pub/sub object for managing subscriptions and receiving messages
+
+        Example:
+            pubsub = await client.subscribe("notifications", "alerts")
+            async for message in pubsub.listen():
+                print(f"Received: {message}")
+            await pubsub.close()
+        """
+        try:
+            pubsub = self.client.pubsub()
+            await pubsub.subscribe(*channels)
+            logger.debug(f"Created subscription to channels: {channels}")
+            return pubsub
+        except (RedisError, Exception) as e:
+            logger.error(f"Redis SUBSCRIBE operation failed for channels {channels}: {e}")
+            raise RedisOperationError(f"SUBSCRIBE operation failed: {e}") from e
 
 
-# singleton instance of RedisManager
+###############################################################################
+
+
+class RedisManager:
+    """Manages Redis connections for different providers."""
+
+    def __init__(self) -> None:
+        self._client: RedisClient | None = None
+        self._provider: RedisProvider | None = None
+
+    async def setup(  # noqa: C901
+        self,
+        provider: str | RedisProvider = RedisProvider.LOCAL,
+        redis_url: str | None = None,
+        # Connection parameters (only used when redis_url is not provided for local)
+        host: str = "localhost",
+        port: int = 6379,
+        password: str | None = None,
+        db: int = 0,
+        # Additional connection parameters
+        socket_connect_timeout: int = 5,
+        socket_timeout: int = 5,
+        max_connections: int | None = None,
+        decode_responses: bool = True,
+        fallback_to_fake: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Initialize Redis client with specified provider and parameters.
+
+        Args:
+            provider: Redis provider type ('local', 'upstash', or 'fake')
+            redis_url: Redis connection URL (e.g., 'redis://localhost:6379/0' or Upstash URL)
+                      If not provided for local provider, will construct from host/port/password/db
+            host: Redis server host (used only if redis_url not provided for local)
+            port: Redis server port (used only if redis_url not provided for local)
+            password: Redis password (used only if redis_url not provided for local)
+            db: Redis database number (used only if redis_url not provided for local)
+            socket_connect_timeout: Connection timeout in seconds
+            socket_timeout: Socket timeout in seconds
+            max_connections: Maximum number of connections in connection pool
+            decode_responses: Whether to decode responses to strings
+            fallback_to_fake: Whether to fallback to fake Redis on connection failure
+            **kwargs: Additional connection parameters (ssl_cert_reqs, ssl_ca_certs, etc.)
+
+        Examples:
+            # Local Redis with URL
+            await manager.setup(provider="local", redis_url="redis://localhost:6379/0")
+
+            # Local Redis with individual parameters
+            await manager.setup(provider="local", host="localhost", port=6379, db=0)
+
+            # Upstash Redis
+            await manager.setup(provider="upstash", redis_url="redis://upstash-url:port")
+
+            # Fake Redis for testing
+            await manager.setup(provider="fake")
+
+        Raises:
+            RedisConnectionError: If connection fails and fallback is disabled
+            ValueError: If invalid provider or missing required parameters
+        """
+        if isinstance(provider, str):
+            try:
+                provider = RedisProvider(provider.lower())
+            except ValueError as exp:
+                raise ValueError(f"Invalid provider '{provider}'. Must be one of: {list(RedisProvider)}") from exp
+
+        self._provider = provider
+
+        try:
+            if provider == RedisProvider.UPSTASH:
+                if not redis_url:
+                    raise ValueError("redis_url is required for upstash provider")
+                await self._setup_from_url(
+                    url=redis_url,
+                    socket_connect_timeout=socket_connect_timeout,
+                    socket_timeout=socket_timeout,
+                    decode_responses=decode_responses,
+                    **kwargs,
+                )
+            elif provider == RedisProvider.FAKE:
+                await self._setup_fake(decode_responses=decode_responses)
+            elif redis_url:
+                await self._setup_from_url(
+                    url=redis_url,
+                    socket_connect_timeout=socket_connect_timeout,
+                    socket_timeout=socket_timeout,
+                    max_connections=max_connections,
+                    decode_responses=decode_responses,
+                    **kwargs,
+                )
+            else:
+                await self._setup_local(
+                    host=host,
+                    port=port,
+                    password=password,
+                    db=db,
+                    socket_connect_timeout=socket_connect_timeout,
+                    socket_timeout=socket_timeout,
+                    max_connections=max_connections,
+                    decode_responses=decode_responses,
+                    **kwargs,
+                )
+            # Test connection
+            if self._client:
+                await self._client.ping()
+                logger.info(f"Successfully connected to Redis provider: {provider.value}")
+
+        except Exception as e:
+            logger.error(f"Failed to connect to Redis provider '{provider.value}': {e}")
+
+            if fallback_to_fake and provider != RedisProvider.FAKE:
+                logger.warning("Falling back to fake Redis for development/testing")
+                try:
+                    await self._setup_fake(decode_responses=decode_responses)
+                    self._provider = RedisProvider.FAKE
+                    logger.info("Successfully initialized fake Redis fallback")
+                except Exception as fallback_error:
+                    logger.error(f"Fallback to fake Redis failed: {fallback_error}")
+                    raise RedisConnectionError(f"Redis connection failed and fallback failed: {fallback_error}") from e
+            else:
+                raise RedisConnectionError(f"Redis connection failed: {e}") from e
+
+    async def _setup_from_url(self, url: str, max_connections: int | None = None, **kwargs: Any) -> None:
+        """Initialize Redis connection from URL (works for both local and Upstash)."""
+        if not url:
+            raise ValueError("redis_url is required")
+
+        if max_connections:
+            # Create connection pool for better performance
+            pool = redis.ConnectionPool.from_url(url, max_connections=max_connections, **kwargs)
+            redis_client = redis.Redis(connection_pool=pool)
+        else:
+            redis_client = redis.Redis.from_url(url, **kwargs)
+
+        self._client = RedisClient(redis_client)
+        logger.debug(f"Initialized Redis client from URL: {self._mask_url(url)}")
+
+    async def _setup_local(self, **kwargs: Any) -> None:
+        """Initialize local Redis connection from individual parameters."""
+        max_connections = kwargs.pop("max_connections", None)
+
+        if max_connections:
+            pool = redis.ConnectionPool(max_connections=max_connections, **kwargs)
+            redis_client = redis.Redis(connection_pool=pool)
+        else:
+            redis_client = redis.Redis(**kwargs)
+
+        self._client = RedisClient(redis_client)
+        logger.debug(f"Initialized local Redis client: {kwargs.get('host', 'localhost')}:{kwargs.get('port', 6379)}")
+
+    def _mask_url(self, url: str) -> str:
+        """Mask sensitive information in URL for logging."""
+        # Mask password in URL for logging: redis://user:password@host:port -> redis://user:***@host:port
+        return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", url)
+
+    async def _setup_fake(self, decode_responses: bool) -> None:
+        """Initialize fake Redis connection for testing."""
+        redis_client = fakeredis.aioredis.FakeRedis(decode_responses=decode_responses)
+        self._client = RedisClient(redis_client)
+        logger.debug("Initialized fake Redis client")
+
+    def get_client(self) -> RedisClient:
+        """Get the Redis client instance."""
+        if not self._client:
+            raise RuntimeError("Redis client not initialized. Call setup() first.")
+        return self._client
+
+    @property
+    def provider(self) -> RedisProvider | None:
+        """Get the current Redis provider."""
+        return self._provider
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if Redis client is initialized."""
+        return self._client is not None
+
+    async def check_health(self) -> dict[str, Any]:
+        """Perform a health check on the Redis connection."""
+        if not self._client:
+            raise RuntimeError("Redis client not initialized")
+
+        try:
+            ping_result = await self._client.ping()
+            return {
+                "provider": self._provider.value if self._provider else None,
+                "connected": True,
+                "ping": ping_result,
+                "error": None,
+            }
+        except Exception as e:
+            logger.error(f"Redis health check failed: {e}")
+            return {
+                "provider": self._provider.value if self._provider else None,
+                "connected": False,
+                "ping": False,
+                "error": str(e),
+            }
+
+    async def close(self) -> None:
+        """Close the Redis connection."""
+        if self._client:
+            try:
+                if self._client.client:
+                    await self._client.close()
+                    logger.info("Redis connection closed successfully")
+            except Exception as e:
+                logger.error(f"Error closing Redis connection: {e}")
+            finally:
+                self._client = None
+                self._provider = None
+
+
+###############################################################################
+## Global Redis manager instance for dependency injection
+###############################################################################
 redis_mgr = RedisManager()
 
 
-###############################################################
-# Utility decorators
-###############################################################
-def cached(
-    expire: int = 300,
-    key_prefix: str = "cache",
-    key_builder: Callable[..., str] | None = None,
-) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
+def get_redis() -> RedisClient:
     """
-    A decorator to cache the results of a function in Redis.
+    FastAPI dependency function to get Redis client instance.
 
-    Args:
-        expire: Expiration time in seconds for the cached item. Defaults to 300 seconds (5 minutes).
-        key_prefix: Prefix for the cache key. Defaults to "cache".
-        key_builder: An optional callable to build the cache key.
-                        It should accept the same arguments as the decorated function
-                        and return a string.
+    This function is designed to be used with FastAPI's Depends() for dependency injection.
+
     Returns:
-        A decorator that caches the result of the function.
-    Example:
-        @cached(expire=600, key_prefix="my_cache")
-        async def my_function(arg1, arg2):
-            # Function logic here
-            return result
+        RedisClient: The Redis client instance
 
-        # Call the function with arguments
-        result = await my_function(arg1, arg2)
-        # The result will be cached and retrieved from Redis if the key exists.
-    """
+    Raises:
+        RuntimeError: If global Redis manager is not set or not initialized
 
-    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
-        @functools.wraps(func)
-        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            if key_builder:
-                cache_key = key_builder(*args, **kwargs)
-            else:
-                # Generate a default cache key based on function name and arguments
-                # Convert args and kwargs to a consistent string representation
-                args_str = json.dumps(args, sort_keys=True, default=str)
-                kwargs_str = json.dumps(kwargs, sort_keys=True, default=str)
-                cache_key = f"{key_prefix}:{func.__name__}:{args_str}:{kwargs_str}"
+    Usage:
+        from fastapi import Depends
+        from redis import get_redis, RedisClient
 
-            cached_result = await redis_mgr.get(cache_key)
-            if cached_result:
-                logger.debug(f"Cache hit for key: {cache_key}")
-                try:
-                    return cast(R, json.loads(cached_result))
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to decode cached value for key: {cache_key}. Recomputing.")
-
-            logger.debug(f"Cache miss for key: {cache_key}. Recomputing.")
-            result = await func(*args, **kwargs)
-            await redis_mgr.set_value(cache_key, json.dumps(result, default=str), expire)
-            return result
-
-        return wrapper
-
-    return decorator
-
-
-def locked(
-    lock_name: str | None = None,
-    timeout: float | None = None,
-) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
-    """
-    A decorator to acquire a distributed lock before executing the decorated function.
-
-    Args:
-        lock_name: The name of the lock. If None, the lock name will be derived from the function name.
-        timeout: The maximum time in seconds to hold the lock. If None, the lock will be held indefinitely.
-    Returns:
-        A decorator that acquires a lock before executing the function.
-    Example:
-        @locked(lock_name="my_lock", timeout=10)
-        async def my_function(arg1, arg2):
-            # Function logic here
-            return result
-
-        # The function will only execute if the lock is acquired successfully.
-        If the lock cannot be acquired, it will log a warning and proceed without the lock.
-    """
-
-    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
-        @functools.wraps(func)
-        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            key = lock_name if lock_name else f"lock:{func.__name__}"
-            lock = await redis_mgr.acquire_lock(key, timeout=timeout)
-            if not lock:
-                logger.warning(f"Failed to acquire lock: {key}")
-                # Depending on desired behavior, you might raise an exception here
-                # or return a default value. For now, we'll proceed without the lock.
-                return await func(*args, **kwargs)
+        @app.get("/cache/{key}")
+        async def get_cache_item(key: str, redis: RedisClient = Depends(get_redis)):
             try:
-                return await func(*args, **kwargs)
-            finally:
-                await redis_mgr.release_lock(lock)
+                value = await redis.get(key)
+                return {"key": key, "value": value}
+            except RedisOperationError:
+                raise HTTPException(status_code=500, detail="Cache unavailable")
 
-        return wrapper
+        # Or with error recovery
+        @redis_safe(default=None)
+        async def get_cached_data(redis: RedisClient, cache_key: str):
+            return await redis.get(cache_key)
 
-    return decorator
-
-
-###############################################################
-# Utility functions for redis operations
-###############################################################
-async def blacklist_add(item: str, expire: int | None = None) -> bool:
+        @app.get("/data/{id}")
+        async def get_data(id: str, redis: RedisClient = Depends(get_redis)):
+            cached = await get_cached_data(redis, f"data:{id}")
+            if cached:
+                return {"data": cached, "from_cache": True}
+            # Fetch from database...
+            return {"data": "from_db", "from_cache": False}
     """
-    Add an item to the blacklist.
-    """
-    return await redis_mgr.set_value(f"blacklist:{item}", "1", expire)
-
-
-async def blacklist_exists(item: str) -> bool:
-    """
-    Check if an item is blacklisted.
-    """
-    result = await redis_mgr.exists(f"blacklist:{item}")
-    return result > 0
-
-
-async def blacklist_delete(item: str) -> bool:
-    """
-    Remove an item from the blacklist.
-    """
-    result = await redis_mgr.delete(f"blacklist:{item}")
-    return result > 0
-
-
-async def userinfo_get(user_id: str) -> str | None:
-    """
-    Get user information from the database.
-    """
-    return await redis_mgr.get(f"user:{user_id}")
-
-
-async def userinfo_set(user_id: str, user_data: str, expire: int = 300) -> bool:
-    """
-    Set user information in the database.
-    """
-    return await redis_mgr.set_value(f"user:{user_id}", user_data, expire)
-
-
-async def user2role_get(user_id: str) -> list[str]:
-    """
-    Get user role from the database.
-    """
-    roles = await redis_mgr.smembers(f"user:{user_id}:role")
-    return list(roles)
-
-
-async def user2role_set(user_id: str, roles: list[str] | None = None) -> bool:
-    """
-    Set user role in the database.
-    """
-    key = f"user:{user_id}:role"
-    if roles is None:
-        result = await redis_mgr.delete(key)
-        return result > 0
-
-    result = await redis_mgr.sadd(key, *roles)
-    return result == len(roles)
-
-
-async def tag2role_get(tag: str) -> list[str]:
-    """
-    Get tag role from the database.
-    """
-    roles = await redis_mgr.smembers(f"tag:{tag}:role")
-    return list(roles)
-
-
-async def tag2role_set(tag: str, roles: list[str] | None = None) -> bool:
-    """
-    Set tag role in the database.
-    """
-    key = f"tag:{tag}:role"
-    if roles is None:
-        result = await redis_mgr.delete(key)
-        return result > 0
-
-    result = await redis_mgr.sadd(key, *roles)
-    return result == len(roles)
+    return redis_mgr.get_client()
