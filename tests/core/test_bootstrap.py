@@ -34,7 +34,7 @@ def mock_settings():
 def mock_db_mgr():
     """Fixture for mocking db_mgr."""
     with patch("faster.core.bootstrap.db_mgr", new_callable=MagicMock) as mock:
-        mock.setup = MagicMock()
+        mock.setup = AsyncMock()
         mock.close = AsyncMock()
         mock.check_health = AsyncMock(return_value={"master": True})
         yield mock
@@ -92,9 +92,9 @@ async def test_setup_all_no_db_url(mock_settings, mock_db_mgr, mock_redis_mgr):
 
 
 @pytest.mark.asyncio
-async def test_close_all(mock_db_mgr, mock_redis_mgr):
+async def test_teardown_all(mock_db_mgr, mock_redis_mgr):
     app = FastAPI()
-    await bootstrap._close_all(app)
+    await bootstrap._teardown_all(app)
 
     mock_db_mgr.close.assert_called_once()
     mock_redis_mgr.close.assert_called_once()
@@ -151,7 +151,7 @@ def test_create_app_lifespan(mock_settings):
 
     with (
         patch("faster.core.bootstrap._setup_all") as setup_mock,
-        patch("faster.core.bootstrap._close_all") as close_mock,
+        patch("faster.core.bootstrap._teardown_all") as close_mock,
         patch("faster.core.bootstrap.refresh_status"),
     ):
         with TestClient(app):

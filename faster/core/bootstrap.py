@@ -68,7 +68,7 @@ async def _setup_all(app: FastAPI, settings: Settings) -> None:
     # Initialize database
     if settings.database_url:
         logger.info("Initializing database...")
-        db_mgr.setup(
+        await db_mgr.setup(
             settings.database_url,
             settings.database_pool_size,
             settings.database_max_overflow,
@@ -87,7 +87,7 @@ async def _setup_all(app: FastAPI, settings: Settings) -> None:
     )
 
 
-async def _close_all(app: FastAPI) -> None:
+async def _teardown_all(app: FastAPI) -> None:
     # Close database connection
     logger.info("Closing database connection...")
     await db_mgr.close()
@@ -208,7 +208,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Starting application...")
         try:
-            logger.info("Initializing resources...")
+            logger.info("Setting up all resources...")
             await _setup_all(app, settings)
 
             final_startup_handler = startup_handler or default_startup_handler
@@ -224,8 +224,8 @@ def create_app(
         ########################################################################
 
         try:
-            logger.info("Shutting down resources...")
-            await _close_all(app)
+            logger.info("Tearing down all resources...")
+            await _teardown_all(app)
 
             logger.info("Shutting down application...")
             final_shutdown_handler = shutdown_handler or default_shutdown_handler

@@ -1,5 +1,6 @@
 """Unit tests for the DatabaseManager."""
 
+import asyncio
 import logging
 from unittest.mock import MagicMock, patch
 
@@ -58,14 +59,17 @@ class TestDatabaseManagerInitialization:
         assert db_manager.master_session is None
         assert db_manager.replica_session is None
 
-    def test_setup_master_only_success(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock, caplog):
+    @pytest.mark.asyncio
+    async def test_setup_master_only_success(
+        self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock, caplog
+    ):
         """
         Arrange: A DatabaseManager and a mocked engine creator.
         Act: Call setup with only a master URL.
         Assert: Correctly initializes the master engine and session, leaving replica as None.
         """
         with caplog.at_level(logging.INFO):
-            db_manager.setup(master_url=TEST_MASTER_URL)
+            await db_manager.setup(master_url=TEST_MASTER_URL)
 
         mock_create_async_engine.assert_called_once()
         assert db_manager.master_engine is not None
@@ -74,14 +78,17 @@ class TestDatabaseManagerInitialization:
         assert db_manager.replica_session is None
         assert "Master DB engine initialized" in caplog.text
 
-    def test_setup_with_replica_success(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock, caplog):
+    @pytest.mark.asyncio
+    async def test_setup_with_replica_success(
+        self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock, caplog
+    ):
         """
         Arrange: A DatabaseManager and a mocked engine creator.
         Act: Call setup with both master and replica URLs.
         Assert: Correctly initializes both master and replica engines and sessions.
         """
         with caplog.at_level(logging.INFO):
-            db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL)
+            await db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL)
 
         assert mock_create_async_engine.call_count == 2
         assert db_manager.master_engine is not None
@@ -98,7 +105,8 @@ class TestDatabaseManagerInitialization:
             (TEST_MASTER_URL, {"pool_size": 10, "max_overflow": 20}),
         ],
     )
-    def test_make_engine_arguments(
+    @pytest.mark.asyncio
+    async def test_make_engine_arguments(
         self,
         db_manager: DatabaseManager,
         mock_create_async_engine: MagicMock,
@@ -110,13 +118,14 @@ class TestDatabaseManagerInitialization:
         Act: Call setup with different database URLs.
         Assert: The engine is created with the correct arguments based on the DB type.
         """
-        db_manager.setup(master_url=url)
+        await db_manager.setup(master_url=url)
 
         call_args = mock_create_async_engine.call_args[1]
         for key, value in expected_args.items():
             assert call_args[key] == value
 
-    def test_setup_raises_dberror_on_failure(
+    @pytest.mark.asyncio
+    async def test_setup_raises_dberror_on_failure(
         self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock, caplog
     ):
         """
@@ -132,7 +141,7 @@ class TestDatabaseManagerInitialization:
                 match="Failed to initialize database engines: Connection refused",
             ),
         ):
-            db_manager.setup(master_url=TEST_MASTER_URL)
+            await db_manager.setup(master_url=TEST_MASTER_URL)
         assert "Failed to initialize database engines" in caplog.text
 
     @pytest.mark.asyncio
@@ -144,7 +153,7 @@ class TestDatabaseManagerInitialization:
         Act: Call the close method.
         Assert: Both engines' dispose methods are called and attributes are reset to None.
         """
-        db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL)
+        await db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL)
         master_engine_mock = db_manager.master_engine
         replica_engine_mock = db_manager.replica_engine
 
@@ -165,7 +174,7 @@ class TestDatabaseManagerSessionHandling:
     @pytest.fixture(autouse=True)
     def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock):
         """Auto-used fixture to initialize the db_manager for session tests."""
-        db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL)
+        asyncio.run(db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL))
 
     @pytest.mark.asyncio
     async def test_get_db_raises_dberror_if_not_initialized(self):
@@ -272,7 +281,7 @@ class TestDatabaseManagerModelsAndHealth:
     @pytest.fixture(autouse=True)
     def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock):
         """Auto-used fixture to initialize the db_manager for these tests."""
-        db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL)
+        asyncio.run(db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL))
 
     @pytest.mark.asyncio
     async def test_init_db_models_raises_dberror_if_not_initialized(self):

@@ -39,7 +39,7 @@ class DatabaseManager:
 
         return create_async_engine(url, **engine_kwargs)
 
-    def setup(
+    async def setup(
         self,
         master_url: str,
         pool_size: int = 10,
