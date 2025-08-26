@@ -15,4 +15,7 @@ migrations/
 # Virtual environments
 .venv/
 
+# real environment variables
+.env
+
 .coverage
