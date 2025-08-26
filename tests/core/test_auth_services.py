@@ -20,7 +20,7 @@ def auth_service() -> AuthService:
 class TestAuthServiceJWT:
     """Tests for JWT verification in AuthService."""
 
-    def test_verify_jwt_success(self, auth_service: AuthService):
+    def test_verify_jwt_success(self, auth_service: AuthService) -> None:
         """
         Tests that a valid JWT is decoded successfully.
         """
@@ -76,9 +76,9 @@ class TestAuthServiceJWT:
 class TestAuthServiceRoles:
     """Tests for role and access control logic in AuthService."""
 
-    async def test_get_user_roles_returns_correct_roles(self, auth_service: AuthService, mocker):
+    async def test_get_roles_by_user_id_returns_correct_roles(self, auth_service: AuthService, mocker):
         """
-        Tests that get_user_roles correctly fetches and returns a set of roles.
+        Tests that get_roles_by_user_id correctly fetches and returns a set of roles.
         """
         # Arrange
         mock_user2role_get = mocker.patch(
@@ -87,38 +87,38 @@ class TestAuthServiceRoles:
         )
 
         # Act
-        roles = await auth_service.get_user_roles(TEST_USER_ID)
+        roles = await auth_service.get_roles_by_user_id(TEST_USER_ID)
 
         # Assert
         mock_user2role_get.assert_awaited_once_with(TEST_USER_ID)
         assert roles == {"admin", "editor"}
 
-    async def test_get_user_roles_returns_empty_set_for_no_roles(self, auth_service: AuthService, mocker):
+    async def test_get_roles_by_user_id_returns_empty_set_for_no_roles(self, auth_service: AuthService, mocker):
         """
-        Tests that get_user_roles returns an empty set if the user has no roles.
+        Tests that get_roles_by_user_id returns an empty set if the user has no roles.
         """
         # Arrange
         mocker.patch("faster.core.auth.services.user2role_get", return_value=None)
 
         # Act
-        roles = await auth_service.get_user_roles(TEST_USER_ID)
+        roles = await auth_service.get_roles_by_user_id(TEST_USER_ID)
 
         # Assert
         assert roles == set()
 
-    async def test_get_user_roles_returns_empty_set_for_empty_user_id(self, auth_service: AuthService):
+    async def test_get_roles_by_user_id_returns_empty_set_for_empty_user_id(self, auth_service: AuthService):
         """
-        Tests that get_user_roles returns an empty set if user_id is empty.
+        Tests that get_roles_by_user_id returns an empty set if user_id is empty.
         """
         # Act
-        roles = await auth_service.get_user_roles("")
+        roles = await auth_service.get_roles_by_user_id("")
 
         # Assert
         assert roles == set()
 
-    async def test_get_roles_for_tags_returns_correct_roles(self, auth_service: AuthService, mocker):
+    async def test_get_roles_by_tags_returns_correct_roles(self, auth_service: AuthService, mocker):
         """
-        Tests that get_roles_for_tags aggregates roles from multiple tags.
+        Tests that get_roles_by_tags aggregates roles from multiple tags.
         """
 
         # Arrange
@@ -135,18 +135,18 @@ class TestAuthServiceRoles:
         )
 
         # Act
-        roles = await auth_service.get_roles_for_tags(["protected", "editor-content"])
+        roles = await auth_service.get_roles_by_tags(["protected", "editor-content"])
 
         # Assert
         assert mock_tag2role_get.await_count == 2
         assert roles == {"admin", "editor"}
 
-    async def test_get_roles_for_tags_returns_empty_set_for_no_tags(self, auth_service: AuthService):
+    async def test_get_roles_by_tags_returns_empty_set_for_no_tags(self, auth_service: AuthService):
         """
-        Tests that get_roles_for_tags returns an empty set if no tags are provided.
+        Tests that get_roles_by_tags returns an empty set if no tags are provided.
         """
         # Act
-        roles = await auth_service.get_roles_for_tags([])
+        roles = await auth_service.get_roles_by_tags([])
 
         # Assert
         assert roles == set()
@@ -164,7 +164,7 @@ class TestAuthServiceAccessCheck:
             ({"admin", "viewer"}, {"admin"}, True),  # User has the exact required role
             ({"viewer"}, {"admin", "editor"}, False),  # User has no matching roles
             (set(), {"admin"}, False),  # User has no roles
-            ({"admin"}, set(), True),  # Endpoint requires no roles
+            ({"admin"}, set(), False),  # Endpoint requires no roles
         ],
     )
     async def test_check_access_logic(
@@ -179,8 +179,8 @@ class TestAuthServiceAccessCheck:
         Tests the access logic with various combinations of user and required roles.
         """
         # Arrange
-        mocker.patch.object(auth_service, "get_user_roles", return_value=user_roles)
-        mocker.patch.object(auth_service, "get_roles_for_tags", return_value=required_roles)
+        mocker.patch.object(auth_service, "get_roles_by_user_id", return_value=user_roles)
+        mocker.patch.object(auth_service, "get_roles_by_tags", return_value=required_roles)
 
         # Act
         has_access = await auth_service.check_access(TEST_USER_ID, ["some-tag"])
@@ -188,17 +188,17 @@ class TestAuthServiceAccessCheck:
         # Assert
         assert has_access is expected_result
 
-    async def test_check_access_allows_if_no_required_roles(self, auth_service: AuthService, mocker):
+    async def test_check_access_denies_if_no_required_roles(self, auth_service: AuthService, mocker):
         """
-        Tests that access is granted if the endpoint has no required roles,
+        Tests that access is denied if the endpoint has no required roles,
         regardless of user roles.
         """
         # Arrange
-        mocker.patch.object(auth_service, "get_user_roles", return_value={"viewer"})
-        mocker.patch.object(auth_service, "get_roles_for_tags", return_value=set())
+        mocker.patch.object(auth_service, "get_roles_by_user_id", return_value={"viewer"})
+        mocker.patch.object(auth_service, "get_roles_by_tags", return_value=set())
 
         # Act
         has_access = await auth_service.check_access(TEST_USER_ID, ["public-tag"])
 
         # Assert
-        assert has_access is True
+        assert has_access is False

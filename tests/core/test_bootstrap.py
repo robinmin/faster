@@ -104,7 +104,7 @@ def test_setup_middlewares(mock_settings, mock_auth_service):
     app = FastAPI()
     bootstrap._steup_middlewares(app, mock_settings)
 
-    # Gzip, TrustedHost, Auth, CORS
+    # Gzip, TrustedHost, Auth, AuthProxy, CORS
     assert len(app.user_middleware) == 4
 
 
@@ -201,7 +201,7 @@ def test_create_app_with_routers_and_middlewares(mock_settings):
         middlewares=[CustomMiddleware],
     )
 
-    # Gzip, TrustedHost, Auth, CORS, Custom
+    # Gzip, TrustedHost, Auth, AuthProxy, CORS, Custom
     assert len(app.user_middleware) == 5
 
     # Check if the custom route exists in the app's routes

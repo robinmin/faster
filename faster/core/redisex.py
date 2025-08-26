@@ -1,4 +1,12 @@
+import json
+import logging
+from typing import Any
+
+from supabase_auth.types import User as UserProfile
+
 from .redis import get_redis
+
+logger = logging.getLogger(__name__)
 
 ###############################################################################
 # Utility functions for redis operations
@@ -82,3 +90,32 @@ async def tag2role_set(tag: str, roles: list[str] | None = None) -> bool:
 
     result = await get_redis().sadd(key, *roles)
     return result == len(roles)
+
+
+# =============================================================================
+# Utility Functions  for Auth Module
+# =============================================================================
+async def set_user_profile(user_id: str, profile: UserProfile, ttl: int = 3600) -> bool:
+    """Cache user profile data."""
+    return bool(await get_redis().set(f"user_profile:{user_id}", profile.model_dump_json(), ttl))
+
+
+async def get_user_profile(user_id: str) -> UserProfile | None:
+    """Retrieve cached user profile data."""
+    data = await get_redis().get(f"user_profile:{user_id}")
+    if data:
+        return UserProfile.model_validate_json(data)
+    return None
+
+
+async def set_jwks_key(key_id: str, key_data: dict[str, Any], ttl: int = 3600) -> bool:
+    """Cache JWKS key data."""
+    return bool(await get_redis().set(f"jwks_key:{key_id}", json.dumps(key_data), ttl))
+
+
+async def get_jwks_key(key_id: str) -> dict[str, Any] | None:
+    """Retrieve cached JWKS key data."""
+    data = await get_redis().get(f"jwks_key:{key_id}")
+    if data:
+        return dict(json.loads(data))
+    return None

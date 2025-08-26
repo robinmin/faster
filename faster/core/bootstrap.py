@@ -24,9 +24,9 @@ from .auth.services import AuthService
 from .config import Settings, default_settings
 from .database import db_mgr
 from .exceptions import (
-    AppError,
+    APIError,
     DBError,
-    app_exception_handler,
+    api_exception_handler,
     custom_validation_exception_handler,
     db_exception_handler,
     http_exception_handler,
@@ -40,6 +40,19 @@ PROPAGATE_LOGGERS = [
     "uvicorn.error",
     "uvicorn.access",
     "sqlalchemy.engine",
+]
+
+DEFAULT_ALLOWED_PATHS = [
+    "/docs",  # Swagger UI
+    "/docs/oauth2-redirect",  # Swagger OAuth2 redirect
+    "/redoc",  # ReDoc UI
+    "/openapi.json",  # OpenAPI schema
+    "/health",  # Health check endpoint
+    "/metrics",  # Prometheus metrics endpoint
+    "/favicon.ico",  # Favicon
+    "/static",  # Static files
+    "/static/",  # Static files
+    "/static/*",  # Static files
 ]
 
 logger = logging.getLogger(__name__)
@@ -106,13 +119,23 @@ def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] 
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts or ["*"])
 
     if settings.auth_endabled:
+        auth_service = AuthService(
+            jwt_secret=settings.jwt_secret_key or "",
+            algorithms=(settings.jwt_algorithm.split(",") if settings.jwt_algorithm else None),
+            expiry_minutes=settings.jwt_expiry_minutes,
+            supabase_url=settings.supabase_url or "",
+            supabase_anon_key=settings.supabase_anon_key or "",
+            supabase_service_key=settings.supabase_service_key or "",
+            supabase_jwks_url=settings.supabase_jwks_url or "",
+            # supabase_client_id = settings.supabase_client_id or "",
+            supabase_audience=settings.supabase_audience or "",
+            auto_refresh_jwks=settings.auto_refresh_jwks,
+        )
         app.add_middleware(
             AuthMiddleware,
-            auth_service=AuthService(
-                jwt_secret=settings.jwt_secret_key or "",
-                algorithms=(settings.jwt_algorithm.split(",") if settings.jwt_algorithm else None),
-                expiry_minutes=settings.jwt_expiry_minutes,
-            ),
+            auth_service=auth_service,
+            allowed_paths=DEFAULT_ALLOWED_PATHS,
+            require_auth=True,
         )
 
     if settings.cors_enabled:
@@ -259,7 +282,7 @@ def create_app(
             app.include_router(router)
 
     # Include exception handlers
-    app.add_exception_handler(AppError, app_exception_handler)  # type: ignore
+    app.add_exception_handler(APIError, api_exception_handler)  # type: ignore
     app.add_exception_handler(DBError, db_exception_handler)  # type: ignore
     app.add_exception_handler(StarletteHTTPError, http_exception_handler)  # type: ignore
     app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore
