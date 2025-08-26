@@ -8,7 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPError
 from faster.core.schemas import APIResponse
 
 
-class AppError(Exception):
+class APIError(Exception):
     """Base class for all application exceptions."""
 
     def __init__(
@@ -23,22 +23,22 @@ class AppError(Exception):
         self.errors = errors or []
 
 
-class HTTPError(AppError):
+class HTTPError(APIError):
     """Custom HTTP exception class."""
 
     def __init__(self, message: str, status_code: int, errors: list[dict[str, Any]] | None = None) -> None:
         super().__init__(message, status_code, errors)
 
 
-class ValidationError(AppError):
+class ValidationError(APIError):
     """Custom validation exception class."""
 
     def __init__(self, errors: list[dict[str, Any]]) -> None:
         super().__init__("Validation error", status_code=422, errors=errors)
 
 
-async def app_exception_handler(_: Request, exc: AppError) -> APIResponse[Any]:
-    """Global exception handler for AppError."""
+async def api_exception_handler(_: Request, exc: APIError) -> APIResponse[Any]:
+    """Global exception handler for APIError."""
     return APIResponse(
         status="error",
         message=exc.message,
@@ -74,7 +74,7 @@ async def custom_validation_exception_handler(_: Request, exc: RequestValidation
     )
 
 
-class DBError(AppError):
+class DBError(APIError):
     """Custom DB exception for uniform error handling."""
 
 
@@ -82,6 +82,20 @@ async def db_exception_handler(request: Request, exp: DBError) -> APIResponse[An
     """Global exception handler for DBError."""
     return APIResponse(
         status="db error",
+        message=exp.message,
+        status_code=exp.status_code,
+        data=exp.errors if exp.errors else None,
+    )
+
+
+class AuthError(APIError):
+    """Custom DB exception for authorization error."""
+
+
+async def auth_exception_handler(request: Request, exp: DBError) -> APIResponse[Any]:
+    """Global exception handler for DBError."""
+    return APIResponse(
+        status="Authentication failed",
         message=exp.message,
         status_code=exp.status_code,
         data=exp.errors if exp.errors else None,
