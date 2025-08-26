@@ -1,4 +1,4 @@
-SYNC_THRESHOLD = 600  # seconds
+# SYNC_THRESHOLD = 600  # seconds
 
 
 # async def get_current_user(request: Request, db: Session):
