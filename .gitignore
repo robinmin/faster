@@ -10,7 +10,7 @@ migrations/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-faster/core/authv0/
+
 
 # Virtual environments
 .venv/
