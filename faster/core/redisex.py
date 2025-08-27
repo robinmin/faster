@@ -1,12 +1,13 @@
 import json
-import logging
 from typing import Any
 
 from supabase_auth.types import User as UserProfile
 
+from .logger import get_logger
 from .redis import get_redis
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
 
 ###############################################################################
 # Utility functions for redis operations
