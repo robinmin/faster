@@ -4,15 +4,16 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from enum import Enum
 import json
-import logging
 from typing import Any, Generic, TypeVar
 import uuid
 
 from pydantic import BaseModel, Field, model_validator
 
+from .logger import get_logger
 from .redis import RedisClient, get_redis
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
 T = TypeVar("T")
 
 
