@@ -1,6 +1,5 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-import logging
 from typing import TypedDict
 
 from sqlalchemy import text
@@ -8,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from faster.core.exceptions import DBError
+from .exceptions import DBError
+from .logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EngineKwargs(TypedDict, total=False):
