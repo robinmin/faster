@@ -28,7 +28,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from enum import Enum
 from functools import wraps
-import logging
 import re
 from typing import Any, ParamSpec, TypeVar
 
@@ -37,7 +36,9 @@ import redis.asyncio as redis
 from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
 
-logger = logging.getLogger(__name__)
+from .logger import get_logger
+
+logger = get_logger(__name__)
 
 T = TypeVar("T")
 P = ParamSpec("P")
