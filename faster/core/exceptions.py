@@ -1,20 +1,23 @@
 from collections import defaultdict
 from typing import Any
 
-from fastapi import Request
+from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPError
 
 from faster.core.schemas import APIResponse
 
 
+###############################################################################
+## Define all exception classes
+###############################################################################
 class APIError(Exception):
     """Base class for all application exceptions."""
 
     def __init__(
         self,
         message: str,
-        status_code: int = 500,
+        status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
         errors: list[dict[str, Any]] | None = None,
     ) -> None:
         super().__init__(message)
@@ -35,6 +38,27 @@ class ValidationError(APIError):
 
     def __init__(self, errors: list[dict[str, Any]]) -> None:
         super().__init__("Validation error", status_code=422, errors=errors)
+
+
+class DBError(APIError):
+    """Custom DB exception for uniform error handling."""
+
+
+class AuthError(APIError):
+    """Custom DB exception for authorization error."""
+
+
+###############################################################################
+##  Define all exception  handlers
+###############################################################################
+async def default_exception_handler(request: Request, exc: Exception) -> APIResponse[Any]:
+    """Global exception handler for uncaught exceptions."""
+    return APIResponse(
+        status="error",
+        message="Internal server error",
+        headers={"X-Request-ID": request.headers.get("X-Request-ID") or ""},
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    )
 
 
 async def api_exception_handler(_: Request, exc: APIError) -> APIResponse[Any]:
@@ -74,10 +98,6 @@ async def custom_validation_exception_handler(_: Request, exc: RequestValidation
     )
 
 
-class DBError(APIError):
-    """Custom DB exception for uniform error handling."""
-
-
 async def db_exception_handler(request: Request, exp: DBError) -> APIResponse[Any]:
     """Global exception handler for DBError."""
     return APIResponse(
@@ -86,10 +106,6 @@ async def db_exception_handler(request: Request, exp: DBError) -> APIResponse[An
         status_code=exp.status_code,
         data=exp.errors if exp.errors else None,
     )
-
-
-class AuthError(APIError):
-    """Custom DB exception for authorization error."""
 
 
 async def auth_exception_handler(request: Request, exp: DBError) -> APIResponse[Any]:
