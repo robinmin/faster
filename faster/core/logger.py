@@ -55,11 +55,20 @@ def add_cid(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
 
 # ANSI color codes for log levels
 _LEVEL_COLORS = {
-    "DEBUG": "\033[36m",  # cyan
-    "INFO": "\033[32m",  # green
+    ## upper case keys
+    "DEBUG": "\033[32m",  # green
+    "INFO": "\033[34m",  # blue
     "WARNING": "\033[33m",  # yellow
     "ERROR": "\033[31m",  # red
     "CRITICAL": "\033[35m",  # magenta
+
+    ## lower case keys
+    "debug": "\033[32m",  # green
+    "info": "\033[34m",  # blue
+    "warning": "\033[33m",  # yellow
+    "error": "\033[31m",  # red
+    "critical": "\033[35m",  # magenta
+
 }
 _RESET = "\033[0m"
 
@@ -87,15 +96,15 @@ def console_renderer() -> Callable[[Any, str, MutableMapping[str, Any]], str]:
 
 
 def _render(logger: Any, method_name: str, event_dict: EventDict) -> str:
-    ts = event_dict.pop("timestamp", None)
-    level = event_dict.pop("level", "info").upper()
-    logger_name = event_dict.pop("logger", None)
-    cid = event_dict.pop("cid", "")
-    msg = event_dict.pop("event", "")
+    ts = event_dict.get("timestamp")
+    level = str(event_dict.get("level", "info"))
+    logger_name = event_dict.get("logger")
+    cid = event_dict.get("cid", "")
+    msg = str(event_dict.get("event", ""))
 
     parts: list[str] = []
     if ts:
-        parts.append(_trim_iso_to_ms(ts))
+        parts.append(_trim_iso_to_ms(str(ts)))
 
     # build colored level token
     lvl_text = f"{level:<8}"
@@ -118,6 +127,48 @@ def _render(logger: Any, method_name: str, event_dict: EventDict) -> str:
         parts.append(f"[{logger_name}]")
 
     parts.append(msg)
+    return " ".join(parts)
+
+
+def file_renderer() -> Callable[[Any, str, MutableMapping[str, Any]], str]:
+    """
+    Custom file renderer for plain text logs without colors.
+    """
+    return _render_file
+
+
+def _render_file(logger: Any, method_name: str, event_dict: EventDict) -> str:
+    ts = event_dict.get("timestamp", "")
+    level = str(event_dict.get("level", ""))
+    cid = event_dict.get("correlation_id", "")
+    msg = event_dict.get("event", "")
+    logger_name = event_dict.get("logger")
+
+    parts: list[str] = []
+    if ts:
+        parts.append(str(ts))
+
+    lvl_text = f"{level:<8}"
+    lvl_token = f"[{lvl_text}]"
+    parts.append(lvl_token)
+
+    if cid:
+        parts.append(f"[{cid}]")
+
+    if DEFAULT_CONFIG["console"]["show_logger_name"] and logger_name:
+        parts.append(f"[{logger_name}]")
+
+    parts.append(str(msg))
+
+    # Render remaining keys, avoiding duplicates
+    extra = {
+        k: v
+        for k, v in event_dict.items()
+        if k not in ["timestamp", "level", "correlation_id", "event", "cid", "logger", "log_level", "logger_name"]
+    }
+    if extra:
+        parts.append(str(extra))
+
     return " ".join(parts)
 
 
@@ -149,7 +200,7 @@ def setup_logger(
 
     level = logging.DEBUG if is_debug else logging.INFO
     if log_level:
-        level = logging.getLevelName(log_level.upper())
+        level = logging.getLevelName(log_level)
 
     # Root logger cleanup
     root_logger = logging.getLogger()
@@ -178,16 +229,10 @@ def setup_logger(
     # --- Console handler ---
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(level)
-    if log_format == "console":
-        console_formatter = structlog.stdlib.ProcessorFormatter(
-            processor=console_renderer(),  # final renderer
-            foreign_pre_chain=pre_chain,  # for non-structlog loggers
-        )
-    else:  # json to console (rare, but supported)
-        console_formatter = structlog.stdlib.ProcessorFormatter(
-            processor=structlog.processors.JSONRenderer(),
-            foreign_pre_chain=pre_chain,
-        )
+    console_formatter = structlog.stdlib.ProcessorFormatter(
+        processor=console_renderer(),  # final renderer
+        foreign_pre_chain=pre_chain,  # for non-structlog loggers
+    )
     console_handler.setFormatter(console_formatter)
     root_logger.addHandler(console_handler)
 
@@ -195,10 +240,19 @@ def setup_logger(
     if cfg["file"]["enabled"]:
         log_path = Path(log_file or cfg["file"]["path"])
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_path, mode=cfg["file"]["mode"], encoding=cfg["file"]["encoding"])
+        file_handler = logging.FileHandler(
+            log_path, mode=str(cfg["file"]["mode"]), encoding=str(cfg["file"]["encoding"])
+        )
         file_handler.setLevel(level)
-        file_formatter = structlog.stdlib.ProcessorFormatter(
-            processor=structlog.processors.JSONRenderer(),
+
+        file_processor: Any
+        if log_format == "console":
+            file_processor = file_renderer()
+        else:  # json
+            file_processor = structlog.processors.JSONRenderer()
+
+        file_formatter: structlog.stdlib.ProcessorFormatter = structlog.stdlib.ProcessorFormatter(
+            processor=file_processor,
             foreign_pre_chain=pre_chain,
         )
         file_handler.setFormatter(file_formatter)
