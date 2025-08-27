@@ -1,4 +1,3 @@
-import logging
 from typing import cast
 
 from fastapi import HTTPException, Request, status
@@ -9,13 +8,14 @@ from starlette.types import ASGIApp
 from supabase_auth.types import User as UserProfile
 
 from faster.core.exceptions import AuthError
+from faster.core.logger import get_logger
 from faster.core.schemas import APIResponse
 from faster.core.utilities import get_current_endpoint
 
 from .schemas import AuthUser
 from .services import AuthService
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
