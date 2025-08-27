@@ -1,12 +1,13 @@
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-import logging
 import signal
 import sys
 from types import FrameType
 from typing import Any
+from uuid import uuid4
 
+from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,9 +19,6 @@ import uvicorn
 from .auth import router as auth_router
 from .auth.middlewares import AuthMiddleware
 from .auth.services import AuthService
-
-###############################################################################
-# import instances
 from .config import Settings, default_settings
 from .database import db_mgr
 from .exceptions import (
@@ -29,18 +27,14 @@ from .exceptions import (
     api_exception_handler,
     custom_validation_exception_handler,
     db_exception_handler,
+    default_exception_handler,
     http_exception_handler,
 )
-from .logging import setup_logger
+from .logger import get_logger, setup_logger
 from .redis import redis_mgr
 from .utilities import get_all_endpoints
 
-PROPAGATE_LOGGERS = [
-    "uvicorn",
-    "uvicorn.error",
-    "uvicorn.access",
-    "sqlalchemy.engine",
-]
+logger = get_logger(__name__)
 
 DEFAULT_ALLOWED_PATHS = [
     "/docs",  # Swagger UI
@@ -54,8 +48,6 @@ DEFAULT_ALLOWED_PATHS = [
     "/static/",  # Static files
     "/static/*",  # Static files
 ]
-
-logger = logging.getLogger(__name__)
 
 
 async def default_startup_handler() -> bool:
@@ -148,6 +140,16 @@ def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] 
             expose_headers=settings.cors_expose_headers,
         )
 
+    ## add x-request-id header to each request for tracing
+    app.add_middleware(
+        CorrelationIdMiddleware,
+        header_name="X-Request-ID",
+        # update_request_header=True,
+        generator=lambda: uuid4().hex,
+        # validator=is_valid_uuid4,
+        # transformer=lambda a: a,
+    )
+
     # Add custom middlewares
     if middlewares:
         for middleware in middlewares:
@@ -224,7 +226,6 @@ def create_app(
         settings.log_level,
         settings.log_format,
         settings.log_file,
-        PROPAGATE_LOGGERS,
     )
 
     @asynccontextmanager
@@ -239,23 +240,21 @@ def create_app(
                 raise RuntimeError(f"Startup handler {getattr(final_startup_handler, '__name__', 'unknown')} failed.")
 
             await refresh_status(app, settings, settings.is_debug)
+            yield
         except Exception as exp:
             logger.critical(f"Application startup failed: {exp}")
+            yield  # Still yield to allow lifespan to complete
+        finally:
+            try:
+                logger.info("Tearing down all resources...")
+                await _teardown_all(app)
 
-        ########################################################################
-        yield
-        ########################################################################
-
-        try:
-            logger.info("Tearing down all resources...")
-            await _teardown_all(app)
-
-            logger.info("Shutting down application...")
-            final_shutdown_handler = shutdown_handler or default_shutdown_handler
-            if not await final_shutdown_handler():
-                logger.error(f"Shutdown handler {getattr(final_shutdown_handler, '__name__', 'unknown')} failed.")
-        except Exception as e:
-            logger.critical(f"Error during shutdown: {e}")
+                logger.info("Shutting down application...")
+                final_shutdown_handler = shutdown_handler or default_shutdown_handler
+                if not await final_shutdown_handler():
+                    logger.error(f"Shutdown handler {getattr(final_shutdown_handler, '__name__', 'unknown')} failed.")
+            except Exception as e:
+                logger.critical(f"Error during shutdown: {e}")
 
     app = FastAPI(
         lifespan=lifespan,
@@ -286,6 +285,7 @@ def create_app(
     app.add_exception_handler(DBError, db_exception_handler)  # type: ignore
     app.add_exception_handler(StarletteHTTPError, http_exception_handler)  # type: ignore
     app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore
+    app.add_exception_handler(Exception, default_exception_handler)
 
     return app
 
