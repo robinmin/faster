@@ -29,6 +29,7 @@ dependencies = [
 	"types-pygments>=2.19.0.20250809",
 	"types-pexpect>=4.9.0.20250809",
 	"types-python-jose>=3.5.0.20250531",
+	"asgi-correlation-id>=4.3.4",
 ]
 
 [project.optional-dependencies]
