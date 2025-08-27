@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -74,15 +76,17 @@ class Settings(BaseSettings):
     cors_credentials: bool = Field(default=True, description="Allow CORS credentials")
     cors_enabled: bool = Field(default=True, description="Enable CORS")
     cors_allow_methods: list[str] = Field(default=["*"], description="Allowed CORS methods")
-    cors_allow_headers: list[str] = Field(default=["*"], description="Allowed CORS headers")
-    cors_expose_headers: list[str] = Field(default=[], description="Exposed CORS headers")
+    cors_allow_headers: list[str] = Field(
+        default=["X-Requested-With", "X-Request-ID"], description="Allowed CORS headers"
+    )
+    cors_expose_headers: list[str] = Field(default=["X-Request-ID"], description="Exposed CORS headers")
     gzip_enabled: bool = Field(default=True, description="Enable GZip compression")
     gzip_min_size: int = Field(default=1000, description="Minimum size for GZip compression")
     trusted_hosts: list[str] = Field(default=["*"], description="Trusted hosts")
 
     # Logging settings
     log_level: str = Field(default="INFO", description="Log level")
-    log_format: str = Field(default="json", description="Log format")
+    log_format: Literal["json", "console"] = Field(default="json", description="Log format")
     log_file: str | None = Field(default=None, description="Path to log file")
 
     # Deployment adapter
