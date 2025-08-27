@@ -1,12 +1,14 @@
 from collections.abc import Mapping
-import logging
 from typing import Any, Generic, TypeVar
 
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from starlette.background import BackgroundTask
 
-logger = logging.getLogger(__name__)
+from .logger import get_logger
+
+logger = get_logger(__name__)
+
 
 T = TypeVar("T")
 
