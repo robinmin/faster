@@ -13,7 +13,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "console": {
         "enabled": True,
         "correlation_id_length": 8,
-        "show_logger_name": False,
+        "show_logger_name": True,
         "colorize_level": True,
     },
     "file": {
@@ -29,9 +29,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "uvicorn.error",
             "uvicorn.access",
         ],
-        "ignore": [
-            "aiosqlite",
-        ],
+        "ignore": ["aiosqlite", "sentry_sdk.errors"],
     },
 }
 
