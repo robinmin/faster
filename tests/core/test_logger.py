@@ -33,7 +33,7 @@ def test_logger_console_file_output(tmp_path: Path) -> None:
     with open(log_file) as f:
         log_content = f.readline()
         assert msg in log_content
-        assert "[WARNING ]" in log_content
+        assert "[warning ]" in log_content
         assert "'data': 'some_data'" in log_content  # check for extra params
         # Check no color codes
         assert "e[33m" not in log_content
@@ -51,5 +51,5 @@ def test_console_output_is_always_plain_text(capsys: CaptureFixture[str], tmp_pa
     captured = capsys.readouterr()
     # Check for colored output and no json
     assert "[31m" in captured.out  # red for error
-    assert "[ERROR   ]" in captured.out
+    assert "[error   ]" in captured.out
     assert msg in captured.out
