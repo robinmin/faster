@@ -205,8 +205,8 @@ def test_create_app_with_routers_and_middlewares(mock_settings: Settings) -> Non
         middlewares=[CustomMiddleware],
     )
 
-    # Gzip, TrustedHost, Auth, AuthProxy, CORS, Custom, CorrelationIdMiddleware
-    assert len(app.user_middleware) == 6
+    # Gzip, TrustedHost, Auth, AuthProxy, CORS, Custom, CorrelationIdMiddleware,SentryAsgiMiddleware
+    assert len(app.user_middleware) == 7
 
     # Check if the custom route exists in the app's routes
     route_paths = [route.path for route in app.routes if isinstance(route, Route)]
