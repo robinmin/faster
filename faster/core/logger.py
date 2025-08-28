@@ -61,14 +61,12 @@ _LEVEL_COLORS = {
     "WARNING": "\033[33m",  # yellow
     "ERROR": "\033[31m",  # red
     "CRITICAL": "\033[35m",  # magenta
-
     ## lower case keys
     "debug": "\033[32m",  # green
     "info": "\033[34m",  # blue
     "warning": "\033[33m",  # yellow
     "error": "\033[31m",  # red
     "critical": "\033[35m",  # magenta
-
 }
 _RESET = "\033[0m"
 
