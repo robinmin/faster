@@ -34,7 +34,7 @@ class APIErrorContent(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class APIResponse(JSONResponse, Generic[T]):
+class AppResponse(JSONResponse, Generic[T]):
     media_type = "application/json"
 
     def __init__(
