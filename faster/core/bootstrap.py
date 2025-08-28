@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
 import uvicorn
 
 from .auth import router as auth_router
@@ -29,9 +30,11 @@ from .exceptions import (
 )
 from .logger import get_logger, setup_logger
 from .redis import redis_mgr
+from .sentry import SentryManager
 from .utilities import get_all_endpoints
 
 logger = get_logger(__name__)
+sentry_mgr = SentryManager.get_instance()
 
 DEFAULT_ALLOWED_PATHS = [
     "/docs",  # Swagger UI
@@ -77,7 +80,14 @@ async def _setup_all(app: FastAPI, settings: Settings) -> None:
             settings.database_echo,
         )
 
-    # Initialize Redis
+    logger.info("Initializing Sentry...")
+    await sentry_mgr.setup(
+        dsn=settings.sentry_dsn,
+        trace_sample_rate=settings.sentry_trace_sample_rate,
+        profiles_sample_rate=settings.sentry_profiles_sample_rate,
+        environment=settings.environment,
+    )
+
     logger.info("Initializing Redis...")
     await redis_mgr.setup(
         provider=settings.redis_provider,
@@ -97,6 +107,10 @@ async def _teardown_all(app: FastAPI) -> None:
     # Close Redis connection
     logger.info("Closing Redis connection...")
     await redis_mgr.close()
+
+    # Close Sentry connection
+    logger.info("Closing Sentry connection...")
+    await sentry_mgr.close()
 
 
 def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] | None = None) -> None:
@@ -164,23 +178,28 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
     # Refresh redis status
     redis_health = await redis_mgr.check_health()
 
+    # Refresh Sentry status
+    sentry_health = await sentry_mgr.check_health()
+
     if verbose:
         logger.info("=========================================================")
         logger.info(
             f"\tWe are running '{settings.app_name}' - {settings.app_version} on {settings.environment} in {'DEBUG' if settings.is_debug else 'NON-DEBUG'} mode."
         )
         if "master" not in db_health or not db_health["master"]:
-            logger.error(f"\tDB: {db_health}")
+            logger.error(f"\tDB\t: {db_health}")
         else:
-            logger.info(f"\tDB: {db_health}")
+            logger.info(f"\tDB\t: {db_health}")
 
         # Only show Redis error if it's required or if there was an attempt to connect
         if redis_health.get("ping"):
-            logger.info(f"\tRedis: {redis_health}")
+            logger.info(f"\tRedis\t: {redis_health}")
         elif settings.redis_enabled or (settings.redis_url and redis_health.get("ping") is False):
-            logger.error(f"\tRedis: {redis_health}")
+            logger.error(f"\tRedis\t: {redis_health}")
         elif settings.redis_url:
-            logger.warning(f"\tRedis: {redis_health}")
+            logger.warning(f"\tRedis\t: {redis_health}")
+
+        logger.info(f"\tSentry\t: {sentry_health}")
 
         if settings.is_debug:
             logger.debug("=========================================================")
@@ -281,6 +300,8 @@ def create_app(
             app.include_router(router)
 
     # Include exception handlers
+    app.add_middleware(SentryAsgiMiddleware)
+
     app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(AuthError, auth_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(AppError, app_exception_handler)  # type: ignore[arg-type]
