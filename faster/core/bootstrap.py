@@ -13,7 +13,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from starlette.exceptions import HTTPException as StarletteHTTPError
 import uvicorn
 
 from .auth import router as auth_router
@@ -22,13 +21,11 @@ from .auth.services import AuthService
 from .config import Settings, default_settings
 from .database import db_mgr
 from .exceptions import (
-    APIError,
-    DBError,
-    api_exception_handler,
+    AppError,
+    AuthError,
+    app_exception_handler,
+    auth_exception_handler,
     custom_validation_exception_handler,
-    db_exception_handler,
-    default_exception_handler,
-    http_exception_handler,
 )
 from .logger import get_logger, setup_logger
 from .redis import redis_mgr
@@ -237,24 +234,27 @@ def create_app(
 
             final_startup_handler = startup_handler or default_startup_handler
             if not await final_startup_handler():
-                raise RuntimeError(f"Startup handler {getattr(final_startup_handler, '__name__', 'unknown')} failed.")
+                raise AppError(f"Startup handler {getattr(final_startup_handler, '__name__', 'unknown')} failed.")
 
             await refresh_status(app, settings, settings.is_debug)
-            yield
-        except Exception as exp:
+        except AppError as exp:
             logger.critical(f"Application startup failed: {exp}")
-            yield  # Still yield to allow lifespan to complete
-        finally:
-            try:
-                logger.info("Tearing down all resources...")
-                await _teardown_all(app)
 
-                logger.info("Shutting down application...")
-                final_shutdown_handler = shutdown_handler or default_shutdown_handler
-                if not await final_shutdown_handler():
-                    logger.error(f"Shutdown handler {getattr(final_shutdown_handler, '__name__', 'unknown')} failed.")
-            except Exception as e:
-                logger.critical(f"Error during shutdown: {e}")
+        try:
+            yield  # Still yield to allow lifespan to complete
+        except AppError as exp:
+            logger.critical(f"Application error: {exp}")
+
+        try:
+            logger.info("Tearing down all resources...")
+            await _teardown_all(app)
+
+            logger.info("Shutting down application...")
+            final_shutdown_handler = shutdown_handler or default_shutdown_handler
+            if not await final_shutdown_handler():
+                logger.error(f"Shutdown handler {getattr(final_shutdown_handler, '__name__', 'unknown')} failed.")
+        except AppError as e:
+            logger.critical(f"Error during shutdown: {e}")
 
     app = FastAPI(
         lifespan=lifespan,
@@ -281,11 +281,9 @@ def create_app(
             app.include_router(router)
 
     # Include exception handlers
-    app.add_exception_handler(APIError, api_exception_handler)  # type: ignore
-    app.add_exception_handler(DBError, db_exception_handler)  # type: ignore
-    app.add_exception_handler(StarletteHTTPError, http_exception_handler)  # type: ignore
-    app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore
-    app.add_exception_handler(Exception, default_exception_handler)
+    app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(AuthError, auth_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(AppError, app_exception_handler)  # type: ignore[arg-type]
 
     return app
 
