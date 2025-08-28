@@ -36,6 +36,7 @@ import redis.asyncio as redis
 from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
 
+from .exceptions import AppError
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -807,7 +808,7 @@ class RedisManager:
     def get_client(self) -> RedisClient:
         """Get the Redis client instance."""
         if not self._client:
-            raise RuntimeError("Redis client not initialized. Call setup() first.")
+            raise AppError("Redis client not initialized. Call setup() first.")
         return self._client
 
     @property
@@ -823,7 +824,7 @@ class RedisManager:
     async def check_health(self) -> dict[str, Any]:
         """Perform a health check on the Redis connection."""
         if not self._client:
-            raise RuntimeError("Redis client not initialized")
+            raise AppError("Redis client not initialized")
 
         try:
             ping_result = await self._client.ping()
@@ -872,7 +873,7 @@ def get_redis() -> RedisClient:
         RedisClient: The Redis client instance
 
     Raises:
-        RuntimeError: If global Redis manager is not set or not initialized
+        AppError: If global Redis manager is not set or not initialized
 
     Usage:
         from fastapi import Depends
