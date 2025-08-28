@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     # Deployment adapter
     # deployment_adapter: str = Field(default="asgi", description="Deployment adapter type")
 
+    # Sentry settings
+    sentry_dsn: str | None = Field(default=None, description="Sentry DSN for error tracking")
+    sentry_trace_sample_rate: float = Field(default=0.1, description="Sentry trace sample rate")
+    sentry_profiles_sample_rate: float = Field(default=0.1, description="Sentry profiles sample rate")
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     def model_post_init(self, __context: object) -> None:
