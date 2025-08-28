@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 
 from .logger import get_logger
 from .schemas import AppResponse
+from .sentry import capture_it
 
 logger = get_logger(__name__)
 
@@ -63,7 +64,9 @@ class AuthError(AppError):
 ###############################################################################
 async def app_exception_handler(_: Request, exc: AppError) -> AppResponse[Any]:
     """Global exception handler for APIError."""
-    logger.error("Application error: [%d] %s - %s", exc.status_code, exc.message, exc.errors if exc.errors else None)
+    ## report to Sentry
+    await capture_it(f"Business logic issue: {exc.message}")
+
     return AppResponse(
         status="error",
         message=exc.message,
