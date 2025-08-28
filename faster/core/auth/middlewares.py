@@ -9,7 +9,7 @@ from supabase_auth.types import User as UserProfile
 
 from faster.core.exceptions import AuthError
 from faster.core.logger import get_logger
-from faster.core.schemas import APIResponse
+from faster.core.schemas import AppResponse
 from faster.core.utilities import get_current_endpoint
 
 from .schemas import AuthUser
@@ -96,7 +96,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             current_endpoint = get_current_endpoint(request, request.app.state.endpoints)
             if not current_endpoint or "tags" not in current_endpoint:
                 logger.error(f"[auth] Not Found - 404: {current_path}")
-                return APIResponse(
+                return AppResponse(
                     status="http error",
                     message="Not Found",
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -121,7 +121,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
                 # If authentication is required and failed, return 401
                 if self._require_auth:
-                    return APIResponse(
+                    return AppResponse(
                         status="http error",
                         message="Authentication required",
                         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -132,7 +132,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return response
         except Exception as exp:
             logger.error(f"[auth] Authentication error: {exp}")
-            return APIResponse(
+            return AppResponse(
                 status="http error",
                 message="Authentication failed",
                 status_code=status.HTTP_401_UNAUTHORIZED,
