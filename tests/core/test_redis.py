@@ -9,6 +9,7 @@ import pytest
 import pytest_asyncio
 from redis.exceptions import ConnectionError, RedisError
 
+from faster.core.exceptions import AppError
 from faster.core.redis import (
     RedisClient,
     RedisConnectionError,
@@ -56,7 +57,7 @@ class TestRedisManagerSetup:
         """
         assert manager.provider is None
         assert not manager.is_connected
-        with pytest.raises(RuntimeError, match="Redis client not initialized"):
+        with pytest.raises(AppError, match="Redis client not initialized"):
             manager.get_client()
 
     @pytest.mark.asyncio
@@ -149,7 +150,7 @@ class TestRedisManagerSetup:
 
         assert not manager.is_connected
         assert manager.provider is None
-        with pytest.raises(RuntimeError):
+        with pytest.raises(AppError):
             manager.get_client()
 
 
