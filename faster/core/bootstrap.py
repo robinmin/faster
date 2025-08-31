@@ -20,7 +20,7 @@ import uvicorn
 from .auth import router as auth_router
 from .auth.middlewares import AuthMiddleware
 from .auth.services import AuthService
-from .config import Settings, default_settings
+from .config import Settings, default_settings, get_default_allowed_paths
 from .database import db_mgr
 from .exceptions import (
     AppError,
@@ -35,21 +35,10 @@ from .routers import dev_router
 from .sentry import SentryManager
 from .utilities import get_all_endpoints
 
+###############################################################################
+
 logger = get_logger(__name__)
 sentry_mgr = SentryManager.get_instance()
-
-DEFAULT_ALLOWED_PATHS = [
-    "/docs",  # Swagger UI
-    "/docs/oauth2-redirect",  # Swagger OAuth2 redirect
-    "/redoc",  # ReDoc UI
-    "/openapi.json",  # OpenAPI schema
-    "/health",  # Health check endpoint
-    "/metrics",  # Prometheus metrics endpoint
-    "/favicon.ico",  # Favicon
-    "/static",  # Static files
-    "/static/",  # Static files
-    "/static/*",  # Static files
-]
 
 
 async def default_startup_handler() -> bool:
@@ -143,7 +132,7 @@ def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] 
         app.add_middleware(
             AuthMiddleware,
             auth_service=auth_service,
-            allowed_paths=DEFAULT_ALLOWED_PATHS,
+            allowed_paths=get_default_allowed_paths(),
             require_auth=True,
         )
 

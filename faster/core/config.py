@@ -1,9 +1,12 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+###############################################################################
+# Define config settings
+###############################################################################
 class Settings(BaseSettings):
     """Application configuration management, supports environment variables and .env files."""
 
@@ -133,3 +136,50 @@ class Settings(BaseSettings):
 
 
 default_settings = Settings()  # Load settings from environment variables and defaults
+
+
+###############################################################################
+# Definee logger settings
+###############################################################################
+def get_default_logger_config() -> dict[str, Any]:
+    return {
+        "console": {
+            "enabled": True,
+            "correlation_id_length": 8,
+            "show_logger_name": True,
+            "colorize_level": True,
+        },
+        "file": {
+            "enabled": True,
+            "format": "json",
+            "path": "logs/app.log",
+            "encoding": "utf-8",
+            "mode": "a",
+        },
+        "external_loggers": {
+            "propagate": [
+                "uvicorn",
+                "uvicorn.error",
+                "uvicorn.access",
+            ],
+            "ignore": ["aiosqlite", "sentry_sdk.errors"],
+        },
+    }
+
+
+###############################################################################
+# get always allowed paths
+###############################################################################
+def get_default_allowed_paths() -> list[str]:
+    return [
+        "/docs",  # Swagger UI
+        "/docs/oauth2-redirect",  # Swagger OAuth2 redirect
+        "/redoc",  # ReDoc UI
+        "/openapi.json",  # OpenAPI schema
+        "/health",  # Health check endpoint
+        "/metrics",  # Prometheus metrics endpoint
+        "/favicon.ico",  # Favicon
+        "/static",  # Static files
+        "/static/",  # Static files
+        "/static/*",  # Static files
+    ]

@@ -8,35 +8,15 @@ from asgi_correlation_id import correlation_id
 import structlog
 from structlog.types import EventDict
 
+from .config import get_default_logger_config
+
+###############################################################################
+
 # Default configuration - adjustable
-DEFAULT_CONFIG: dict[str, Any] = {
-    "console": {
-        "enabled": True,
-        "correlation_id_length": 8,
-        "show_logger_name": True,
-        "colorize_level": True,
-    },
-    "file": {
-        "enabled": True,
-        "format": "json",
-        "path": "logs/app.log",
-        "encoding": "utf-8",
-        "mode": "a",
-    },
-    "external_loggers": {
-        "propagate": [
-            "uvicorn",
-            "uvicorn.error",
-            "uvicorn.access",
-        ],
-        "ignore": ["aiosqlite", "sentry_sdk.errors"],
-    },
-}
+_default_config: dict[str, Any] = get_default_logger_config()
 
 
-# =========================
 # Custom processors
-# =========================
 def add_cid(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
     """
     Add correlation_id (full) and cid (short) into event_dict.
@@ -45,7 +25,7 @@ def add_cid(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
     cid_value = correlation_id.get()
     if cid_value:
         event_dict["correlation_id"] = cid_value
-        event_dict["cid"] = cid_value[: DEFAULT_CONFIG["console"]["correlation_id_length"]]
+        event_dict["cid"] = cid_value[: _default_config["console"]["correlation_id_length"]]
     else:
         event_dict["cid"] = ""
     return event_dict
@@ -104,7 +84,7 @@ def _render(logger: Any, method_name: str, event_dict: EventDict) -> str:
 
     # build colored level token
     lvl_text = f"{level:<8}"
-    if DEFAULT_CONFIG["console"]["colorize_level"]:
+    if _default_config["console"]["colorize_level"]:
         color = _LEVEL_COLORS.get(level, "")
         if color:
             lvl_token = f"{color}[{lvl_text}]{_RESET}"
@@ -119,7 +99,7 @@ def _render(logger: Any, method_name: str, event_dict: EventDict) -> str:
         parts.append(f"[{cid}]")
 
     # optional logger name
-    if DEFAULT_CONFIG["console"]["show_logger_name"] and logger_name:
+    if _default_config["console"]["show_logger_name"] and logger_name:
         parts.append(f"[{logger_name}]")
 
     parts.append(msg)
@@ -151,7 +131,7 @@ def _render_file(logger: Any, method_name: str, event_dict: EventDict) -> str:
     if cid:
         parts.append(f"[{cid}]")
 
-    if DEFAULT_CONFIG["console"]["show_logger_name"] and logger_name:
+    if _default_config["console"]["show_logger_name"] and logger_name:
         parts.append(f"[{logger_name}]")
 
     parts.append(str(msg))
@@ -192,7 +172,7 @@ def setup_logger(
 
     Function signature is preserved for compatibility.
     """
-    cfg = _merge_dict(DEFAULT_CONFIG, config or {})
+    cfg = _merge_dict(_default_config, config or {})
 
     level = logging.DEBUG if is_debug else logging.INFO
     if log_level:
