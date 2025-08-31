@@ -13,6 +13,8 @@ anyio==4.10.0
     #   httpx
     #   starlette
     #   watchfiles
+asgi-correlation-id==4.3.4
+    # via faster (pyproject.toml)
 async-timeout==5.0.1
     # via
     #   aioredis
@@ -28,6 +30,7 @@ certifi==2025.8.3
     # via
     #   httpcore
     #   httpx
+    #   sentry-sdk
 cffi==1.17.1
     # via cryptography
 click==8.2.1
@@ -62,7 +65,9 @@ exceptiongroup==1.3.0
 fakeredis==2.31.0
     # via faster (pyproject.toml)
 fastapi==0.116.1
-    # via faster (pyproject.toml)
+    # via
+    #   faster (pyproject.toml)
+    #   sentry-sdk
 greenlet==3.2.4
     # via sqlalchemy
 h11==0.16.0
@@ -97,10 +102,13 @@ idna==3.10
     #   httpx
 iniconfig==2.1.0
     # via pytest
+jose==1.0.0
+    # via faster (pyproject.toml)
 kombu==5.5.4
     # via celery
 packaging==25.0
     # via
+    #   asgi-correlation-id
     #   deprecation
     #   kombu
     #   pytest
@@ -160,6 +168,8 @@ redis==6.4.0
     #   fakeredis
 rsa==4.9.1
     # via python-jose
+sentry-sdk==2.35.1
+    # via faster (pyproject.toml)
 six==1.17.0
     # via
     #   ecdsa
@@ -173,7 +183,9 @@ sqlalchemy==2.0.43
 sqlmodel==0.0.24
     # via faster (pyproject.toml)
 starlette==0.47.2
-    # via fastapi
+    # via
+    #   asgi-correlation-id
+    #   fastapi
 storage3==0.12.1
     # via supabase
 strenum==0.4.15
@@ -194,6 +206,16 @@ tenacity==9.1.2
     # via faster (pyproject.toml)
 tomli==2.2.1
     # via pytest
+types-docutils==0.22.0.20250822
+    # via types-pygments
+types-pexpect==4.9.0.20250809
+    # via faster (pyproject.toml)
+types-pyasn1==0.6.0.20250516
+    # via types-python-jose
+types-pygments==2.19.0.20250809
+    # via faster (pyproject.toml)
+types-python-jose==3.5.0.20250531
+    # via faster (pyproject.toml)
 typing-extensions==4.14.1
     # via
     #   aioredis
@@ -216,6 +238,8 @@ typing-inspection==0.4.1
     #   pydantic-settings
 tzdata==2025.2
     # via kombu
+urllib3==2.5.0
+    # via sentry-sdk
 uvicorn==0.35.0
     # via faster (pyproject.toml)
 uvloop==0.21.0
