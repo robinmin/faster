@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Any, cast
 
 from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPBearer
@@ -81,7 +81,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.warning("Authentication failed for token")
             return None
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponse[Any]:
         """Process authentication for incoming requests."""
         current_path = request.url.path
         try:
