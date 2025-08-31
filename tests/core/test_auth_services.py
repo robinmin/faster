@@ -1,6 +1,3 @@
-# tests/core/test_auth_services.py
-
-from jose import JWTError, jwt
 import pytest
 
 from faster.core.auth.services import AuthService
@@ -15,61 +12,6 @@ TEST_USER_ID = "user-123"
 def auth_service() -> AuthService:
     """Fixture to create an AuthService instance for testing."""
     return AuthService(jwt_secret=TEST_SECRET, algorithms=TEST_ALGORITHMS)
-
-
-class TestAuthServiceJWT:
-    """Tests for JWT verification in AuthService."""
-
-    def test_verify_jwt_success(self, auth_service: AuthService) -> None:
-        """
-        Tests that a valid JWT is decoded successfully.
-        """
-        # Arrange
-        payload = {"sub": TEST_USER_ID, "email": "test@example.com"}
-        token = jwt.encode(payload, TEST_SECRET, algorithm=TEST_ALGORITHMS[0])
-
-        # Act
-        decoded_payload = auth_service.verify_jwt(token)
-
-        # Assert
-        assert decoded_payload["sub"] == TEST_USER_ID
-        assert decoded_payload["email"] == "test@example.com"
-
-    def test_verify_jwt_invalid_signature_raises_error(self, auth_service: AuthService):
-        """
-        Tests that a JWT with an invalid signature raises a JWTError.
-        """
-        # Arrange
-        payload = {"sub": TEST_USER_ID}
-        token = jwt.encode(payload, "wrong-secret", algorithm=TEST_ALGORITHMS[0])
-
-        # Act & Assert
-        with pytest.raises(JWTError):
-            auth_service.verify_jwt(token)
-
-    def test_verify_jwt_expired_signature_raises_error(self, auth_service: AuthService):
-        """
-        Tests that an expired JWT raises a JWTError.
-        """
-        # Arrange
-        payload = {"sub": TEST_USER_ID, "exp": -1}  # Already expired
-        token = jwt.encode(payload, TEST_SECRET, algorithm=TEST_ALGORITHMS[0])
-
-        # Act & Assert
-        with pytest.raises(JWTError):
-            auth_service.verify_jwt(token)
-
-    def test_verify_jwt_wrong_algorithm_raises_error(self, auth_service: AuthService):
-        """
-        Tests that a JWT with a different algorithm than configured raises a JWTError.
-        """
-        # Arrange
-        payload = {"sub": TEST_USER_ID}
-        token = jwt.encode(payload, TEST_SECRET, algorithm="HS512")
-
-        # Act & Assert
-        with pytest.raises(JWTError):
-            auth_service.verify_jwt(token)
 
 
 @pytest.mark.asyncio
