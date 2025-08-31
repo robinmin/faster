@@ -1,7 +1,6 @@
 from supabase_auth.types import User as UserProfile
 
-from faster.core.redisex import tag2role_get, user2role_get
-
+from ..redisex import tag2role_get, user2role_get
 from .auth_proxy import AuthProxy
 from .repositories import AuthRepository
 
