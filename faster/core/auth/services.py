@@ -1,11 +1,9 @@
-from typing import Any
-
-from jose import jwt
 from supabase_auth.types import User as UserProfile
 
 from faster.core.redisex import tag2role_get, user2role_get
 
 from .auth_proxy import AuthProxy
+from .repositories import AuthRepository
 
 
 class AuthService:
@@ -45,17 +43,10 @@ class AuthService:
             auto_refresh_jwks=self._auto_refresh_jwks,
         )
 
+        self._repository = AuthRepository()
+
     async def authenticate_token(self, token: str) -> UserProfile:
         return await self._auth_client.authenticate_token(token)
-
-    # JWT Verification  # TODO: check not used?
-    def verify_jwt(self, token: str) -> dict[str, Any]:
-        """
-        Verify JWT signature and return payload.
-        Raises JWTError if invalid.
-        """
-        payload = jwt.decode(token, self._jwt_secret, algorithms=self._algorithms)
-        return payload
 
     async def get_roles_by_user_id(self, user_id: str) -> set[str]:
         """
@@ -88,3 +79,9 @@ class AuthService:
         if required_roles:
             return not user_roles.isdisjoint(required_roles)
         return False  # no required roles → deny access
+
+    async def check_user_onboarding_complete(self, user_id: str) -> bool:
+        """
+        Check if a user has completed onboarding by checking if they have a profile.
+        """
+        return await self._repository.check_user_profile_exists(user_id)
