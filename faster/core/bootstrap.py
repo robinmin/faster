@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 import signal
 import sys
 from types import FrameType
@@ -30,6 +31,7 @@ from .exceptions import (
 )
 from .logger import get_logger, setup_logger
 from .redis import redis_mgr
+from .routers import dev_router
 from .sentry import SentryManager
 from .utilities import get_all_endpoints
 
@@ -122,6 +124,10 @@ def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] 
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts or ["*"])
 
     if settings.auth_endabled:
+        jwks_url = settings.supabase_jwks_url
+        if not jwks_url:
+            jwks_url = (settings.supabase_url or "") + "/auth/v1/.well-known/jwks.json"
+
         auth_service = AuthService(
             jwt_secret=settings.jwt_secret_key or "",
             algorithms=(settings.jwt_algorithm.split(",") if settings.jwt_algorithm else None),
@@ -129,7 +135,7 @@ def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] 
             supabase_url=settings.supabase_url or "",
             supabase_anon_key=settings.supabase_anon_key or "",
             supabase_service_key=settings.supabase_service_key or "",
-            supabase_jwks_url=settings.supabase_jwks_url or "",
+            supabase_jwks_url=jwks_url,
             # supabase_client_id = settings.supabase_client_id or "",
             supabase_audience=settings.supabase_audience or "",
             auto_refresh_jwks=settings.auto_refresh_jwks,
@@ -212,7 +218,7 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
         logger.info("=========================================================")
 
 
-def create_app(
+def create_app(  # noqa: C901
     settings: Settings | None = None,
     startup_handler: Callable[..., Awaitable[bool]] | None = None,
     shutdown_handler: Callable[..., Awaitable[bool]] | None = None,
@@ -293,6 +299,18 @@ def create_app(
 
     # Include default routers
     app.include_router(auth_router)
+    if settings.is_debug:
+        # this can enable me to edit the source code in the browser directly
+        @app.get("/.well-known/appspecific/com.chrome.devtools.json", tags=["public"])
+        async def answer_dev_tools() -> dict[str, Any]:  # type: ignore[reportUnusedFunction, unused-ignore]
+            return {
+                "workspace": {
+                    "uuid": str(uuid4()),
+                    "root": Path.cwd(),
+                }
+            }
+
+        app.include_router(dev_router)
 
     # Include custom routers
     if routers:
@@ -300,6 +318,7 @@ def create_app(
             app.include_router(router)
 
     # Include exception handlers
+    # Someone says this is not necessary and recommended, we will remove it later if confirmed
     app.add_middleware(SentryAsgiMiddleware)
 
     app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore[arg-type]
