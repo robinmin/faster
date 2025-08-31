@@ -1,6 +1,6 @@
 from supabase import create_client
 
-from faster.core.config import default_settings
+from ..config import default_settings
 
 
 class AuthRepository:
