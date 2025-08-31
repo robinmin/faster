@@ -63,7 +63,7 @@ class SentryManager:
         if not self.dsn:
             return
 
-        init(
+        _ = init(
             dsn=self.dsn,
             integrations=[
                 FastApiIntegration(failed_request_status_codes={400, *range(500, 600)}),
