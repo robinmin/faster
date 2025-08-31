@@ -73,22 +73,35 @@ faster/
 
 1. Clone the repository:
 
-   ```bash
-   git clone https://github.com/robinmin/faster
-   cd faster
-   ```
+```bash
+git clone https://github.com/robinmin/faster
+cd faster
+
+# Create logs directory
+mkdir logs
+```
 
 2. Install dependencies:
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+# create virtual environment
+python3 -m venv .venv
+# activate virtual environment
+source .venv/bin/activate
+
+# install dependencies
+uv sync
+
+# Or you can use pip to install dependencies
+pip install -r requirements.txt
+
+```
 
 3. Set up environment variables:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
 
 ### Running the Application
 
