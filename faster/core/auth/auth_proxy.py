@@ -7,8 +7,8 @@ import jwt
 from supabase import Client, create_client
 from supabase_auth.types import User as UserProfile
 
-from faster.core.exceptions import AuthError
-from faster.core.redisex import get_jwks_key, get_user_profile, set_jwks_key, set_user_profile
+from ..exceptions import AuthError
+from ..redisex import get_jwks_key, get_user_profile, set_jwks_key, set_user_profile
 
 # =============================================================================
 # Core Authentication Proxy to Supabase Auth
