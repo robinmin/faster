@@ -7,11 +7,10 @@ from starlette.responses import Response
 from starlette.types import ASGIApp
 from supabase_auth.types import User as UserProfile
 
-from faster.core.exceptions import AuthError
-from faster.core.logger import get_logger
-from faster.core.schemas import AppResponse
-from faster.core.utilities import get_current_endpoint
-
+from ..exceptions import AuthError
+from ..logger import get_logger
+from ..schemas import AppResponse
+from ..utilities import get_current_endpoint
 from .schemas import AuthUser
 from .services import AuthService
 
