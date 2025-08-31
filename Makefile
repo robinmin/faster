@@ -55,11 +55,11 @@ clean: ## Clean up build artifacts and cached files
 		.coverage
 
 lock: ## Update the lock file
+	uv lock --upgrade
 	uv pip compile pyproject.toml -o requirements.txt
-# 	uv lock --upgrade
 
-# install:
-# 	uv sync
+install:
+	uv sync
 
 # docker-build:
 # 	docker build -t mypkg:latest -f docker/Dockerfile .
@@ -68,4 +68,3 @@ lock: ## Update the lock file
 # 	docker-compose -f docker/docker-compose.yml up -d
 # docker-down:
 # 	docker-compose -f docker/docker-compose.yml down
-
