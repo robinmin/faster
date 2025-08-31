@@ -6,6 +6,6 @@ This __init__.py file exposes the main router for the auth module,
 making it easy to include in the main FastAPI application.
 """
 
-from faster.core.auth.routers import router
+from .routers import router
 
 __all__ = ["router"]
