@@ -108,7 +108,6 @@ For a better development expierence, I need a simple and single file application
 - `GET /auth/logout` - Notification after user logout
 - `GET /auth/onboarding` - First page content after login
 - `GET /auth/profile` - User profile information display
-
 ## Error Handling & UX
 
 ### **Error UI Components (DaisyUI)**
@@ -184,3 +183,117 @@ Here comes my dev-admin one page application with some issue(For some unknow rea
 - Your goal:
   - Refer to this upload prototype implement it seperately without any bugs or potential issues.
   - Focus on stability and maintainability, ensure I can add more modules(virtual pages) conviently, easily and quickly;
+
+###################################################################################################
+
+### 2, Full Prompt: Convert SQL DDL → SQLModel Models
+```markdown
+## **Convert SQL DDL → SQLModel Models**
+
+You are an expert Python and SQL developer. Your task is to convert a SQL table definition (DDL) into Python SQLModel models suitable for FastAPI applications. Follow these rules strictly:
+### **1. Naming Conventions**
+
+* Keep database column names as in the original DDL:
+  * `C_` → char/varchar/text
+  * `N_` → integer/number
+  * `D_` → date/datetime/timestamp
+* Python attributes should use **clean snake\_case** (e.g., `in_used`, `created_at`) for readability.
+* Table names should keep the original DDL table name.
+
+### **2. Common Base Class**
+* Define a base class called `MyBase` for all models.
+* Include the following mandatory fields in `MyBase`:
+
+  * `in_used: int` → `N_IN_USED`, default 0
+  * `created_at: datetime` → `D_CREATED_AT`, default current timestamp
+  * `updated_at: datetime` → `D_UPDATED_AT`, auto-updated on row change
+  * `deleted_at: datetime | None` → `D_DELETED_AT`, nullable
+* Inherit from `MyBase` if the table has these common fields; otherwise, inherit directly from `SQLModel`.
+* Use `Mapped[...]` for all column type annotations.
+* Use `mapped_column(...)` instead of `Field(sa_column=Column(...))`.
+* Include defaults and server defaults in `mapped_column(...)`.
+* Use `table=True` for SQLModel table classes.
+* Use `Mapped[OtherModel] = relationship(...)` in typed style if foreign keys exist.
+
+
+### **3. Primary Keys**
+* Use `primary_key=True` and `autoincrement=True` in `mapped_column`.
+* Do **not** set `server_default` for primary keys.
+
+### **4. Unique Constraints & Indexes**
+* Keep using `__table_args__` for `Index` and `UniqueConstraint`.
+* Single-column indexes can also use `index=True` on the column if no custom name is needed.
+
+### **5. Default Values**
+
+* Python-side defaults: `default=...`
+* Database-side defaults: `server_default=...`
+* Use `onupdate=func.now()` for `updated_at` fields.
+* Use `mapped_column(DateTime, server_default=func.now(), onupdate=func.now())` for `created_at`/`updated_at`.
+* Annotate nullable columns as `Mapped[type | None]`.
+### **6. Typing / MyPy Compliance**
+* Ensure MyPy / Pyright type safety for column expressions.
+* All generated classes and columns should pass strict type checks.
+
+### **7. Cross-Dialect Compatibility**
+* Autoincrement fields should work in:
+  * MySQL (`AUTO_INCREMENT`)
+  * SQLite (`AUTOINCREMENT`)
+  * PostgreSQL (`SERIAL`)
+  * SQL Server (`IDENTITY`)
+* And other dialects adapt as needed.
+
+### **8. Comments**
+* Include a brief docstring for each class explaining the table purpose.
+* Include comments for indexes, unique constraints, or special behaviors if applicable.
+
+### **9. Output**
+For each table in the DDL:
+
+* Generate a SQLModel class with proper `Mapped[]` types and `mapped_column(...)` assignments.
+* Include `__tablename__` and `__table_args__` if constraints or indexes exist.
+* Include base class (`MyBase`) if applicable.
+* The generated code should be fully compatible with SQLAlchemy 2.0 typing, SQLModel, and FastAPI, with no MyPy/pyright complaints.
+
+### **10. Example Usage**
+**Input SQL DDL:**
+  ```sql
+  create table if not exists SYS_MAP (
+      N_ID integer primary key autoincrement,
+      C_CATEGORY varchar(64) not null,
+      C_LEFT varchar(64) not null,
+      C_RIGHT varchar(64) not null,
+      N_ORDER integer not null default 0,
+      IN_USED tinyint not null default 0,
+      CREATED_AT datetime default current_timestamp,
+      UPDATED_AT datetime default current_timestamp on update current_timestamp,
+      constraint UK_SYS_MAP_CATEGORY_LEFT_RIGHT unique (C_CATEGORY, C_LEFT, C_RIGHT)
+  );
+  ```
+
+**Output Python SQLModel code (assuming `MyBase` is defined elsewhere):**
+  ```python
+  class SysMap(MyBase, table=True):
+      """
+      System mapping table
+      - Maps C_LEFT to C_RIGHT within a category.
+      - Unique constraint ensures no duplicate triplets.
+      """
+
+      __tablename__ = "sys_map"
+      __table_args__ = (
+          UniqueConstraint("C_CATEGORY", "C_LEFT", "C_RIGHT", name="uk_sys_map_category_left_right"),
+          Index("idx_sys_map_category", "C_CATEGORY"),
+      )
+
+      id: Mapped[int] = mapped_column("N_ID", Integer, primary_key=True, autoincrement=True)
+      category: Mapped[str] = mapped_column("C_CATEGORY", String(64), nullable=False)
+      left_value: Mapped[str] = mapped_column("C_LEFT", String(64), nullable=False)
+      right_value: Mapped[str] = mapped_column("C_RIGHT", String(64), nullable=False)
+      order: Mapped[int] = mapped_column("N_ORDER", Integer, nullable=False, server_default="0", default=0)
+  ```
+
+### **Core Task**
+Convert **any given SQL DDL** into **MyPy-safe, cross-dialect, FastAPI-ready SQLModel Python code** following the above rules.
+
+```
