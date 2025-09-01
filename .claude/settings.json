@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make help)",
+      "Bash(make autofix)",
+      "Bash(make lint)",
+      "Bash(make test)"
+    ],
+    "deny": [
+      "Bash(git commit:*)",
+      "Bash(curl:*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)"
+    ]
+  },
+  "contextFileName": "README.md"
+}
