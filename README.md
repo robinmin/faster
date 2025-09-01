@@ -118,6 +118,55 @@ make run
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
+### Running with Docker
+
+```bash
+# Build the Docker image
+make docker-build
+
+# Start all services with Docker Compose
+make docker-up
+
+# View logs
+make docker-logs
+
+# Stop services
+make docker-down
+```
+
+For development with hot-reloading, uncomment the `command` line in `docker/docker-compose.yml`:
+```bash
+docker-compose -f docker/docker-compose.yml up -d
+```
+
+For a full production setup with Supabase, Redis, and Traefik, use:
+```bash
+docker-compose -f docker/docker-compose-full.yml up -d
+```
+
+This full setup includes:
+- Traefik reverse proxy with SSL support
+- Your FastAPI application
+- Redis for caching and session storage
+- Supabase Auth (GoTrue) for authentication
+- Supabase Database (PostgreSQL)
+- Supabase API Gateway (Kong)
+
+### Environment Configuration
+
+The application uses environment variables for configuration. Copy the `.env.example` file to `.env` and adjust the values as needed:
+
+```bash
+cp docker/.env.example docker/.env
+```
+
+For the full setup with Supabase, use:
+```bash
+cp docker/.env.example docker/.env
+```
+
+Then edit the `docker/.env` file to set your specific configuration values.
+
 ## Configuration
 
 The application is configured through environment variables. Key configuration options include:

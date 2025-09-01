@@ -1,0 +1,12 @@
+# Docker
+*.log
+
+# Supabase
+.supabase/
+
+# Traefik
+letsencrypt/
+
+# Functions
+functions/**/*.js
+functions/**/*.map

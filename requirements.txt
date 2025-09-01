@@ -70,6 +70,8 @@ fastapi==0.116.1
     #   sentry-sdk
 greenlet==3.2.4
     # via sqlalchemy
+gunicorn==23.0.0
+    # via faster (pyproject.toml)
 h11==0.16.0
     # via
     #   httpcore
@@ -110,6 +112,7 @@ packaging==25.0
     # via
     #   asgi-correlation-id
     #   deprecation
+    #   gunicorn
     #   kombu
     #   pytest
 pluggy==1.6.0

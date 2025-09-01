@@ -37,11 +37,11 @@ db-downgrade: ## Downgrade database by one revision
 db-version: ## Show the current database revision
 	uv run alembic current
 
-supabase-start: ## Start Supabase local development services
-	supabase start
+# supabase-start: ## Start Supabase local development services
+# 	supabase start
 
-supabase-stop: ## Stop Supabase local development services
-	supabase stop
+# supabase-stop: ## Stop Supabase local development services
+# 	supabase stop
 
 clean: ## Clean up build artifacts and cached files
 	@rm -rf __pycache__ \
@@ -61,10 +61,20 @@ lock: ## Update the lock file
 install:
 	uv sync
 
-# docker-build:
-# 	docker build -t mypkg:latest -f docker/Dockerfile .
+docker-build: ## Build the Docker image
+	docker build -t faster-app:latest -f docker/Dockerfile .
 
-# docker-up:
-# 	docker-compose -f docker/docker-compose.yml up -d
-# docker-down:
-# 	docker-compose -f docker/docker-compose.yml down
+docker-up: ## Start services with Docker Compose
+	docker-compose -f docker/docker-compose.yml up -d
+
+docker-down: ## Stop services with Docker Compose
+	docker-compose -f docker/docker-compose.yml down
+
+docker-full-up: ## Start full services with Docker Compose
+	docker-compose -f docker/docker-compose-full.yml up -d
+
+docker-full-down: ## Stop full services with Docker Compose
+	docker-compose -f docker/docker-compose-full.yml down
+
+docker-logs: ## View logs from Docker containers
+	docker-compose -f docker/docker-compose.yml logs -f

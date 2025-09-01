@@ -31,6 +31,7 @@ dependencies = [
     "types-python-jose>=3.5.0.20250531",
     "asgi-correlation-id>=4.3.4",
     "sentry-sdk[fastapi]>=2.35.1",
+    "gunicorn>=23.0.0",
 ]
 
 [project.optional-dependencies]
