@@ -107,14 +107,14 @@ class Settings(BaseSettings):
         super().model_post_init(__context)
         required_fields = [
             "database_url",
-            "celery_broker_url",
-            "celery_result_backend",
+            # "celery_broker_url",
+            # "celery_result_backend",
             "supabase_url",
             "supabase_anon_key",
             "supabase_service_key",
-            "stripe_secret_key",
-            "stripe_webhook_secret",
-            "stripe_publishable_key",
+            # "stripe_secret_key",
+            # "stripe_webhook_secret",
+            # "stripe_publishable_key",
             "jwt_secret_key",
         ]
         for field_name in required_fields:
