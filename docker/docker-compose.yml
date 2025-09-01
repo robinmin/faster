@@ -1,4 +1,4 @@
-version: '3.8'
+# version: '3.8'
 
 services:
   app:
@@ -16,7 +16,6 @@ services:
       - ../:/app
     # For development with auto-reload:
     # command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-    
     # For production (uses CMD from Dockerfile):
     # command: uv run gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 4 main:app
 
