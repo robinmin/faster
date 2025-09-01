@@ -7,7 +7,7 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "} {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 run: ## Run the FastAPI application
-	uv run uvicorn main:app --reload
+	uv run uvicorn main:app --reload --reload-exclude logs
 
 test: ## Run tests
 	PYTHONPATH=. uv run pytest --cov=faster --cov-report=html:build/htmlcov
