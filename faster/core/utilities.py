@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, TypeVar, cast
 
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
+from sqlalchemy.sql.elements import ColumnClause, ColumnElement
 
 
 def is_api_call(request: Request) -> bool:
@@ -52,3 +53,106 @@ def get_current_endpoint(request: Request, endpoints: list[dict[str, Any]]) -> d
             return ep
 
     return None
+
+
+###############################################################################
+# Query utility functions for SQLModel with proper typing.
+#
+# This module provides helper functions to cast SQLAlchemy expressions
+# to their proper types, helping to avoid mypy errors when working with SQLModel.
+#
+# Example usage:
+#     from .query_utils import qbool, qorder
+#
+#     query = select(SysMap)
+#     query = query.where(qbool(SysMap.category == category))
+#     query = query.order_by(qorder(SysMap.order))
+###############################################################################
+
+
+# Type variable for column types
+T = TypeVar("T")
+
+
+def qbool(condition: bool) -> ColumnElement[bool]:
+    """
+    Cast a boolean condition to a SQLAlchemy ColumnElement[bool].
+
+    This function helps resolve mypy errors when using boolean conditions
+    in SQLAlchemy where() clauses with SQLModel.
+
+    Example:
+        query = select(SysMap)
+        query = query.where(qbool(SysMap.category == category))
+        query = query.where(qbool(SysMap.in_used == 1))
+
+    Args:
+        condition: A boolean condition expression (e.g., model.field == value)
+
+    Returns:
+        ColumnElement[bool]: The condition cast to SQLAlchemy column element
+    """
+    return cast(ColumnElement[bool], condition)
+
+
+def qorder(column: Any) -> ColumnClause[Any]:
+    """
+    Cast a column to a SQLAlchemy ColumnClause for ordering.
+
+    This function helps resolve mypy errors when using columns
+    in SQLAlchemy order_by() clauses with SQLModel.
+
+    Example:
+        query = select(SysMap)
+        query = query.order_by(qorder(SysMap.order))
+        query = query.order_by(qorder(SysMap.category))
+
+    Args:
+        column: A column reference (e.g., model.field)
+
+    Returns:
+        ColumnClause[Any]: The column cast to SQLAlchemy column clause
+    """
+    return cast(ColumnClause[Any], column)
+
+
+def qint(column: Any) -> ColumnElement[int]:
+    """
+    Cast a column to a SQLAlchemy ColumnElement[int].
+
+    This function helps resolve mypy errors when using integer columns
+    in SQLAlchemy expressions with SQLModel.
+
+    Example:
+        query = select(SysMap)
+        query = query.where(qint(SysMap.order) > 5)
+        query = query.where(qint(SysMap.some_int_field) == 42)
+
+    Args:
+        column: A column reference (e.g., model.field)
+
+    Returns:
+        ColumnElement[int]: The column cast to SQLAlchemy column element
+    """
+    return cast(ColumnElement[int], column)
+
+
+def qstr(column: Any) -> ColumnElement[str]:
+    """
+    Cast a column to a SQLAlchemy ColumnElement[str].
+
+    This function helps resolve mypy errors when using string columns
+    in SQLAlchemy expressions with SQLModel.
+
+    Example:
+        query = select(SysMap)
+        query = query.where(qstr(SysMap.category).like('%test%'))
+        query = query.where(qstr(SysMap.name).startswith('prefix'))
+
+    Args:
+        column: A column reference (e.g., model.field)
+
+    Returns:
+        ColumnElement[str]: The column cast to SQLAlchemy column element
+    """
+    return cast(ColumnElement[str], column)
