@@ -98,6 +98,7 @@ pip install -r requirements.txt
 ```
 
 3. Set up environment variables:
+
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
@@ -210,21 +211,6 @@ make test
 3. **Cloud Deployment**: Kubernetes deployment configurations
 4. **Admin Interface**: Built-in administrative dashboard
 
-## Contributing
+## Reference
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- FastAPI for the excellent web framework foundation
-- Redis for the in-memory data structure store
-- SQLAlchemy for database abstraction
-- All other open-source projects that make this framework possible
+- [FastAPI with Async SQLAlchemy, SQLModel, and Alembic](https://testdriven.io/blog/fastapi-sqlmodel/)
