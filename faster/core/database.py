@@ -4,7 +4,8 @@ from typing import TypedDict
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel
+from sqlalchemy.schema import CreateIndex, CreateTable
+from sqlmodel import SQLModel, create_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from .exceptions import DBError
@@ -79,12 +80,12 @@ class DatabaseManager:
     # -----------------------------
     # FastAPI dependency
     # -----------------------------
-    async def get_db(self, readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
+    async def get_raw_session(self, readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
         """
-        Get a FastAPI dependency session.
+        Get a FastAPI dependency session. Please note that this session is not managed by the database engine. That means you need to close it manually. Carefully handle exceptions and errors.
         Example:
         @app.get("/users")
-            async def get_users(db: AsyncSession = Depends(get_db)):
+            async def get_users(db: AsyncSession = Depends(get_raw_session)):
                 query = select(User)
                 return await db.execute(query).scalars().all()
         """
@@ -102,15 +103,16 @@ class DatabaseManager:
     # Transaction manager
     # -----------------------------
     @asynccontextmanager
-    async def get_transaction(self, readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
+    async def get_txn(self, readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
         """
         FastAPI dependency transaction.
         Example:
-            @app.get("/users")
-            async def get_users(db: AsyncSession = Depends(get_db)):
-                async with db.begin() as session:
-                    users = await session.execute(select(User).order_by(User.id))
-                    return users.scalars().all()
+            async def get_users(txn: AsyncSession = Depends(get_txn)):
+                # Check if user already exists
+                existing_user = await txn.exec(select(User).where(User.email == user_data.email))
+                if existing_user.first():
+                    # If you raise an exception here, the transaction will be automatically rolled back.
+                    raise HTTPException(status_code=400, detail="Email already registered")
         """
         session_factory = self.replica_session if readonly and self.replica_session else self.master_session
         if session_factory is None:
@@ -121,8 +123,8 @@ class DatabaseManager:
             async with session.begin():
                 yield session
         except Exception as exp:
-            await session.rollback()
-            msg = f"Transaction failed, rolling back: {exp}"
+            # We just log the exception and re-raise it as a DBError.
+            msg = f"Transaction failed: {exp}"
             logger.error(msg)
             raise DBError(msg) from exp
         finally:
@@ -140,6 +142,7 @@ class DatabaseManager:
                 if drop_all:
                     logger.warning("Dropping all tables...")
                     await conn.run_sync(SQLModel.metadata.drop_all)
+
                 logger.info("Creating all tables...")
                 await conn.run_sync(SQLModel.metadata.create_all)
                 logger.info("Tables created successfully.")
@@ -178,3 +181,27 @@ class DatabaseManager:
 
 # Singleton instance of DatabaseManager
 db_mgr = DatabaseManager()
+
+
+################################################################################
+# Utility functions
+################################################################################
+def generate_ddl(url: str = "sqlite:///:memory:") -> str:
+    """
+    Generate the full SQL DDL for all tables defined with SQLModel.
+    :param url: SQLAlchemy URL (affects dialect: mysql, postgresql, sqlite, etc.)
+    :return: SQL string
+    """
+    engine = create_engine(url)
+    ddl_statements = []
+
+    # Loop through all tables in metadata
+    for table in SQLModel.metadata.sorted_tables:
+        # Table create statement
+        ddl_statements.append(str(CreateTable(table).compile(engine)))
+
+        # Indexes (excluding those automatically created with PK/unique)
+        for idx in table.indexes:
+            ddl_statements.append(str(CreateIndex(idx).compile(engine)))
+
+    return ";\n\n".join(ddl_statements) + ";"
