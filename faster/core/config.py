@@ -146,7 +146,7 @@ def get_default_logger_config() -> dict[str, Any]:
         "console": {
             "enabled": True,
             "correlation_id_length": 8,
-            "show_logger_name": True,
+            "show_logger_name": False,
             "colorize_level": True,
         },
         "file": {
