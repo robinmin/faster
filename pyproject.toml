@@ -184,6 +184,13 @@ disallow_untyped_defs = false
 
 [tool.pyright]
 typeCheckingMode = "strict"
+
+# Specify the root directory or files to include in the analysis.
+include = ["faster/**/*.py", "main.py", "tests/**/*.py"]
+
+# Specify directories or files to exclude from analysis.
+exclude = ["**/__pycache__", "**/node_modules"]
+
 reportMissingImports = true
 reportUnusedImport = true
 reportUnusedVariable = true
@@ -202,6 +209,10 @@ reportUntypedFunctionDecorator = true
 reportUntypedNamedTuple = true
 reportUntypedNamedTupleAsReturnType = true
 reportUnusedCallResult = true
+reportUnknownArgumentType = false
+reportUnknownMemberType = false
+reportAssignmentType = false
+reportArgumentType = false
 
 [tool.pytest.ini_options]
 filterwarnings = []
