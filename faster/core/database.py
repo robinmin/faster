@@ -1,15 +1,18 @@
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
-from typing import TypedDict
+from contextlib import _AsyncGeneratorContextManager, asynccontextmanager  # pyright: ignore[reportPrivateUsage]
+from typing import Any, TypedDict
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateIndex, CreateTable
 from sqlmodel import SQLModel, create_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
+from typing_extensions import Self
 
+from .config import Settings
 from .exceptions import DBError
 from .logger import get_logger
+from .plugins import BasePlugin
 
 logger = get_logger(__name__)
 
@@ -22,12 +25,21 @@ class EngineKwargs(TypedDict, total=False):
     max_overflow: int
 
 
-class DatabaseManager:
+class DatabaseManager(BasePlugin):
+    _instance = None
+
     def __init__(self) -> None:
         self.master_engine: AsyncEngine | None = None
         self.replica_engine: AsyncEngine | None = None
         self.master_session: async_sessionmaker[AsyncSession] | None = None
         self.replica_session: async_sessionmaker[AsyncSession] | None = None
+        self.is_ready: bool = False
+
+    @classmethod
+    def get_instance(cls) -> Self:
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     def _make_engine(self, url: str, pool_size: int, max_overflow: int, echo: bool) -> AsyncEngine:
         engine_kwargs: EngineKwargs = {"echo": echo, "future": True}
@@ -39,43 +51,6 @@ class DatabaseManager:
             engine_kwargs["max_overflow"] = max_overflow
 
         return create_async_engine(url, **engine_kwargs)
-
-    async def setup(
-        self,
-        master_url: str,
-        pool_size: int = 10,
-        max_overflow: int = 20,
-        echo: bool = False,
-        replica_url: str | None = None,
-    ) -> None:
-        """Initialize engines and sessionmakers."""
-        try:
-            self.master_engine = self._make_engine(master_url, pool_size, max_overflow, echo)
-            self.master_session = async_sessionmaker(self.master_engine, class_=AsyncSession)
-            logger.info("Master DB engine initialized", extra={"url": master_url})
-
-            if replica_url:
-                self.replica_engine = self._make_engine(replica_url, pool_size, max_overflow, echo)
-                self.replica_session = async_sessionmaker(self.replica_engine, class_=AsyncSession)
-                logger.info("Replica DB engine initialized", extra={"url": replica_url})
-
-        except Exception as exp:
-            msg = f"Failed to initialize database engines: {exp}"
-            logger.error(msg)
-            raise DBError(msg) from exp
-
-    async def close(self) -> None:
-        """Dispose master and replica engines to cleanup connections."""
-        if self.master_engine:
-            await self.master_engine.dispose()
-            logger.info("Master DB engine disposed")
-            self.master_engine = None
-            self.master_session = None
-        if self.replica_engine:
-            await self.replica_engine.dispose()
-            logger.info("Replica DB engine disposed")
-            self.replica_engine = None
-            self.replica_session = None
 
     # -----------------------------
     # FastAPI dependency
@@ -151,9 +126,65 @@ class DatabaseManager:
                 logger.error(msg)
                 raise DBError(msg) from exp
 
-    async def check_health(self) -> dict[str, bool]:
-        """Check connectivity by running 'SELECT 1 as result' on master and replica (if available)."""
-        results: dict[str, bool] = {}
+    # -----------------------------
+    # Plugin interface implementation
+    # -----------------------------
+    async def setup(self, settings: Settings) -> bool:
+        """Initialize database engines and sessionmakers from settings."""
+        if not settings.database_url:
+            logger.info("Database URL not configured, skipping database setup")
+            self.is_ready = True
+            return True
+
+        try:
+            self.master_engine = self._make_engine(
+                settings.database_url,
+                settings.database_pool_size,
+                settings.database_max_overflow,
+                settings.database_echo,
+            )
+            self.master_session = async_sessionmaker(self.master_engine, class_=AsyncSession)
+            logger.info("Master DB engine initialized", extra={"url": settings.database_url})
+
+            # Note: replica_url is not in current Settings, but could be added later
+            # if replica_url:
+            #     self.replica_engine = self._make_engine(replica_url, pool_size, max_overflow, echo)
+            #     self.replica_session = async_sessionmaker(self.replica_engine, class_=AsyncSession)
+            #     logger.info("Replica DB engine initialized", extra={"url": replica_url})
+
+            self.is_ready = True
+            return True
+        except Exception as exp:
+            self.is_ready = False
+            msg = f"Failed to initialize database engines: {exp}"
+            logger.error(msg)
+            return False
+
+    async def teardown(self) -> bool:
+        """Dispose database engines to cleanup connections."""
+        try:
+            if self.master_engine:
+                await self.master_engine.dispose()
+                logger.info("Master DB engine disposed")
+                self.master_engine = None
+                self.master_session = None
+            if self.replica_engine:
+                await self.replica_engine.dispose()
+                logger.info("Replica DB engine disposed")
+                self.replica_engine = None
+                self.replica_session = None
+            self.is_ready = False
+            return True
+        except Exception as exp:
+            logger.error(f"Failed to dispose database engines: {exp}")
+            return False
+
+    async def check_health(self) -> dict[str, Any]:
+        """Check database connectivity by running 'SELECT 1' on master and replica (if available)."""
+        if not self.is_ready:
+            return {"master": False, "replica": False, "reason": "Plugin not ready"}
+
+        results: dict[str, Any] = {}
         try:
             if self.master_engine:
                 async with self.master_engine.connect() as conn:
@@ -173,19 +204,21 @@ class DatabaseManager:
             else:
                 results["replica"] = False
         except Exception as exp:
-            logger.exception(f"Health check failed for replica DB : {exp}")
+            logger.exception(f"Health check failed for replica DB: {exp}")
             results["replica"] = False
 
         return results
 
 
-# Singleton instance of DatabaseManager
-db_mgr = DatabaseManager()
-
-
 ################################################################################
 # Utility functions
 ################################################################################
+async def get_raw_session(readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
+    return DatabaseManager.get_instance().get_raw_session(readonly=readonly)
+
+async def get_txn(readonly: bool = False) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+    return DatabaseManager.get_instance().get_txn(readonly=readonly)
+
 def generate_ddl(url: str = "sqlite:///:memory:") -> str:
     """
     Generate the full SQL DDL for all tables defined with SQLModel.
