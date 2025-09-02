@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import Request
 import pytest
 
+from faster.core.config import Settings
 from faster.core.sentry import (
     SentryManager,
     add_sentry_context,
@@ -65,6 +66,13 @@ def mock_sentry_context_setters() -> dict[str, MagicMock]:
         }
 
 
+@pytest.fixture
+def mock_sentry_is_initialized() -> MagicMock:
+    """Fixture to mock sentry_sdk.is_initialized."""
+    with patch("faster.core.sentry.is_initialized") as mock:
+        yield mock
+
+
 # =================================
 # SentryManager Tests
 # =================================
@@ -92,12 +100,13 @@ async def test_setup_initializes_sentry_when_dsn_is_provided(mock_sentry_init: M
     environment = "production"
 
     # Act
-    await sentry_manager.setup(
-        dsn=dsn,
-        trace_sample_rate=trace_sample_rate,
-        profiles_sample_rate=profiles_sample_rate,
+    settings = Settings(
+        sentry_dsn=dsn,
+        sentry_trace_sample_rate=trace_sample_rate,
+        sentry_profiles_sample_rate=profiles_sample_rate,
         environment=environment,
     )
+    await sentry_manager.setup(settings)
 
     # Assert
     mock_sentry_init.assert_called_once()
@@ -122,7 +131,8 @@ async def test_setup_does_not_initialize_sentry_when_dsn_is_missing(dsn: str | N
     sentry_manager = SentryManager.get_instance()
 
     # Act
-    await sentry_manager.setup(dsn=dsn)
+    settings = Settings(sentry_dsn=dsn)
+    await sentry_manager.setup(settings)
 
     # Assert
     mock_sentry_init.assert_not_called()
@@ -166,24 +176,24 @@ def test_before_send_allows_other_events():
 
 
 @pytest.mark.asyncio
-async def test_close_flushes_sentry_client(mock_sentry_client: MagicMock):
+async def test_teardown_flushes_sentry_client(mock_sentry_client: MagicMock):
     """
     Arrange: A mocked Sentry client.
-    Act: Call close.
+    Act: Call teardown.
     Assert: The client's close method is called.
     """
     # Arrange
     sentry_manager = SentryManager.get_instance()
 
     # Act
-    await sentry_manager.close()
+    await sentry_manager.teardown()
 
     # Assert
     mock_sentry_client.close.assert_called_once_with(timeout=2.0)
 
 
 @pytest.mark.asyncio
-async def test_check_health_when_configured():
+async def test_check_health_when_configured(mock_sentry_init: MagicMock, mock_sentry_is_initialized: MagicMock):
     """
     Arrange: Setup SentryManager with a DSN.
     Act: Call check_health.
@@ -191,7 +201,9 @@ async def test_check_health_when_configured():
     """
     # Arrange
     sentry_manager = SentryManager.get_instance()
-    sentry_manager.dsn = "https://fake-dsn"
+    settings = Settings(sentry_dsn="https://fake-dsn")
+    mock_sentry_is_initialized.return_value = True
+    await sentry_manager.setup(settings)
 
     # Act
     health = await sentry_manager.check_health()
@@ -201,7 +213,7 @@ async def test_check_health_when_configured():
 
 
 @pytest.mark.asyncio
-async def test_check_health_when_not_configured():
+async def test_check_health_when_not_configured(mock_sentry_init: MagicMock, mock_sentry_is_initialized: MagicMock):
     """
     Arrange: SentryManager is not configured with a DSN.
     Act: Call check_health.
@@ -209,13 +221,15 @@ async def test_check_health_when_not_configured():
     """
     # Arrange
     sentry_manager = SentryManager.get_instance()
-    sentry_manager.dsn = None
+    settings = Settings(sentry_dsn=None)
+    mock_sentry_is_initialized.return_value = False
+    await sentry_manager.setup(settings)
 
     # Act
     health = await sentry_manager.check_health()
 
     # Assert
-    assert health == {"status": True, "configured": False, "initialized": True}
+    assert health == {"status": True, "configured": False, "initialized": False}
 
 
 # =================================
