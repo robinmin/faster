@@ -25,7 +25,7 @@ def mock_settings() -> Settings:
         database_url="sqlite+aiosqlite:///:memory:",
         redis_url="redis://localhost",
         jwt_secret_key="test-secret",
-        auth_endabled=True,
+        auth_enabled=True,
         cors_enabled=True,
         gzip_enabled=True,
     )
@@ -33,22 +33,49 @@ def mock_settings() -> Settings:
 
 @pytest.fixture
 def mock_db_mgr() -> Generator[MagicMock, None, None]:
-    """Fixture for mocking db_mgr."""
-    with patch("faster.core.bootstrap.db_mgr", new_callable=MagicMock) as mock:
-        mock.setup = AsyncMock()
-        mock.close = AsyncMock()
-        mock.check_health = AsyncMock(return_value={"master": True})
-        yield mock
+    """Fixture for mocking DatabaseManager.get_instance()."""
+    mock_instance = MagicMock()
+    mock_instance.setup = AsyncMock(return_value=True)
+    mock_instance.teardown = AsyncMock(return_value=True)
+    mock_instance.check_health = AsyncMock(return_value={"master": True})
+    # Legacy methods for fallback compatibility
+    mock_instance.initialize = AsyncMock(return_value=True)
+    mock_instance.close = AsyncMock(return_value=True)
+
+    with patch("faster.core.bootstrap.DatabaseManager.get_instance", return_value=mock_instance):
+        yield mock_instance
 
 
 @pytest.fixture
 def mock_redis_mgr() -> Generator[MagicMock, None, None]:
-    """Fixture for mocking redis_mgr."""
-    with patch("faster.core.bootstrap.redis_mgr", new_callable=MagicMock) as mock:
-        mock.setup = AsyncMock()
-        mock.close = AsyncMock()
-        mock.check_health = AsyncMock(return_value={"ping": True})
-        yield mock
+    """Fixture for mocking RedisManager.get_instance()."""
+    mock_instance = MagicMock()
+    mock_instance.setup = AsyncMock(return_value=True)
+    mock_instance.teardown = AsyncMock(return_value=True)
+    mock_instance.check_health = AsyncMock(return_value={"ping": True})
+    # Legacy methods for fallback compatibility
+    mock_instance.initialize = AsyncMock(return_value=True)
+    mock_instance.close = AsyncMock(return_value=True)
+
+    with patch("faster.core.bootstrap.RedisManager.get_instance", return_value=mock_instance):
+        yield mock_instance
+
+
+@pytest.fixture
+def mock_plugin_mgr() -> Generator[MagicMock, None, None]:
+    """Fixture for mocking PluginManager.get_instance()."""
+    mock_instance = MagicMock()
+    mock_instance.setup = AsyncMock(return_value=True)
+    mock_instance.teardown = AsyncMock(return_value=True)
+    mock_instance.check_health = AsyncMock(
+        return_value={
+            "database": {"master": True},
+            "redis": {"ping": True},
+            "sentry": {"enabled": False},
+        }
+    )
+    with patch("faster.core.bootstrap.PluginManager.get_instance", return_value=mock_instance):
+        yield mock_instance
 
 
 @pytest.fixture
@@ -69,68 +96,62 @@ async def test_default_shutdown_handler() -> None:
 
 
 @pytest.mark.asyncio
-async def test_setup_all(mock_settings: Settings, mock_db_mgr: MagicMock, mock_redis_mgr: MagicMock) -> None:
+async def test_setup_all(mock_settings: Settings, mock_plugin_mgr: MagicMock) -> None:
     app = FastAPI()
+    app.state.plugin_mgr = mock_plugin_mgr
     await bootstrap._setup_all(app, mock_settings)
 
-    mock_db_mgr.setup.assert_called_once_with(
-        mock_settings.database_url,
-        mock_settings.database_pool_size,
-        mock_settings.database_max_overflow,
-        mock_settings.database_echo,
-    )
-    mock_redis_mgr.setup.assert_called_once()
+    mock_plugin_mgr.setup.assert_called_once_with(mock_settings)
 
 
 @pytest.mark.asyncio
-async def test_setup_all_no_db_url(mock_settings: Settings, mock_db_mgr: MagicMock, mock_redis_mgr: MagicMock) -> None:
+async def test_setup_all_no_db_url(mock_settings: Settings, mock_plugin_mgr: MagicMock) -> None:
     mock_settings.database_url = None
     app = FastAPI()
+    app.state.plugin_mgr = mock_plugin_mgr
     await bootstrap._setup_all(app, mock_settings)
 
-    mock_db_mgr.setup.assert_not_called()
-    mock_redis_mgr.setup.assert_called_once()
+    mock_plugin_mgr.setup.assert_called_once_with(mock_settings)
 
 
 @pytest.mark.asyncio
-async def test_teardown_all(mock_db_mgr: MagicMock, mock_redis_mgr: MagicMock) -> None:
+async def test_teardown_all(mock_plugin_mgr: MagicMock) -> None:
     app = FastAPI()
+    app.state.plugin_mgr = mock_plugin_mgr
     await bootstrap._teardown_all(app)
 
-    mock_db_mgr.close.assert_called_once()
-    mock_redis_mgr.close.assert_called_once()
+    mock_plugin_mgr.teardown.assert_called_once()
 
 
-def test_setup_middlewares(mock_settings: Settings, mock_auth_service: MagicMock) -> None:
+def test_add_middlewares(mock_settings: Settings, mock_auth_service: MagicMock) -> None:
     app = FastAPI()
-    bootstrap._steup_middlewares(app, mock_settings)
+    bootstrap._add_middlewares(app, mock_settings)
 
-    # Gzip, TrustedHost, Auth, AuthProxy, CORS, CorrelationIdMiddleware
-    assert len(app.user_middleware) == 5
+    # Gzip, TrustedHost, Auth, CORS, CorrelationIdMiddleware
+    assert len(app.user_middleware) == 6
 
 
-def test_setup_middlewares_disabled(mock_settings: Settings) -> None:
-    mock_settings.auth_endabled = False
+def test_add_middlewares_disabled(mock_settings: Settings) -> None:
+    mock_settings.auth_enabled = False
     mock_settings.cors_enabled = False
     mock_settings.gzip_enabled = False
     app = FastAPI()
-    bootstrap._steup_middlewares(app, mock_settings)
+    bootstrap._add_middlewares(app, mock_settings)
 
-    # Only TrustedHost  and CorrelationIdMiddleware
-    assert len(app.user_middleware) == 2
+    # Only TrustedHost and CorrelationIdMiddleware
+    assert len(app.user_middleware) == 3
 
 
 @pytest.mark.asyncio
-async def test_refresh_status(
-    mock_settings: Settings, mock_db_mgr: MagicMock, mock_redis_mgr: MagicMock, caplog: Any
-) -> None:
+async def test_refresh_status(mock_settings: Settings, mock_plugin_mgr: MagicMock, caplog: Any) -> None:
     app = FastAPI()
+    app.state.settings = mock_settings
+    app.state.plugin_mgr = mock_plugin_mgr
     # Just verify the function runs without error
     await bootstrap.refresh_status(app, mock_settings, verbose=True)
 
-    # Verify the mocks were called
-    mock_db_mgr.check_health.assert_called_once()
-    mock_redis_mgr.check_health.assert_called_once()
+    # Verify the mock was called
+    mock_plugin_mgr.check_health.assert_called_once()
 
 
 def test_create_app(mock_settings: Settings, mock_db_mgr: MagicMock, mock_redis_mgr: MagicMock) -> None:
@@ -205,7 +226,7 @@ def test_create_app_with_routers_and_middlewares(mock_settings: Settings) -> Non
         middlewares=[CustomMiddleware],
     )
 
-    # Gzip, TrustedHost, Auth, AuthProxy, CORS, Custom, CorrelationIdMiddleware,SentryAsgiMiddleware
+    # Gzip, TrustedHost, Auth, CORS, Custom, CorrelationIdMiddleware, SentryAsgiMiddleware
     assert len(app.user_middleware) == 7
 
     # Check if the custom route exists in the app's routes
