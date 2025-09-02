@@ -48,7 +48,7 @@ class AppResponse(JSONResponse, Generic[T]):
         media_type: str | None = None,
         background: BackgroundTask | None = None,
     ) -> None:
-        content = APIContent(status=status, message=message, data=data, meta=meta)
+        content = APIContent(status=status or "success", message=message or "", data=data or {}, meta=meta or {})
         super().__init__(content.model_dump_json(), status_code, headers, media_type, background)
 
     def render(self, content: str) -> bytes:
