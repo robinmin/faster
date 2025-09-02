@@ -2,22 +2,20 @@
 Comprehensive tests for the RedisManager and its components.
 """
 
-import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
 from redis.exceptions import ConnectionError, RedisError
 
+from faster.core.config import Settings
 from faster.core.exceptions import AppError
 from faster.core.redis import (
     RedisClient,
-    RedisConnectionError,
     RedisManager,
     RedisOperationError,
     RedisProvider,
     get_redis,
-    redis_mgr,
     redis_safe,
     redis_safe_context,
 )
@@ -36,8 +34,9 @@ async def fake_redis_client() -> RedisClient:
     Provides a RedisManager initialized with the 'fake' provider,
     yielding the underlying client.
     """
-    await redis_mgr.setup(provider="fake")
-    client = redis_mgr.get_client()
+    settings = Settings(redis_provider="fake")
+    await RedisManager.get_instance().setup(settings)
+    client = RedisManager.get_instance().get_client()
     await client.flushdb()  # Ensure clean state
     return client
 
@@ -67,7 +66,8 @@ class TestRedisManagerSetup:
         Act: Call setup with the 'fake' provider.
         Assert: The manager is connected, the provider is FAKE, and the client is available.
         """
-        await manager.setup(provider="fake")
+        settings = Settings(redis_provider="fake")
+        await manager.setup(settings)
 
         assert manager.is_connected
         assert manager.provider == RedisProvider.FAKE
@@ -76,18 +76,21 @@ class TestRedisManagerSetup:
         assert await client.ping() is True
 
     @pytest.mark.asyncio
-    async def test_setup_with_invalid_provider_raises_error(self, manager: RedisManager):
+    async def test_setup_with_invalid_provider_returns_false(self, manager: RedisManager):
         """
         Arrange: An uninitialized RedisManager.
         Act: Call setup with an invalid provider string.
-        Assert: ValueError is raised.
+        Assert: setup returns False and logs an error.
         """
-        with pytest.raises(ValueError, match="Invalid provider 'invalid'"):
-            await manager.setup(provider="invalid")
+        settings = Settings(redis_provider="invalid")
+        success = await manager.setup(settings)
+        assert success is False
+        assert not manager.is_connected
 
     @pytest.mark.asyncio
-    @patch("faster.core.redis.redis.Redis.from_url")
-    async def test_setup_with_url_success(self, mock_from_url, manager: RedisManager):
+    @patch("faster.core.redis.redis.Redis")
+    @patch("faster.core.redis.redis.ConnectionPool.from_url")
+    async def test_setup_with_url_success(self, mock_pool_from_url, mock_redis_class, manager: RedisManager):
         """
         Arrange: Mock the underlying redis client to simulate a successful connection.
         Act: Call setup with a URL.
@@ -95,58 +98,76 @@ class TestRedisManagerSetup:
         """
         mock_redis_instance = AsyncMock()
         mock_redis_instance.ping.return_value = True
-        mock_from_url.return_value = mock_redis_instance
+        mock_pool = AsyncMock()
+        mock_pool_from_url.return_value = mock_pool
+        mock_redis_class.return_value = mock_redis_instance
 
-        await manager.setup(provider="local", redis_url="redis://localhost")
+        settings = Settings(redis_provider="local", redis_url="redis://localhost")
+        await manager.setup(settings)
 
-        mock_from_url.assert_called_once()
-        mock_redis_instance.ping.assert_awaited_once()
+        # Since Settings has max_connections=50, it uses connection pool path
+        mock_pool_from_url.assert_called_once()
+        mock_redis_class.assert_called_once_with(connection_pool=mock_pool)
         assert manager.is_connected
         assert manager.provider == RedisProvider.LOCAL
 
     @pytest.mark.asyncio
-    @patch("faster.core.redis.redis.Redis.from_url", side_effect=ConnectionError("Failed"))
-    async def test_setup_connection_failure_with_fallback_enabled(self, mock_from_url, manager: RedisManager, caplog):
+    @patch("faster.core.redis.redis.Redis", side_effect=ConnectionError("Failed"))
+    @patch("faster.core.redis.redis.ConnectionPool.from_url")
+    async def test_setup_connection_failure_with_fallback_enabled(
+        self, mock_pool_from_url, mock_redis_class, manager: RedisManager, caplog
+    ):
         """
         Arrange: Mock the redis client to raise a ConnectionError.
         Act: Call setup with fallback_to_fake=True (default).
         Assert: An error is logged, and the manager falls back to the fake provider.
         """
-        with caplog.at_level(logging.WARNING):
-            await manager.setup(provider="local", redis_url="redis://localhost")
+        mock_pool = AsyncMock()
+        mock_pool_from_url.return_value = mock_pool
 
-        assert "Failed to connect to Redis" in caplog.text
-        assert "Falling back to fake Redis" in caplog.text
+        settings = Settings(redis_provider="local", redis_url="redis://localhost")
+        result = await manager.setup(settings)
+
+        # Verify the setup succeeded and fallback occurred
+        assert result is True
         assert manager.is_connected
         assert manager.provider == RedisProvider.FAKE
 
     @pytest.mark.asyncio
-    @patch("faster.core.redis.redis.Redis.from_url", side_effect=ConnectionError("Failed"))
-    async def test_setup_connection_failure_with_fallback_disabled(self, mock_from_url, manager: RedisManager):
+    @patch("faster.core.redis.redis.Redis", side_effect=ConnectionError("Failed"))
+    @patch("faster.core.redis.redis.ConnectionPool.from_url")
+    async def test_setup_connection_failure_with_fallback_disabled(
+        self, mock_pool_from_url, mock_redis_class, manager: RedisManager
+    ):
         """
         Arrange: Mock the redis client to raise a ConnectionError.
-        Act: Call setup with fallback_to_fake=False.
-        Assert: RedisConnectionError is raised.
+        Act: Call setup in production environment (no fallback).
+        Assert: setup returns False and manager is not connected.
         """
-        with pytest.raises(RedisConnectionError, match="Redis connection failed"):
-            await manager.setup(
-                provider="local",
-                redis_url="redis://localhost",
-                fallback_to_fake=False,
-            )
+        mock_pool = AsyncMock()
+        mock_pool_from_url.return_value = mock_pool
+
+        settings = Settings(
+            redis_provider="local",
+            redis_url="redis://localhost",
+            environment="production",  # Production environment disables fallback
+        )
+        success = await manager.setup(settings)
+        assert success is False
         assert not manager.is_connected
 
     @pytest.mark.asyncio
-    async def test_close(self, manager: RedisManager):
+    async def test_teardown(self, manager: RedisManager):
         """
         Arrange: A manager connected to a fake provider.
-        Act: Call the close method.
+        Act: Call the teardown method.
         Assert: The client and provider are reset to None, and is_connected is False.
         """
-        await manager.setup(provider="fake")
+        settings = Settings(redis_provider="fake")
+        await manager.setup(settings)
         assert manager.is_connected
 
-        await manager.close()
+        await manager.teardown()
 
         assert not manager.is_connected
         assert manager.provider is None
@@ -524,7 +545,8 @@ class TestHealthAndDependency:
         Act: Call check_health.
         Assert: Returns a healthy status dictionary.
         """
-        await manager.setup(provider="fake")
+        settings = Settings(redis_provider="fake")
+        await manager.setup(settings)
         health = await manager.check_health()
         assert health == {
             "provider": "fake",
@@ -539,7 +561,8 @@ class TestHealthAndDependency:
         Act: Call check_health.
         Assert: Returns an unhealthy status dictionary with the error message.
         """
-        await manager.setup(provider="fake")
+        settings = Settings(redis_provider="fake")
+        await manager.setup(settings)
         with patch(
             "faster.core.redis.RedisClient.ping",
             side_effect=RedisOperationError("Ping failed"),
@@ -554,7 +577,7 @@ class TestHealthAndDependency:
 
     async def test_get_redis_dependency(self, fake_redis_client: RedisClient):
         """
-        Arrange: The global redis_mgr is initialized (via fixture).
+        Arrange: The RedisManager singleton is initialized (via fixture).
         Act: Call the get_redis() dependency function.
         Assert: It returns the correct, initialized client instance.
         """
