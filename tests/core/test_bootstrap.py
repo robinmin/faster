@@ -238,6 +238,8 @@ def test_run_app(
         log_level="debug",
         reload=True,
         workers=mock_settings.workers,
+        limit_max_requests=mock_settings.vps_max_request_size,
+        timeout_keep_alive=mock_settings.timeout_keep_alive,
     )
     mock_server.assert_called_with(mock_config.return_value)
     server_instance.serve.assert_called_once()
@@ -270,6 +272,8 @@ def test_run_app_custom_args(
         log_level="debug",
         reload=False,
         workers=4,
+        limit_max_requests=mock_settings.vps_max_request_size,
+        timeout_keep_alive=mock_settings.timeout_keep_alive,
     )
     mock_server.assert_called_with(mock_config.return_value)
     server_instance.serve.assert_called_once()
