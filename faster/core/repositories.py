@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.engine import Result
 
-from .database import db_mgr
+from .database import DatabaseManager
 from .models import SysDict, SysMap
 from .utilities import qbool, qorder
 
@@ -16,7 +16,7 @@ class SystemRepository:
     """
 
     def __init__(self) -> None:
-        self.db_mgr = db_mgr
+        self.db_mgr = DatabaseManager.get_instance()
 
     async def get_sys_map(
         self,
