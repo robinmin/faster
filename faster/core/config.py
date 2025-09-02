@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     )
     environment: str = Field(default="development", description="Runtime environment")
     api_prefix: str = Field(default="/api/v1", description="API prefix")
+    refresh_interval: int = Field(default=300, description="Refresh interval in seconds")
 
     # Server settings
     host: str = Field(default="0.0.0.0", description="Server host")
@@ -69,7 +70,7 @@ class Settings(BaseSettings):
     stripe_publishable_key: str | None = Field(default=None, description="Stripe publishable key")
 
     # Security settings
-    auth_endabled: bool = Field(default=True, description="Enable authentication")
+    auth_enabled: bool = Field(default=True, description="Enable authentication")
     jwt_secret_key: str | None = Field(default=None, description="JWT secret key")
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expiry_minutes: int = Field(default=60, description="JWT expiry time in minutes")
