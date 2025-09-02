@@ -35,9 +35,12 @@ import fakeredis.aioredis
 import redis.asyncio as redis
 from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
+from typing_extensions import Self
 
+from .config import Settings
 from .exceptions import AppError
 from .logger import get_logger
+from .plugins import BasePlugin
 
 logger = get_logger(__name__)
 
@@ -645,14 +648,23 @@ class RedisClient(RedisInterface):
 ###############################################################################
 
 
-class RedisManager:
+class RedisManager(BasePlugin):
     """Manages Redis connections for different providers."""
+
+    _instance = None
 
     def __init__(self) -> None:
         self._client: RedisClient | None = None
         self._provider: RedisProvider | None = None
+        self.is_ready: bool = False
 
-    async def setup(  # noqa: C901
+    @classmethod
+    def get_instance(cls) -> Self:
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    async def _setup_internal(  # noqa: C901
         self,
         provider: str | RedisProvider = RedisProvider.LOCAL,
         redis_url: str | None = None,
@@ -750,8 +762,9 @@ class RedisManager:
             if self._client:
                 await self._client.ping()
                 logger.info(f"Successfully connected to Redis provider: {provider.value}")
-
+            self.is_ready = True
         except Exception as e:
+            self.is_ready = False
             logger.error(f"Failed to connect to Redis provider '{provider.value}': {e}")
 
             if fallback_to_fake and provider != RedisProvider.FAKE:
@@ -760,6 +773,7 @@ class RedisManager:
                     await self._setup_fake(decode_responses=decode_responses)
                     self._provider = RedisProvider.FAKE
                     logger.info("Successfully initialized fake Redis fallback")
+                    self.is_ready = True
                 except Exception as fallback_error:
                     logger.error(f"Fallback to fake Redis failed: {fallback_error}")
                     raise RedisConnectionError(f"Redis connection failed and fallback failed: {fallback_error}") from e
@@ -821,10 +835,66 @@ class RedisManager:
         """Check if Redis client is initialized."""
         return self._client is not None
 
+    # -----------------------------
+    # Plugin interface implementation
+    # -----------------------------
+    async def setup(self, settings: Settings) -> bool:
+        """Initialize Redis client from settings."""
+        if not settings.redis_enabled:
+            logger.info("Redis not enabled, skipping Redis setup")
+            self.is_ready = True
+            return True
+
+        try:
+            # Convert settings to parameters for _setup_internal
+            await self._setup_internal(
+                provider=settings.redis_provider,
+                redis_url=settings.redis_url,
+                password=settings.redis_password,
+                max_connections=settings.redis_max_connections,
+                decode_responses=settings.redis_decode_responses,
+                fallback_to_fake=settings.is_debug,  # Use debug mode to determine fallback
+            )
+            return self.is_ready
+        except Exception as e:
+            logger.error(f"Redis setup failed: {e}")
+            self.is_ready = False
+            return False
+
+    async def teardown(self) -> bool:
+        """Close the Redis connection."""
+        if self._client:
+            try:
+                if self._client.client:
+                    await self._client.close()
+                    logger.info("Redis connection closed successfully")
+                return True
+            except Exception as e:
+                logger.error(f"Error closing Redis connection: {e}")
+                return False
+            finally:
+                self._client = None
+                self._provider = None
+                self.is_ready = False
+        return True
+
     async def check_health(self) -> dict[str, Any]:
         """Perform a health check on the Redis connection."""
+        if not self.is_ready:
+            return {
+                "provider": None,
+                "connected": False,
+                "ping": False,
+                "reason": "Plugin not ready",
+            }
+
         if not self._client:
-            raise AppError("Redis client not initialized")
+            return {
+                "provider": None,
+                "connected": False,
+                "ping": False,
+                "error": "Redis client not initialized",
+            }
 
         try:
             ping_result = await self._client.ping()
@@ -843,24 +913,10 @@ class RedisManager:
                 "error": str(e),
             }
 
-    async def close(self) -> None:
-        """Close the Redis connection."""
-        if self._client:
-            try:
-                if self._client.client:
-                    await self._client.close()
-                    logger.info("Redis connection closed successfully")
-            except Exception as e:
-                logger.error(f"Error closing Redis connection: {e}")
-            finally:
-                self._client = None
-                self._provider = None
-
 
 ###############################################################################
-## Global Redis manager instance for dependency injection
+## Use RedisManager.get_instance() to access the singleton
 ###############################################################################
-redis_mgr = RedisManager()
 
 
 def get_redis() -> RedisClient:
@@ -873,7 +929,7 @@ def get_redis() -> RedisClient:
         RedisClient: The Redis client instance
 
     Raises:
-        AppError: If global Redis manager is not set or not initialized
+        AppError: If Redis manager singleton is not initialized
 
     Usage:
         from fastapi import Depends
@@ -900,4 +956,4 @@ def get_redis() -> RedisClient:
             # Fetch from database...
             return {"data": "from_db", "from_cache": False}
     """
-    return redis_mgr.get_client()
+    return RedisManager.get_instance().get_client()
