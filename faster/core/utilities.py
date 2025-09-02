@@ -1,8 +1,77 @@
+import os
 from typing import Any, TypeVar, cast
 
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from sqlalchemy.sql.elements import ColumnClause, ColumnElement
+
+###############################################################################
+# Platform Detection Utilities
+###############################################################################
+
+
+def detect_platform(deployment_platform: str) -> str:
+    """Detect the current deployment platform.
+
+    Args:
+        deployment_platform: The configured deployment platform setting
+
+    Returns:
+        str: The detected platform ("vps", "cloudflare-workers")
+    """
+    if deployment_platform != "auto":
+        return deployment_platform
+
+    # Detect Cloudflare Workers environment
+    if os.getenv("CF_PAGES") or os.getenv("CF_WORKER"):
+        return "cloudflare-workers"
+
+    # Detect common cloud platforms that behave like VPS
+    cloud_indicators = [
+        "AWS_LAMBDA_FUNCTION_NAME",  # AWS Lambda
+        "GOOGLE_CLOUD_PROJECT",  # Google Cloud
+        "AZURE_FUNCTIONS_ENVIRONMENT",  # Azure Functions
+        "RAILWAY_ENVIRONMENT",  # Railway
+        "RENDER_SERVICE_ID",  # Render
+        "FLY_APP_NAME",  # Fly.io
+        "HEROKU_APP_NAME",  # Heroku
+    ]
+
+    for indicator in cloud_indicators:
+        if os.getenv(indicator):
+            return "vps"  # Treat cloud platforms as VPS-like
+
+    # Default to VPS for standard deployments
+    return "vps"
+
+
+def is_cloudflare_workers(deployment_platform: str) -> bool:
+    """Check if running on Cloudflare Workers.
+
+    Args:
+        deployment_platform: The configured deployment platform setting
+
+    Returns:
+        bool: True if running on Cloudflare Workers
+    """
+    return detect_platform(deployment_platform) == "cloudflare-workers"
+
+
+def is_vps_deployment(deployment_platform: str) -> bool:
+    """Check if running on VPS or VPS-like environment.
+
+    Args:
+        deployment_platform: The configured deployment platform setting
+
+    Returns:
+        bool: True if running on VPS or VPS-like environment
+    """
+    return detect_platform(deployment_platform) == "vps"
+
+
+###############################################################################
+# Request and API Utilities
+###############################################################################
 
 
 def is_api_call(request: Request) -> bool:
