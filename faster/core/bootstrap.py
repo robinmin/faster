@@ -22,7 +22,7 @@ from .auth import router as auth_router
 from .auth.middlewares import AuthMiddleware
 from .auth.services import AuthService
 from .config import Settings, default_settings, get_default_allowed_paths
-from .database import db_mgr
+from .database import DatabaseManager
 from .exceptions import (
     AppError,
     AuthError,
@@ -31,15 +31,15 @@ from .exceptions import (
     custom_validation_exception_handler,
 )
 from .logger import get_logger, setup_logger
-from .redis import redis_mgr
+from .plugins import PluginManager
+from .redis import RedisManager
 from .routers import dev_router, sys_router
 from .sentry import SentryManager
-from .utilities import get_all_endpoints, is_cloudflare_workers, is_vps_deployment
+from .utilities import check_all_resources, is_cloudflare_workers, is_vps_deployment
 
 ###############################################################################
 
 logger = get_logger(__name__)
-sentry_mgr = SentryManager.get_instance()
 
 
 async def default_startup_handler() -> bool:
@@ -77,57 +77,41 @@ async def _setup_vps_specific(app: FastAPI, settings: Settings) -> None:
         logger.info("Configured for reverse proxy deployment")
 
 
+def _register_all_plugins(app: FastAPI) -> None:
+    """Register core plugins."""
+    plugin_mgr = PluginManager.get_instance()
+
+    # Register core plugins
+    plugin_mgr.register("database", DatabaseManager.get_instance())
+    plugin_mgr.register("redis", RedisManager.get_instance())
+    plugin_mgr.register("sentry", SentryManager.get_instance())
+
+    # Attach to app state
+    app.state.plugin_mgr = plugin_mgr
+    logger.debug("Plugin manager setup complete")
+
+
 async def _setup_all(app: FastAPI, settings: Settings) -> None:
     # VPS-specific setup (metrics, static files)
     if is_vps_deployment(settings.deployment_platform):
         await _setup_vps_specific(app, settings)
 
-    # Initialize database
-    if settings.database_url:
-        logger.info("Initializing database...")
-        await db_mgr.setup(
-            settings.database_url,
-            settings.database_pool_size,
-            settings.database_max_overflow,
-            settings.database_echo,
-        )
-
-    logger.info("Initializing Sentry...")
-    await sentry_mgr.setup(
-        dsn=settings.sentry_dsn,
-        trace_sample_rate=settings.sentry_trace_sample_rate,
-        profiles_sample_rate=settings.sentry_profiles_sample_rate,
-        environment=settings.environment,
-    )
-
-    # Initialize Redis
-    if settings.redis_url:
-        logger.info("Initializing Redis...")
-        await redis_mgr.setup(
-            provider=settings.redis_provider,
-            redis_url=settings.redis_url,
-            password=settings.redis_password,
-            max_connections=settings.redis_max_connections,
-            decode_responses=settings.redis_decode_responses,
-            fallback_to_fake=settings.is_debug,
-        )
+    # Initialize all plugins through plugin manager
+    logger.info("Initializing all plugins...")
+    success = await app.state.plugin_mgr.setup(settings)
+    if not success:
+        logger.warning("Some plugins failed to initialize, but continuing startup")
 
 
 async def _teardown_all(app: FastAPI) -> None:
-    # Close database connection
-    logger.info("Closing database connection...")
-    await db_mgr.close()
-
-    # Close Redis connection
-    logger.info("Closing Redis connection...")
-    await redis_mgr.close()
-
-    # Close Sentry connection
-    logger.info("Closing Sentry connection...")
-    await sentry_mgr.close()
+    # Use plugin system for teardown
+    logger.info("Tearing down all plugins...")
+    success = await app.state.plugin_mgr.teardown()
+    if not success:
+        logger.warning("Some plugins failed to teardown properly")
 
 
-def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] | None = None) -> None:
+def _add_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] | None = None) -> None:
     # Configure and add middleware to the FastAPI application
     # NOTE: Middleware must be added before initializing database/Redis to avoid "Cannot add middleware after an application has started" error
 
@@ -139,7 +123,7 @@ def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] 
     trusted_hosts = settings.allowed_hosts or ["*"]
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
-    if settings.auth_endabled:
+    if settings.auth_enabled:
         jwks_url = settings.supabase_jwks_url
         if not jwks_url:
             jwks_url = (settings.supabase_url or "") + "/auth/v1/.well-known/jwks.json"
@@ -183,6 +167,9 @@ def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] 
         # transformer=lambda a: a,
     )
 
+    # TODO: Someone says this is not necessary and recommended, we will remove it later if confirmed
+    app.add_middleware(SentryAsgiMiddleware)
+
     # Add custom middlewares
     if middlewares:
         for middleware in middlewares:
@@ -190,48 +177,50 @@ def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] 
 
 
 async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False) -> None:
-    # Refresh all endpoints
-    endpoints = get_all_endpoints(app)
-    app.state.endpoints = endpoints
+    """
+    Refresh status of all services using the plugin manager.
+    If verbose is True, log the status of each service.
+    If latest_status_check is too close to now, skip it -- avoid unnecessary checks.
+    """
+    await check_all_resources(app, app.state.settings)
 
-    # Refresh db status
-    db_health = await db_mgr.check_health()
+    if not verbose:
+        return
 
-    # Refresh redis status
-    redis_health = await redis_mgr.check_health()
+    logger.info("=========================================================")
+    logger.info(
+        f"\tWe are running '{settings.app_name}' - {settings.app_version} on {settings.environment} in {'DEBUG' if settings.is_debug else 'NON-DEBUG'} mode."
+    )
 
-    # Refresh Sentry status
-    sentry_health = await sentry_mgr.check_health()
+    latest_status_info = getattr(app.state, "latest_status_info", {})
+    db_health = latest_status_info.get("db", {})
+    redis_health = latest_status_info.get("redis", {})
+    sentry_health = latest_status_info.get("sentry", {})
 
-    if verbose:
-        logger.info("=========================================================")
-        logger.info(
-            f"\tWe are running '{settings.app_name}' - {settings.app_version} on {settings.environment} in {'DEBUG' if settings.is_debug else 'NON-DEBUG'} mode."
-        )
-        if "master" not in db_health or not db_health["master"]:
-            logger.error(f"\tDB\t: {db_health}")
-        else:
-            logger.info(f"\tDB\t: {db_health}")
+    if db_health.get("master", False):
+        logger.info(f"\tDB\t: {db_health}")
+    else:
+        logger.error(f"\tDB\t: {db_health}")
 
-        # Only show Redis error if it's required or if there was an attempt to connect
-        if redis_health.get("ping"):
-            logger.info(f"\tRedis\t: {redis_health}")
-        elif settings.redis_enabled or (settings.redis_url and redis_health.get("ping") is False):
-            logger.error(f"\tRedis\t: {redis_health}")
-        elif settings.redis_url:
-            logger.warning(f"\tRedis\t: {redis_health}")
+    # Only show Redis error if it's required or if there was an attempt to connect
+    if redis_health.get("ping", False):
+        logger.info(f"\tRedis\t: {redis_health}")
+    elif settings.redis_enabled or (settings.redis_url and redis_health.get("ping") is False):
+        logger.error(f"\tRedis\t: {redis_health}")
+    elif settings.redis_url:
+        logger.warning(f"\tRedis\t: {redis_health}")
 
-        logger.info(f"\tSentry\t: {sentry_health}")
+    logger.info(f"\tSentry\t: {sentry_health}")
 
-        if settings.is_debug:
-            logger.debug("=========================================================")
-            logger.debug("All available URLs:")
-            for endpoint in endpoints:
-                logger.debug(
-                    f"  [{'/'.join(endpoint['methods'])}] {endpoint['path']} - {endpoint['name']} \t# {', '.join(endpoint['tags'])} "
-                )
+    if settings.is_debug:
+        logger.debug("=========================================================")
+        logger.debug("All available URLs:")
+        for endpoint in app.state.endpoints:
+            logger.debug(
+                f"  [{'/'.join(endpoint['methods'])}] {endpoint['path']} - {endpoint['name']} \t# {', '.join(endpoint['tags'])} "
+            )
 
-        logger.info("=========================================================")
+    logger.info("=========================================================")
 
 
 def create_app(  # noqa: C901
@@ -298,15 +287,11 @@ def create_app(  # noqa: C901
             logger.critical(f"Error during shutdown: {e}")
 
     # FastAPI configuration
-    docs_url = "/docs" if settings.is_debug else None
-    redoc_url = "/redoc" if settings.is_debug else None
-    openapi_url = "/openapi.json" if settings.is_debug else None
-
     app = FastAPI(
         lifespan=lifespan,
-        docs_url=docs_url,
-        redoc_url=redoc_url,
-        openapi_url=openapi_url,
+        docs_url="/docs" if settings.is_debug else None,
+        redoc_url="/redoc" if settings.is_debug else None,
+        openapi_url="/openapi.json" if settings.is_debug else None,
         version=settings.app_version,
         title=settings.app_name,
         description=settings.app_description,
@@ -315,8 +300,11 @@ def create_app(  # noqa: C901
     )
     app.state.settings = settings
 
-    # Setup middlewares
-    _steup_middlewares(app, settings, middlewares)
+    # Register core plugins
+    _register_all_plugins(app)
+
+    # Add middlewares
+    _add_middlewares(app, settings, middlewares)
 
     # Include routers
     app.include_router(auth_router)
@@ -330,9 +318,6 @@ def create_app(  # noqa: C901
             app.include_router(router)
 
     # Include exception handlers
-    # Someone says this is not necessary and recommended, we will remove it later if confirmed
-    app.add_middleware(SentryAsgiMiddleware)
-
     app.add_exception_handler(RequestValidationError, custom_validation_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(AuthError, auth_exception_handler)  # type: ignore[arg-type]
     app.add_exception_handler(AppError, app_exception_handler)  # type: ignore[arg-type]
