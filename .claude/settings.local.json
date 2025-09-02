@@ -2,9 +2,14 @@
   "permissions": {
     "allow": [
       "mcp__context7__resolve-library-id",
-      "mcp__context7__get-library-docs"
+      "mcp__context7__get-library-docs",
+      "Read(faster/**)",
+      "Bash(make:*)",
+      "Bash(pytest:*)"
     ],
-    "deny": [],
+    "deny": [
+      "Read(.env)"
+    ],
     "ask": []
   }
 }
