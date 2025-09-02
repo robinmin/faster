@@ -21,68 +21,30 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from sentry_sdk.types import Event
+from typing_extensions import Self
 
+from .config import Settings
 from .logger import get_logger
+from .plugins import BasePlugin
 
 logger = get_logger(__name__)
 
 
-class SentryManager:
+class SentryManager(BasePlugin):
     _instance = None
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> "SentryManager":
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-        return cls._instance
 
     def __init__(self) -> None:
         self.dsn: str | None = None
         self.trace_sample_rate: float = 0.1
         self.profiles_sample_rate: float = 0.1
         self.environment: str = "development"
+        self.is_ready: bool = False
 
     @classmethod
-    def get_instance(cls) -> "SentryManager":
+    def get_instance(cls) -> Self:
         if cls._instance is None:
-            cls._instance = SentryManager()
+            cls._instance = cls()
         return cls._instance
-
-    async def setup(
-        self,
-        dsn: str | None = None,
-        trace_sample_rate: float = 0.1,
-        profiles_sample_rate: float = 0.1,
-        environment: str = "development",
-    ) -> None:
-        """Set up Sentry SDK."""
-        self.dsn = dsn
-        self.trace_sample_rate = trace_sample_rate
-        self.profiles_sample_rate = profiles_sample_rate
-        self.environment = environment
-
-        if not self.dsn:
-            return
-
-        _ = init(
-            dsn=self.dsn,
-            integrations=[
-                FastApiIntegration(failed_request_status_codes={400, *range(500, 600)}),
-                # StarletteIntegration(transaction_style="endpoint"),
-                # SentryAsgiMiddleware(),
-                SqlalchemyIntegration(),
-                RedisIntegration(),
-                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
-            ],
-            traces_sample_rate=self.trace_sample_rate,
-            profiles_sample_rate=self.profiles_sample_rate,
-            environment=self.environment,
-            debug=self.environment == "development",
-            before_send=self.before_send,
-            # Add data like request headers and IP for users,
-            # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-            send_default_pii=True,
-        )
-        logger.info("Sentry initialized")
 
     def before_send(self, event: Event, hint: dict[str, Any]) -> Event | None:
         """Filter and modify events before sending to Sentry."""
@@ -90,21 +52,82 @@ class SentryManager:
             return None
         return event
 
-    async def close(self) -> None:
+    # -----------------------------
+    # Plugin interface implementation
+    # -----------------------------
+    async def setup(self, settings: Settings) -> bool:
+        """Set up Sentry SDK from settings."""
+        self.dsn = settings.sentry_dsn
+        self.trace_sample_rate = settings.sentry_trace_sample_rate
+        self.profiles_sample_rate = settings.sentry_profiles_sample_rate
+        self.environment = settings.environment
+
+        if not self.dsn:
+            logger.info("Sentry DSN not configured, skipping Sentry setup")
+            self.is_ready = True
+            return True
+
+        try:
+            _ = init(
+                dsn=self.dsn,
+                integrations=[
+                    FastApiIntegration(failed_request_status_codes={400, *range(500, 600)}),
+                    SqlalchemyIntegration(),
+                    RedisIntegration(),
+                    LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+                ],
+                traces_sample_rate=self.trace_sample_rate,
+                profiles_sample_rate=self.profiles_sample_rate,
+                environment=self.environment,
+                debug=self.environment == "development",
+                before_send=self.before_send,
+                send_default_pii=True,
+            )
+            logger.info("Sentry initialized")
+            self.is_ready = True
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize Sentry: {e}")
+            self.is_ready = False
+            return False
+
+    async def teardown(self) -> bool:
         """Ensure all Sentry events are sent before shutdown."""
-        client = get_client()
-        if client:
-            client.close(timeout=2.0)
-        logger.info("Sentry closed")
+        try:
+            client = get_client()
+            if client:
+                client.close(timeout=2.0)
+            logger.info("Sentry closed")
+            self.is_ready = False
+            return True
+        except Exception as e:
+            logger.error(f"Failed to close Sentry client: {e}")
+            return False
 
     async def check_health(self) -> dict[str, Any]:
-        """Check if Sentry is configured."""
-        set_tag("health_check", True)
-        return {
-            "status": True,
-            "configured": bool(self.dsn),
-            "initialized": is_initialized(),
-        }
+        """Check if Sentry is configured and initialized."""
+        if not self.is_ready:
+            return {
+                "status": False,
+                "configured": bool(self.dsn),
+                "initialized": False,
+                "reason": "Plugin not ready",
+            }
+        try:
+            set_tag("health_check", True)
+            return {
+                "status": True,
+                "configured": bool(self.dsn),
+                "initialized": is_initialized(),
+            }
+        except Exception as e:
+            logger.error(f"Sentry health check failed: {e}")
+            return {
+                "status": False,
+                "configured": bool(self.dsn),
+                "initialized": False,
+                "error": str(e),
+            }
 
 
 async def capture_it(obj: Exception | str) -> None:
