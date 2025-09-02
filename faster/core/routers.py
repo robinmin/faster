@@ -8,6 +8,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .logger import get_logger
 from .schemas import AppResponse
+from .utilities import check_all_resources
 
 logger = get_logger(__name__)
 
@@ -84,3 +85,20 @@ async def metrics(request: Request) -> Response:
     except ImportError:
         logger.warning("prometheus_client not installed, metrics endpoint disabled")
         return Response("Metrics not available - prometheus_client not installed", status_code=503)
+
+
+@sys_router.get("/health", response_model=None)
+async def check_health(request: Request) -> AppResponse[dict[str, Any]]:
+    await check_all_resources(request.app, request.app.state.settings)
+
+    latest_status_check = getattr(request.app.state, "latest_status_check", None)
+    latest_status_info = getattr(request.app.state, "latest_status_info", {})
+
+    return AppResponse(
+        data={
+            "latest_status_check": latest_status_check,
+            "db": latest_status_info.get("db", None),
+            "redis": latest_status_info.get("redis", None),
+            "sentry": latest_status_info.get("sentry", None),
+        },
+    )
