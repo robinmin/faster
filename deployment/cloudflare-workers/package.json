@@ -1,0 +1,20 @@
+{
+  "name": "faster-cloudflare-workers",
+  "version": "1.0.0",
+  "description": "Faster FastAPI app deployed to Cloudflare Workers",
+  "main": "src/worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "python -c 'import sys; print(\"Python build complete\")'"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20240524.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.57.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

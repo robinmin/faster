@@ -1,0 +1,50 @@
+name = "faster-app"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Environment variables
+[env.production.vars]
+ENVIRONMENT = "production"
+DEPLOYMENT_PLATFORM = "cloudflare-workers"
+CF_WORKERS_COMPATIBILITY_DATE = "2024-01-01"
+CF_WORKERS_MEMORY_LIMIT = 128
+CF_WORKERS_TIMEOUT = 30
+
+# KV namespace for caching
+[[env.production.kv_namespaces]]
+binding = "CACHE"
+id = "your-kv-namespace-id"
+
+# D1 database
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "your-d1-database"
+database_id = "your-d1-database-id"
+
+# Durable Objects
+[[durable_objects.bindings]]
+name = "SESSION_STORE"
+class_name = "SessionStore"
+
+# Routes
+[routes]
+pattern = "your-domain.com/*"
+zone_name = "your-domain.com"
+
+# Build configuration
+[build]
+command = "npm run build"
+cwd = "."
+watch_dir = "src"
+
+# Development settings
+[dev]
+ip = "127.0.0.1"
+port = 8787
+local_protocol = "http"
+upstream_protocol = "https"
+
+# Limits
+[limits]
+cpu_ms = 30000

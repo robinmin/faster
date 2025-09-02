@@ -1,0 +1,41 @@
+# Dynamic configuration for Traefik
+# Additional middlewares and configurations
+
+http:
+  middlewares:
+    # Compress responses
+    compress:
+      compress: {}
+    
+    # CORS headers for API endpoints
+    cors-headers:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - OPTIONS
+          - PUT
+          - POST
+          - DELETE
+        accessControlAllowOriginList:
+          - "https://your-frontend-domain.com"
+        accessControlAllowHeaders:
+          - "Content-Type"
+          - "Authorization"
+          - "X-Requested-With"
+          - "X-Request-ID"
+        accessControlExposeHeaders:
+          - "X-Request-ID"
+        accessControlAllowCredentials: true
+        accessControlMaxAge: 100
+        addVaryHeader: true
+
+    # IP whitelist for admin/metrics endpoints
+    admin-whitelist:
+      ipWhiteList:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+
+  # Additional services configuration can go here if needed

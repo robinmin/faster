@@ -1,0 +1,50 @@
+# Traefik configuration for Faster Framework
+# This is an example configuration - adjust for your needs
+
+api:
+  dashboard: true
+  insecure: false
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: your-email@domain.com
+      storage: /data/acme.json
+      httpChallenge:
+        entryPoint: web
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: traefik
+
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+log:
+  level: INFO
+  filePath: "/var/log/traefik/traefik.log"
+
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+
+# Global redirect to HTTPS
+http:
+  redirections:
+    entryPoint:
+      to: websecure
+      scheme: https
+      permanent: true
