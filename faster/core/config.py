@@ -92,8 +92,34 @@ class Settings(BaseSettings):
     log_format: Literal["json", "console"] = Field(default="json", description="Log format")
     log_file: str | None = Field(default=None, description="Path to log file")
 
-    # Deployment adapter
-    # deployment_adapter: str = Field(default="asgi", description="Deployment adapter type")
+    # Deployment Platform Settings
+    deployment_platform: Literal["vps", "cloudflare-workers", "auto"] = Field(
+        default="auto", description="Target deployment platform"
+    )
+
+    # VPS-specific settings
+    vps_reverse_proxy: bool = Field(default=False, description="Running behind reverse proxy (Nginx/Apache)")
+    vps_static_files_path: str = Field(default="static", description="Static files directory path")
+    vps_max_request_size: int = Field(default=16 * 1024 * 1024, description="Maximum request size in bytes")
+    vps_enable_metrics: bool = Field(default=True, description="Enable Prometheus metrics endpoint")
+    vps_process_manager: Literal["uvicorn", "gunicorn", "hypercorn"] = Field(
+        default="uvicorn", description="WSGI/ASGI server for VPS deployment"
+    )
+
+    # Cloudflare Workers specific settings
+    cf_workers_compatibility_date: str = Field(
+        default="2024-01-01", description="Cloudflare Workers compatibility date"
+    )
+    cf_workers_memory_limit: int = Field(default=128, description="Memory limit in MB for Cloudflare Workers")
+    cf_workers_timeout: int = Field(default=30, description="Timeout in seconds for Cloudflare Workers")
+    cf_workers_kv_namespace: str | None = Field(default=None, description="Cloudflare KV namespace binding")
+    cf_workers_d1_database: str | None = Field(default=None, description="Cloudflare D1 database binding")
+
+    # Auto-scaling and performance settings
+    auto_scale_workers: bool = Field(default=False, description="Enable automatic worker scaling")
+    min_workers: int = Field(default=1, description="Minimum number of workers")
+    max_workers: int = Field(default=16, description="Maximum number of workers")
+    worker_memory_limit: int = Field(default=512, description="Memory limit per worker in MB")
 
     # Sentry settings
     sentry_dsn: str | None = Field(default=None, description="Sentry DSN for error tracking")
