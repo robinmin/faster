@@ -1,9 +1,12 @@
+from datetime import datetime
 import os
 from typing import Any, TypeVar, cast
 
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from sqlalchemy.sql.elements import ColumnClause, ColumnElement
+
+from .config import Settings
 
 ###############################################################################
 # Platform Detection Utilities
@@ -122,6 +125,36 @@ def get_current_endpoint(request: Request, endpoints: list[dict[str, Any]]) -> d
             return ep
 
     return None
+
+
+async def check_all_resources(app: FastAPI, settings: Settings) -> None:
+    """
+    Check the health of all resources using the plugin manager.
+    If latest_status_check is too close to now, skip it -- avoid unnecessary checks.
+    """
+    right_now = datetime.now()
+    if (
+        hasattr(app.state, "latest_status_check")
+        and (right_now - app.state.latest_status_check).total_seconds() < settings.refresh_interval
+    ):
+        return
+
+    # refresh latest_status_check
+    app.state.latest_status_check = right_now
+
+    # Refresh all endpoints
+    endpoints = get_all_endpoints(app)
+    app.state.endpoints = endpoints
+
+    # Refresh plugin statuses
+    plugin_health = await app.state.plugin_mgr.check_health()
+
+    db_health = plugin_health.get("database", {})
+    redis_health = plugin_health.get("redis", {})
+    sentry_health = plugin_health.get("sentry", {})
+
+    # Refresh latest status info
+    app.state.latest_status_info = {"db": db_health, "redis": redis_health, "sentry": sentry_health}
 
 
 ###############################################################################
