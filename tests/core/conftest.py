@@ -1,10 +1,12 @@
 import asyncio
 
-from faster.core.redis import redis_mgr
+from faster.core.config import Settings
+from faster.core.redis import RedisManager
 
 
 def pytest_configure(config):
     """
     Initializes the Redis manager with a fake provider before tests are collected.
     """
-    asyncio.run(redis_mgr.setup(provider="fake"))
+    settings = Settings(redis_provider="fake")
+    asyncio.run(RedisManager.get_instance().setup(settings))
