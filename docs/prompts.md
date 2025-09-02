@@ -293,7 +293,39 @@ For each table in the DDL:
       order: Mapped[int] = mapped_column("N_ORDER", Integer, nullable=False, server_default="0", default=0)
   ```
 
-### **Core Task**
 Convert **any given SQL DDL** into **MyPy-safe, cross-dialect, FastAPI-ready SQLModel Python code** following the above rules.
 
 ```
+
+### 3, Plugin Mechanism
+Let's create a plugin mechanism to extend the functionality of the system. We will split it in three steeps to finish it:
+1, Clarify the requirement and draft out the proposal.
+2, Define the plugin interface and implement class PluginManager in file @faster/core/plugins.py
+3, Apply this plugin interface to existing resources, for example, database, redis supabase auth and etc.
+
+In my view, this plugin at least need to response to the following events:
+- on_setup: The real lazy initialization
+- on_teardown: The cleanup event
+- on_refresh: The refresh event
+
+The PluginManager class contains one plugin map(for example dict[str, object]) and one plugin list(for example list[object]) to keep the order of plugins. Initialize and refresh the plugins in the normal order, and teardown the plugins in the reverse order. And PluginManager need another function to register plugin.
+
+Okay, let's start with the first step.
+
+===============
+Aditional things need to be done:
+
+1, It's still a little bit strange for the interface name. Let's do some changes on BasePlugin:
+- on_setup -> setup
+- on_teardown -> teardown
+- on_check_health -> check_health
+
+All the sub-classes need to apply these naming changes.
+
+2, To keep the consistancy and readbility, PluginManager is also a class implementing BasePlugin interface. That means we need to rename the member functions:
+- setup_all -> setup
+- teardown_all -> teardown
+- check_health_all -> check_health
+
+3, The reason we keep the __init__ method simple is to implement lazy initialization( actually in setup method). Another reason to implement
+PluginManager is to reduce these global variables. We will step by step to reduce these global variables(for example db_mgr, redis_mgr and etc). So, do not create instance and register plugins on the global scope. Attach  PluginManager's instance to app.state then we can access it from anywhere without any global variables burden.
