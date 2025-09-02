@@ -20,6 +20,7 @@ dependencies = [
     "supabase>=2.18.1",
     "supabase-auth>=0.1.1",
     "tenacity>=9.1.2",
+    "typing-extensions>=4.5.0",
     "uvicorn[standard]>=0.35.0",
     "aiosqlite>=0.20.0",
     "python-jose[cryptography]>=3.5.0",
