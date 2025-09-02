@@ -16,6 +16,9 @@ dev_router = APIRouter(prefix="/dev", tags=["dev", "public"])
 sys_router = APIRouter(tags=["public"])
 
 
+###############################################################################
+# Endpoints for dev router
+###############################################################################
 @dev_router.get("/admin")
 async def health_check() -> FileResponse:
     """
@@ -47,6 +50,9 @@ async def settings(request: Request) -> AppResponse[dict[str, Any]]:
     )
 
 
+###############################################################################
+# Endpoints for sys router
+###############################################################################
 @sys_router.get("/.well-known/appspecific/com.chrome.devtools.json", tags=["public"])
 async def chrome_dev_tools(request: Request) -> dict[str, Any]:
     """Chrome DevTools integration endpoint for source code editing in browser."""
