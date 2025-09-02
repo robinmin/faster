@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from pathlib import Path
+import os
 import signal
 import sys
 from types import FrameType
@@ -14,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
 import uvicorn
 
@@ -31,9 +32,9 @@ from .exceptions import (
 )
 from .logger import get_logger, setup_logger
 from .redis import redis_mgr
-from .routers import dev_router
+from .routers import dev_router, sys_router
 from .sentry import SentryManager
-from .utilities import get_all_endpoints
+from .utilities import get_all_endpoints, is_cloudflare_workers, is_vps_deployment
 
 ###############################################################################
 
@@ -60,7 +61,27 @@ async def default_shutdown_handler() -> bool:
     return True
 
 
+async def _setup_vps_specific(app: FastAPI, settings: Settings) -> None:
+    """Setup VPS-specific configurations."""
+    logger.info("Configuring for VPS deployment...")
+
+    # Add static file serving if configured
+    if settings.vps_static_files_path and os.path.exists(settings.vps_static_files_path):
+        app.mount("/static", StaticFiles(directory=settings.vps_static_files_path), name="static")
+        logger.info(f"Static files mounted at: {settings.vps_static_files_path}")
+
+    # Note: Metrics endpoint is now in sys_router
+
+    # Configure for reverse proxy if needed
+    if settings.vps_reverse_proxy:
+        logger.info("Configured for reverse proxy deployment")
+
+
 async def _setup_all(app: FastAPI, settings: Settings) -> None:
+    # VPS-specific setup (metrics, static files)
+    if is_vps_deployment(settings.deployment_platform):
+        await _setup_vps_specific(app, settings)
+
     # Initialize database
     if settings.database_url:
         logger.info("Initializing database...")
@@ -79,15 +100,17 @@ async def _setup_all(app: FastAPI, settings: Settings) -> None:
         environment=settings.environment,
     )
 
-    logger.info("Initializing Redis...")
-    await redis_mgr.setup(
-        provider=settings.redis_provider,
-        redis_url=settings.redis_url,
-        password=settings.redis_password,
-        max_connections=settings.redis_max_connections,
-        decode_responses=settings.redis_decode_responses,
-        fallback_to_fake=settings.is_debug,
-    )
+    # Initialize Redis
+    if settings.redis_url:
+        logger.info("Initializing Redis...")
+        await redis_mgr.setup(
+            provider=settings.redis_provider,
+            redis_url=settings.redis_url,
+            password=settings.redis_password,
+            max_connections=settings.redis_max_connections,
+            decode_responses=settings.redis_decode_responses,
+            fallback_to_fake=settings.is_debug,
+        )
 
 
 async def _teardown_all(app: FastAPI) -> None:
@@ -107,10 +130,14 @@ async def _teardown_all(app: FastAPI) -> None:
 def _steup_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] | None = None) -> None:
     # Configure and add middleware to the FastAPI application
     # NOTE: Middleware must be added before initializing database/Redis to avoid "Cannot add middleware after an application has started" error
+
+    # Compression middleware
     if settings.gzip_enabled:
         app.add_middleware(GZipMiddleware, minimum_size=settings.gzip_min_size)
 
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts or ["*"])
+    # Trusted hosts middleware
+    trusted_hosts = settings.allowed_hosts or ["*"]
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
     if settings.auth_endabled:
         jwks_url = settings.supabase_jwks_url
@@ -270,11 +297,16 @@ def create_app(  # noqa: C901
         except AppError as e:
             logger.critical(f"Error during shutdown: {e}")
 
+    # FastAPI configuration
+    docs_url = "/docs" if settings.is_debug else None
+    redoc_url = "/redoc" if settings.is_debug else None
+    openapi_url = "/openapi.json" if settings.is_debug else None
+
     app = FastAPI(
         lifespan=lifespan,
-        docs_url="/docs" if settings.is_debug else None,
-        redoc_url="/redoc" if settings.is_debug else None,
-        openapi_url="/openapi.json" if settings.is_debug else None,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
         version=settings.app_version,
         title=settings.app_name,
         description=settings.app_description,
@@ -286,19 +318,10 @@ def create_app(  # noqa: C901
     # Setup middlewares
     _steup_middlewares(app, settings, middlewares)
 
-    # Include default routers
+    # Include routers
     app.include_router(auth_router)
+    app.include_router(sys_router)
     if settings.is_debug:
-        # this can enable me to edit the source code in the browser directly
-        @app.get("/.well-known/appspecific/com.chrome.devtools.json", tags=["public"])
-        async def answer_dev_tools() -> dict[str, Any]:  # type: ignore[reportUnusedFunction, unused-ignore]
-            return {
-                "workspace": {
-                    "uuid": str(uuid4()),
-                    "root": Path.cwd(),
-                }
-            }
-
         app.include_router(dev_router)
 
     # Include custom routers
@@ -324,7 +347,7 @@ def run_app(
     **kwargs: Any,
 ) -> None:
     """
-    Run the FastAPI application using uvicorn.
+    Run the FastAPI application using appropriate server for the platform.
 
     Args:
         app: The FastAPI application instance.
@@ -334,18 +357,41 @@ def run_app(
     """
     settings = app.state.settings if hasattr(app.state, "settings") else default_settings
 
+    # Platform-specific server configuration
+    if is_cloudflare_workers(settings.deployment_platform):
+        logger.warning("run_app() should not be called for Cloudflare Workers deployment")
+        logger.info("Use wrangler or direct ASGI export for Cloudflare Workers")
+        return
+
     log_level = "debug" if settings.is_debug else "info"
     use_reload = reload if reload is not None else settings.is_debug
 
-    config = uvicorn.Config(
-        app,
-        host=settings.host,
-        port=settings.port,
-        log_level=log_level,
-        reload=use_reload,
-        workers=workers or settings.workers,
-        **kwargs,
-    )
+    # Auto-scaling workers
+    final_workers = workers or settings.workers
+    if settings.auto_scale_workers:
+        cpu_count = os.cpu_count() or 1
+        final_workers = min(max(settings.min_workers, cpu_count), settings.max_workers)
+        logger.info(f"Auto-scaling workers: {final_workers} (CPU count: {cpu_count})")
+
+    # Server configuration
+    config_kwargs: dict[str, Any] = {
+        "host": settings.host,
+        "port": settings.port,
+        "log_level": log_level,
+        "reload": use_reload,
+        "workers": final_workers,
+    }
+
+    # Optional server settings
+    if settings.vps_max_request_size:
+        config_kwargs["limit_max_requests"] = settings.vps_max_request_size
+    if settings.timeout_keep_alive:
+        config_kwargs["timeout_keep_alive"] = settings.timeout_keep_alive
+
+    # Add any additional kwargs passed by user
+    config_kwargs.update(kwargs)
+
+    config = uvicorn.Config(app, **config_kwargs)
 
     server = uvicorn.Server(config)
 
