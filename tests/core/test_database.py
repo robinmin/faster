@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from faster.core.config import Settings
 from faster.core.database import DatabaseManager
 from faster.core.exceptions import DBError
 
@@ -19,6 +20,28 @@ TEST_SQLITE_URL = "sqlite+aiosqlite:///test.db"
 def db_manager() -> DatabaseManager:
     """Provides a clean DatabaseManager instance for each test."""
     return DatabaseManager()
+
+
+@pytest.fixture
+def master_only_settings() -> Settings:
+    """Settings with only master database URL."""
+    return Settings(
+        database_url=TEST_MASTER_URL,
+        database_pool_size=5,
+        database_max_overflow=10,
+        database_echo=False,
+    )
+
+
+@pytest.fixture
+def master_replica_settings() -> Settings:
+    """Settings with both master database URL (replica not supported in current Settings)."""
+    return Settings(
+        database_url=TEST_MASTER_URL,
+        database_pool_size=5,
+        database_max_overflow=10,
+        database_echo=False,
+    )
 
 
 @pytest.fixture
@@ -61,14 +84,18 @@ class TestDatabaseManagerInitialization:
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
     async def test_setup_master_only_success(
-        self, mock_logger: MagicMock, db_manager: DatabaseManager, mock_create_async_engine: MagicMock
+        self,
+        mock_logger: MagicMock,
+        db_manager: DatabaseManager,
+        mock_create_async_engine: MagicMock,
+        master_only_settings: Settings,
     ):
         """
         Arrange: A DatabaseManager and a mocked engine creator.
         Act: Call setup with only a master URL.
         Assert: Correctly initializes the master engine and session, leaving replica as None.
         """
-        await db_manager.setup(master_url=TEST_MASTER_URL)
+        await db_manager.setup(master_only_settings)
 
         mock_create_async_engine.assert_called_once()
         assert db_manager.master_engine is not None
@@ -79,23 +106,26 @@ class TestDatabaseManagerInitialization:
 
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
-    async def test_setup_with_replica_success(
-        self, mock_logger: MagicMock, db_manager: DatabaseManager, mock_create_async_engine: MagicMock
+    async def test_setup_master_only_via_settings(
+        self,
+        mock_logger: MagicMock,
+        db_manager: DatabaseManager,
+        mock_create_async_engine: MagicMock,
+        master_replica_settings: Settings,
     ):
         """
         Arrange: A DatabaseManager and a mocked engine creator.
-        Act: Call setup with both master and replica URLs.
-        Assert: Correctly initializes both master and replica engines and sessions.
+        Act: Call setup with master URL via Settings.
+        Assert: Correctly initializes only the master engine and session (replica not supported in current Settings).
         """
-        await db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL)
+        await db_manager.setup(master_replica_settings)
 
-        assert mock_create_async_engine.call_count == 2
+        assert mock_create_async_engine.call_count == 1
         assert db_manager.master_engine is not None
         assert db_manager.master_session is not None
-        assert db_manager.replica_engine is not None
-        assert db_manager.replica_session is not None
+        assert db_manager.replica_engine is None
+        assert db_manager.replica_session is None
         mock_logger.info.assert_any_call("Master DB engine initialized", extra={"url": TEST_MASTER_URL})
-        mock_logger.info.assert_any_call("Replica DB engine initialized", extra={"url": TEST_REPLICA_URL})
 
     @pytest.mark.parametrize(
         "url, expected_args",
@@ -117,7 +147,8 @@ class TestDatabaseManagerInitialization:
         Act: Call setup with different database URLs.
         Assert: The engine is created with the correct arguments based on the DB type.
         """
-        await db_manager.setup(master_url=url)
+        settings = Settings(database_url=url, database_pool_size=10, database_max_overflow=20)
+        await db_manager.setup(settings)
 
         call_args = mock_create_async_engine.call_args[1]
         for key, value in expected_args.items():
@@ -131,38 +162,34 @@ class TestDatabaseManagerInitialization:
         """
         Arrange: A mocked engine creator that raises an exception.
         Act: Call setup.
-        Assert: A DBError is raised and an error is logged.
+        Assert: Setup returns False and an error is logged.
         """
         mock_create_async_engine.side_effect = ValueError("Connection refused")
-        with pytest.raises(
-            DBError,
-            match="Failed to initialize database engines: Connection refused",
-        ):
-            await db_manager.setup(master_url=TEST_MASTER_URL)
-        mock_logger.error.assert_called_once_with("Failed to initialize database engines: Connection refused")
+        settings = Settings(database_url=TEST_MASTER_URL)
+        success = await db_manager.setup(settings)
+        assert success is False
+        mock_logger.error.assert_called_with("Failed to initialize database engines: Connection refused")
 
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
-    async def test_close_disposes_engines_and_resets_state(
+    async def test_teardown_disposes_engines_and_resets_state(
         self, mock_logger: MagicMock, db_manager: DatabaseManager, mock_create_async_engine: MagicMock
     ):
         """
         Arrange: A DatabaseManager with initialized engines.
-        Act: Call the close method.
-        Assert: Both engines' dispose methods are called and attributes are reset to None.
+        Act: Call the teardown method.
+        Assert: Engine dispose method is called and attributes are reset to None.
         """
-        await db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL)
+        settings = Settings(database_url=TEST_MASTER_URL)
+        await db_manager.setup(settings)
         master_engine_mock = db_manager.master_engine
-        replica_engine_mock = db_manager.replica_engine
 
-        await db_manager.close()
+        await db_manager.teardown()
 
         master_engine_mock.dispose.assert_awaited_once()
-        replica_engine_mock.dispose.assert_awaited_once()
         assert db_manager.master_engine is None
         assert db_manager.replica_engine is None
         mock_logger.info.assert_any_call("Master DB engine disposed")
-        mock_logger.info.assert_any_call("Replica DB engine disposed")
 
 
 class TestDatabaseManagerSessionHandling:
@@ -171,7 +198,8 @@ class TestDatabaseManagerSessionHandling:
     @pytest.fixture(autouse=True)
     def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock):
         """Auto-used fixture to initialize the db_manager for session tests."""
-        asyncio.run(db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL))
+        settings = Settings(database_url=TEST_MASTER_URL)
+        asyncio.run(db_manager.setup(settings))
 
     @pytest.mark.asyncio
     async def test_get_raw_session_raises_dberror_if_not_initialized(self):
@@ -277,7 +305,8 @@ class TestDatabaseManagerModelsAndHealth:
     @pytest.fixture(autouse=True)
     def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock):
         """Auto-used fixture to initialize the db_manager for these tests."""
-        asyncio.run(db_manager.setup(master_url=TEST_MASTER_URL, replica_url=TEST_REPLICA_URL))
+        settings = Settings(database_url=TEST_MASTER_URL)
+        asyncio.run(db_manager.setup(settings))
 
     @pytest.mark.asyncio
     async def test_init_db_models_raises_dberror_if_not_initialized(self):
@@ -330,37 +359,33 @@ class TestDatabaseManagerModelsAndHealth:
         mock_logger.warning.assert_called_once_with("Dropping all tables...")
 
     @pytest.mark.asyncio
-    async def test_check_health_all_ok(self, db_manager: DatabaseManager):
+    async def test_check_health_master_ok(self, db_manager: DatabaseManager):
         """
-        Arrange: Mocked engines that successfully return a value for 'SELECT 1'.
+        Arrange: Mocked master engine that successfully returns a value for 'SELECT 1'.
         Act: Call check_health.
-        Assert: Returns a dict indicating both master and replica are healthy.
+        Assert: Returns a dict indicating master is healthy and replica is false (not configured).
         """
         mock_result = MagicMock()
         mock_result.scalar_one.return_value = 1
         db_manager.master_engine.connect.return_value.__aenter__.return_value.execute.return_value = mock_result
-        db_manager.replica_engine.connect.return_value.__aenter__.return_value.execute.return_value = mock_result
 
         result = await db_manager.check_health()
-        assert result == {"master": True, "replica": True}
+        assert result == {"master": True, "replica": False}
 
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
     async def test_check_health_master_fails(self, mock_logger: MagicMock, db_manager: DatabaseManager):
         """
-        Arrange: A mocked master engine that fails and a healthy replica.
+        Arrange: A mocked master engine that fails.
         Act: Call check_health.
-        Assert: Returns a dict indicating master failed and replica is healthy.
+        Assert: Returns a dict indicating master failed and replica is false (not configured).
         """
         error = ConnectionRefusedError("Connection refused")
         db_manager.master_engine.connect.side_effect = error
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = 1
-        db_manager.replica_engine.connect.return_value.__aenter__.return_value.execute.return_value = mock_result
 
         result = await db_manager.check_health()
 
-        assert result == {"master": False, "replica": True}
+        assert result == {"master": False, "replica": False}
         mock_logger.exception.assert_called_once_with(f"Health check failed for master DB: {error}")
 
     @pytest.mark.asyncio
@@ -372,4 +397,4 @@ class TestDatabaseManagerModelsAndHealth:
         """
         db_manager = DatabaseManager()
         result = await db_manager.check_health()
-        assert result == {"master": False, "replica": False}
+        assert result == {"master": False, "replica": False, "reason": "Plugin not ready"}
