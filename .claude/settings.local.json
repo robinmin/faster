@@ -5,7 +5,13 @@
       "mcp__context7__get-library-docs",
       "Read(faster/**)",
       "Bash(make:*)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "Bash(python -m pytest tests/core/test_plugins.py -v)",
+      "Bash(python -m pytest tests/core/test_database.py -v)",
+      "Bash(python -m pytest tests/core/test_redis.py -v)",
+      "Bash(python -m pytest tests/core/test_plugin_integration.py -v)",
+      "Bash(python:*)",
+      "Bash(uv sync:*)"
     ],
     "deny": [
       "Read(.env)"
