@@ -216,8 +216,10 @@ class DatabaseManager(BasePlugin):
 async def get_raw_session(readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
     return DatabaseManager.get_instance().get_raw_session(readonly=readonly)
 
+
 async def get_txn(readonly: bool = False) -> _AsyncGeneratorContextManager[AsyncSession, None]:
     return DatabaseManager.get_instance().get_txn(readonly=readonly)
+
 
 def generate_ddl(url: str = "sqlite:///:memory:") -> str:
     """

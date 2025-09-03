@@ -26,16 +26,20 @@ from .database import DatabaseManager
 from .exceptions import (
     AppError,
     AuthError,
-    app_exception_handler,
-    auth_exception_handler,
-    custom_validation_exception_handler,
 )
 from .logger import get_logger, setup_logger
 from .plugins import PluginManager
 from .redis import RedisManager
 from .routers import dev_router, sys_router
 from .sentry import SentryManager
-from .utilities import check_all_resources, is_cloudflare_workers, is_vps_deployment
+from .utilities import (
+    app_exception_handler,
+    auth_exception_handler,
+    check_all_resources,
+    custom_validation_exception_handler,
+    is_cloudflare_workers,
+    is_vps_deployment,
+)
 
 ###############################################################################
 

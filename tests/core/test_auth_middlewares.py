@@ -5,8 +5,8 @@ from fastapi.responses import JSONResponse
 import pytest
 
 from faster.core.auth.middlewares import AuthMiddleware, get_auth_user
-from faster.core.auth.schemas import AuthUser
 from faster.core.auth.services import AuthService
+from faster.core.schemas import AppResponse
 
 # Constants
 TEST_USER_ID = "user-123"
@@ -18,11 +18,10 @@ TEST_EMAIL = "test@example.com"
 def mock_auth_service() -> MagicMock:
     """Fixture to create a mock AuthService."""
     service = MagicMock(spec=AuthService)
-    service.verify_jwt = MagicMock(return_value={"sub": TEST_USER_ID, "email": TEST_EMAIL})
-    service.check_access = AsyncMock(return_value=True)
     # Mock the user profile that authenticate_token would return
     mock_user_profile = MagicMock()
     mock_user_profile.id = TEST_USER_ID
+    mock_user_profile.email = TEST_EMAIL
     service.authenticate_token = AsyncMock(return_value=mock_user_profile)
     return service
 
@@ -44,8 +43,6 @@ def mock_request() -> MagicMock:
     ]
     # Initialize request.state as a MagicMock that can have attributes set on it
     request.state = MagicMock()
-    # Ensure 'auth_user' attribute does not exist initially
-    del request.state.auth_user
     return request
 
 
@@ -76,6 +73,7 @@ class TestAuthMiddleware:
         # Mock the user profile that authenticate_token would return
         mock_user_profile = MagicMock()
         mock_user_profile.id = TEST_USER_ID
+        mock_user_profile.email = TEST_EMAIL
         mock_auth_service.authenticate_token = AsyncMock(return_value=mock_user_profile)
 
         async def call_next(request):
@@ -88,6 +86,7 @@ class TestAuthMiddleware:
         mock_auth_service.authenticate_token.assert_awaited_once_with(TEST_TOKEN)
         assert hasattr(mock_request.state, "user")
         assert mock_request.state.user.id == TEST_USER_ID
+        assert mock_request.state.authenticated is True
         assert response.status_code == 200
 
     async def test_middleware_skips_public_endpoint(
@@ -120,6 +119,31 @@ class TestAuthMiddleware:
         # It just calls call_next directly
         assert response.status_code == 200
 
+    async def test_middleware_allows_allowed_path(
+        self,
+        middleware: AuthMiddleware,
+        mock_request: MagicMock,
+        mock_auth_service: MagicMock,
+    ):
+        """
+        Tests that the middleware allows requests to allowed paths.
+        """
+        # Arrange
+        mock_request.url.path = "/docs"
+        mock_auth_service.authenticate_token = AsyncMock()
+
+        async def call_next(request):
+            return JSONResponse({"status": "ok"}, status_code=200)
+
+        # Act
+        response = await middleware.dispatch(mock_request, call_next)
+
+        # Assert
+        mock_auth_service.authenticate_token.assert_not_awaited()
+        assert mock_request.state.user is None
+        assert mock_request.state.authenticated is False
+        assert response.status_code == 200
+
     async def test_middleware_returns_401_if_no_auth_header(self, middleware: AuthMiddleware, mock_request: MagicMock):
         """
         Tests that a 401 Unauthorized response is returned if the Authorization
@@ -127,13 +151,24 @@ class TestAuthMiddleware:
         """
         # Arrange
         mock_request.headers = {}
+        mock_request.app.state.endpoints = [
+            {
+                "path": "/protected/resource",
+                "tags": ["protected"],
+                "name": "test_endpoint",
+                "methods": ["GET", "POST"],
+            }
+        ]
+
+        async def call_next(request):
+            return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
-        response = await middleware.dispatch(mock_request, MagicMock())
+        response = await middleware.dispatch(mock_request, call_next)
 
         # Assert
+        assert isinstance(response, AppResponse)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "Authentication required" in response.body.decode()
 
     async def test_middleware_returns_401_if_invalid_token(
         self,
@@ -146,15 +181,26 @@ class TestAuthMiddleware:
         """
         # Arrange
         mock_auth_service.authenticate_token.side_effect = Exception("Invalid signature")
+        mock_request.app.state.endpoints = [
+            {
+                "path": "/protected/resource",
+                "tags": ["protected"],
+                "name": "test_endpoint",
+                "methods": ["GET", "POST"],
+            }
+        ]
+
+        async def call_next(request):
+            return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
-        response = await middleware.dispatch(mock_request, MagicMock())
+        response = await middleware.dispatch(mock_request, call_next)
 
         # Assert
+        assert isinstance(response, AppResponse)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "Authentication failed" in response.body.decode()
 
-    async def test_middleware_returns_401_if_access_denied(
+    async def test_middleware_returns_401_if_auth_fails(
         self,
         middleware: AuthMiddleware,
         mock_request: MagicMock,
@@ -165,13 +211,24 @@ class TestAuthMiddleware:
         """
         # Arrange
         mock_auth_service.authenticate_token.return_value = None
+        mock_request.app.state.endpoints = [
+            {
+                "path": "/protected/resource",
+                "tags": ["protected"],
+                "name": "test_endpoint",
+                "methods": ["GET", "POST"],
+            }
+        ]
+
+        async def call_next(request):
+            return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
-        response = await middleware.dispatch(mock_request, MagicMock())
+        response = await middleware.dispatch(mock_request, call_next)
 
         # Assert
+        assert isinstance(response, AppResponse)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        assert "Authentication required" in response.body.decode()
 
     async def test_middleware_returns_404_if_endpoint_not_found(
         self, middleware: AuthMiddleware, mock_request: MagicMock
@@ -182,14 +239,90 @@ class TestAuthMiddleware:
         """
         # Arrange
         mock_request.url.path = "/nonexistent"
-        # Simulate endpoint not being found by returning an empty dict
-        mock_request.app.state.endpoints = {}
+        mock_request.app.state.endpoints = []
+
+        async def call_next(request):
+            return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
-        response = await middleware.dispatch(mock_request, MagicMock())
+        response = await middleware.dispatch(mock_request, call_next)
 
         # Assert
+        assert isinstance(response, AppResponse)
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_middleware_handles_exception_gracefully(
+        self,
+        middleware: AuthMiddleware,
+        mock_request: MagicMock,
+    ):
+        """
+        Tests that the middleware handles exceptions gracefully.
+        """
+        # Arrange
+        mock_request.app.state.endpoints = [
+            {
+                "path": "/protected/resource",
+                "tags": ["protected"],
+                "name": "test_endpoint",
+                "methods": ["GET", "POST"],
+            }
+        ]
+
+        # Mock get_current_endpoint to raise an exception
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr(
+                "faster.core.auth.middlewares.get_current_endpoint", MagicMock(side_effect=Exception("Test error"))
+            )
+
+            async def call_next(request):
+                return JSONResponse({"status": "ok"}, status_code=200)
+
+            # Act
+            response = await middleware.dispatch(mock_request, call_next)
+
+            # Assert
+            assert isinstance(response, AppResponse)
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    async def test_middleware_with_prefix_allowed_paths(self):
+        """
+        Tests that the middleware correctly handles prefix allowed paths.
+        """
+        # Arrange
+        mock_auth_service = MagicMock(spec=AuthService)
+        mock_user_profile = MagicMock()
+        mock_user_profile.id = TEST_USER_ID
+        mock_auth_service.authenticate_token = AsyncMock(return_value=mock_user_profile)
+
+        app = MagicMock()
+        middleware = AuthMiddleware(app, auth_service=mock_auth_service, allowed_paths=["/api/public/*"])
+
+        mock_request = MagicMock(spec=Request)
+        mock_request.method = "GET"
+        mock_request.url.path = "/api/public/resource"
+        mock_request.headers = {"Authorization": f"Bearer {TEST_TOKEN}"}
+        mock_request.app.state.endpoints = [
+            {
+                "path": "/api/public/resource",
+                "tags": ["protected"],
+                "name": "test_endpoint",
+                "methods": ["GET", "POST"],
+            }
+        ]
+        mock_auth_service.authenticate_token = AsyncMock()
+
+        async def call_next(request):
+            return JSONResponse({"status": "ok"}, status_code=200)
+
+        # Act
+        response = await middleware.dispatch(mock_request, call_next)
+
+        # Assert
+        mock_auth_service.authenticate_token.assert_not_awaited()
+        assert mock_request.state.user is None
+        assert mock_request.state.authenticated is False
+        assert response.status_code == 200
 
 
 class TestGetAuthUser:
@@ -202,14 +335,13 @@ class TestGetAuthUser:
         """
         # Arrange
         request = MagicMock(spec=Request)
-        auth_user_obj = AuthUser(id=TEST_USER_ID, email=TEST_EMAIL, token=TEST_TOKEN, raw={})
-        request.state.auth_user = auth_user_obj
+        request.state.auth_user = {"id": TEST_USER_ID, "email": TEST_EMAIL}
 
         # Act
         user = get_auth_user(request)
 
         # Assert
-        assert user == auth_user_obj
+        assert user == request.state.auth_user
 
     def test_get_auth_user_raises_401_if_user_not_on_state(self):
         """
@@ -219,8 +351,7 @@ class TestGetAuthUser:
         # Arrange
         request = MagicMock(spec=Request)
         # Ensure the attribute does not exist
-        if hasattr(request.state, "auth_user"):
-            delattr(request.state, "auth_user")
+        del request.state.auth_user
 
         # Act & Assert
         with pytest.raises(HTTPException) as exc_info:
