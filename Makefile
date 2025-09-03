@@ -48,7 +48,9 @@ clean: ## Clean up build artifacts and cached files
 		$(find . -depth -name "__pycache__") \
 		$(find . -depth -name "*.pyc") \
 		$(find . -depth -name "*.pyo") \
-		build/htmlcov \
+		build \
+		logs/app.log \
+		.mypy_cache \
 		.mypy_cache \
 		.pytest_cache \
 		.ruff_cache \
