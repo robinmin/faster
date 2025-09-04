@@ -329,3 +329,80 @@ All the sub-classes need to apply these naming changes.
 
 3, The reason we keep the __init__ method simple is to implement lazy initialization( actually in setup method). Another reason to implement
 PluginManager is to reduce these global variables. We will step by step to reduce these global variables(for example db_mgr, redis_mgr and etc). So, do not create instance and register plugins on the global scope. Attach  PluginManager's instance to app.state then we can access it from anywhere without any global variables burden.
+
+
+### User information
+
+Function login in file @faster/core/auth/routers.py is just a dummpy so far. By design it at least do the following works(Of course not all implemented in this function, but just call the right one to implement it):
+
+- Get JWT from from request and validate it with remote Supabase Auth server. If invalid, redirect to login page or return error.
+- If JWT token is valid, remove current JWT token from blacklist(call blacklist_delete in redisex.py).
+- If JWT token is valid, get user profile from Supabase and store it in the session.
+- For the first time register user, redirect to onboarding page.
+- For the existing user, Redirecting to the appropriate page(based on the user's authentication status)
+
+## Your tasks:
+- Design a set of tables to store all user informations responsed from Supabase Auth API. Define all of them in file @faster/core/auth/schemas.py (The style and naming conventions should be consistent with what I've done in file @faster/core/models.py)
+
+- implement functions in file @faster/core/auth/repositories.py to interact with database if necessary.
+- implement functions in file @faster/core/auth/services.py to define the key business logic for above functions.
+- call these functions defined in file @faster/core/auth/services.py to implement login function in file @faster/core/auth/routers.py.
+
+Here comes a sample of Supabase Auth returned user information(via Google OAuth).
+```json
+{
+  "id": "61332569-ce63-4876-a207-9f376d89696b",
+  "aud": "authenticated",
+  "role": "authenticated",
+  "email": "minlongbing@gmail.com",
+  "email_confirmed_at": "2025-07-23T22:37:38.463723Z",
+  "phone": "",
+  "confirmed_at": "2025-07-23T22:37:38.463723Z",
+  "last_sign_in_at": "2025-09-04T06:19:32.749423Z",
+  "app_metadata": {
+    "provider": "google",
+    "providers": [
+      "google"
+    ]
+  },
+  "user_metadata": {
+    "avatar_url": "https://lh3.googleusercontent.com/a/ACg8ocKBNPXQ9hZ-8ndFwNyOXF8-NdoMo9DBRy1uzzHVbF5vOO5Yp8LR=s96-c",
+    "email": "minlongbing@gmail.com",
+    "email_verified": true,
+    "full_name": "Robin Min",
+    "iss": "https://accounts.google.com",
+    "name": "Robin Min",
+    "phone_verified": false,
+    "picture": "https://lh3.googleusercontent.com/a/ACg8ocKBNPXQ9hZ-8ndFwNyOXF8-NdoMo9DBRy1uzzHVbF5vOO5Yp8LR=s96-c",
+    "provider_id": "111535814728599577599",
+    "sub": "111535814728599577599"
+  },
+  "identities": [
+    {
+      "identity_id": "728d865e-ac9b-46b6-a62f-740c1f77b112",
+      "id": "111535814728599577599",
+      "user_id": "61332569-ce63-4876-a207-9f376d89696b",
+      "identity_data": {
+        "avatar_url": "https://lh3.googleusercontent.com/a/ACg8ocKBNPXQ9hZ-8ndFwNyOXF8-NdoMo9DBRy1uzzHVbF5vOO5Yp8LR=s96-c",
+        "email": "xxxx@gmail.com",
+        "email_verified": true,
+        "full_name": "Robin Min",
+        "iss": "https://accounts.google.com",
+        "name": "Robin Min",
+        "phone_verified": false,
+        "picture": "https://lh3.googleusercontent.com/a/ACg8ocKBNPXQ9hZ-8ndFwNyOXF8-NdoMo9DBRy1uzzHVbF5vOO5Yp8LR=s96-c",
+        "provider_id": "111535814728599577599",
+        "sub": "111535814728599577599"
+      },
+      "provider": "google",
+      "last_sign_in_at": "2025-07-23T22:37:38.451537Z",
+      "created_at": "2025-07-23T22:37:38.451601Z",
+      "updated_at": "2025-09-04T06:19:32.704958Z",
+      "email": "xxxx@gmail.com"
+    }
+  ],
+  "created_at": "2025-07-23T22:37:38.426611Z",
+  "updated_at": "2025-09-04T06:19:32.792465Z",
+  "is_anonymous": false
+}
+```
