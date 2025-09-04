@@ -35,6 +35,7 @@ import fakeredis.aioredis
 import redis.asyncio as redis
 from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
+from redis.typing import FieldT
 from typing_extensions import Self
 
 from .config import Settings
@@ -525,7 +526,7 @@ class RedisClient(RedisInterface):
             logger.error(f"Redis LLEN operation failed for list '{name}': {e}")
             raise RedisOperationError(f"LLEN operation failed: {e}") from e
 
-    async def sadd(self, name: str, *values: str) -> int:
+    async def sadd(self, name: str, *values: FieldT) -> int:
         try:
             if not values:
                 return 0
