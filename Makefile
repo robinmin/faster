@@ -1,5 +1,7 @@
 .PHONY: help run redis-start test lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean
 
+SRC_TARGETS = faster/ tests/ main.py migrations/env.py $(wildcard migrations/versions/*.py)
+
 help: ## Show this help message
 	@echo "Usage: make [target]"
 	@echo ""
@@ -12,15 +14,15 @@ run: ## Run the FastAPI application
 test: ## Run tests
 	PYTHONPATH=. uv run pytest --cov=faster --cov-report=html:build/htmlcov
 
-lint: format ## Lint the code
-	uv run ruff check faster/ tests/ main.py
-	uv run mypy faster/ main.py
+lint: autofix ## Lint the code
+	uv run ruff check $(SRC_TARGETS)
+	uv run mypy $(SRC_TARGETS)
 
 format: ## Format the code
-	ruff format faster/ tests/ main.py
+	ruff format $(SRC_TARGETS)
 
 autofix: format ## Automatically fix linting errors
-	ruff check faster/ tests/ main.py --fix
+	ruff check $(SRC_TARGETS) --fix
 
 db-migrate: ## Create a new database migration (e.g., make db-migrate m="create users table")
 ifndef m
