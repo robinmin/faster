@@ -186,6 +186,8 @@ disallow_untyped_defs = false
 
 [tool.pyright]
 typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
 
 # Specify the root directory or files to include in the analysis.
 include = ["faster/**/*.py", "main.py", "tests/**/*.py"]
@@ -222,6 +224,8 @@ pythonpath = "."    # If your package is in a 'src' directory
 
 [dependency-groups]
 dev = [
+    "alembic>=1.16.5",
+    "debugpy>=1.8.16",
     "mypy>=1.17.1",
     "pyls-mypy>=0.1.8",
     "pyright>=1.1.404",

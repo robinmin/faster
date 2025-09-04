@@ -221,6 +221,7 @@ types-python-jose==3.5.0.20250531
     # via faster (pyproject.toml)
 typing-extensions==4.14.1
     # via
+    #   faster (pyproject.toml)
     #   aioredis
     #   aiosqlite
     #   anyio
