@@ -11,11 +11,16 @@
       "Bash(python -m pytest tests/core/test_redis.py -v)",
       "Bash(python -m pytest tests/core/test_plugin_integration.py -v)",
       "Bash(python:*)",
-      "Bash(uv sync:*)"
+      "Bash(uv sync:*)",
+      "Bash(sqlite3:*)",
+      "Bash(uv run:*)",
+      "Bash(sed:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(mypy:*)",
+      "Bash(ruff check:*)"
     ],
-    "deny": [
-      "Read(.env)"
-    ],
+    "deny": ["Read(.env)"],
     "ask": []
   }
 }
