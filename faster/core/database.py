@@ -146,7 +146,7 @@ class DatabaseManager(BasePlugin):
             self.master_session = async_sessionmaker(self.master_engine, class_=AsyncSession)
             logger.info("Master DB engine initialized", extra={"url": settings.database_url})
 
-            # Note: replica_url is not in current Settings, but could be added later
+            # TODO : Note: replica_url is not in current Settings, but could be added later
             # if replica_url:
             #     self.replica_engine = self._make_engine(replica_url, pool_size, max_overflow, echo)
             #     self.replica_session = async_sessionmaker(self.replica_engine, class_=AsyncSession)
