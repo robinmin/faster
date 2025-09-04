@@ -19,6 +19,24 @@ branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
 depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
 
 
+#######################################################################
+# Usage sample:
+#
+# from sqlalchemy.sql import text
+# from sqlalchemy.orm import Session
+#
+# conn = op.get_bind()
+#
+# # create session based on connection
+# session = Session(bind=conn)
+#
+# # Or, call execute directly with conn
+# conn.execute(
+#     text("INSERT INTO metadata (key, value) VALUES (:key, :value)"),
+#     {"key": key, "value": value},
+# )
+#######################################################################
+
 def upgrade() -> None:
     ${upgrades if upgrades else "pass"}
 

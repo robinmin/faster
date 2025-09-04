@@ -1,14 +1,13 @@
 from logging.config import fileConfig
-from typing import Any, Dict, cast
-
-from sqlalchemy import engine_from_config, pool
+from typing import Any, cast
 
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # Import your models here so Alembic can detect them
 # We need to import all models that inherit from SQLModel
 try:
-    from faster.core.models import SysDict, SysMap
+    from faster.core.models import SysDict, SysMap  # noqa: F401
 except ImportError as e:
     print(f"Warning: Could not import models: {e}")
 
@@ -69,7 +68,7 @@ def run_migrations_online() -> None:
     section_config = config.get_section(config.config_ini_section)
     if section_config is not None:
         # Cast to the expected type
-        engine_config: Dict[str, Any] = cast(Dict[str, Any], section_config)
+        engine_config: dict[str, Any] = cast(dict[str, Any], section_config)
     else:
         engine_config = {}
 
@@ -80,9 +79,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
