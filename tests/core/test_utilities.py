@@ -8,7 +8,7 @@ from fastapi.routing import APIRoute
 import pytest
 
 from faster.core.exceptions import AppError, AuthError
-from faster.core.schemas import AppResponse
+from faster.core.models import AppResponse
 from faster.core.utilities import (
     app_exception_handler,
     auth_exception_handler,
@@ -20,10 +20,6 @@ from faster.core.utilities import (
     is_api_call,
     is_cloudflare_workers,
     is_vps_deployment,
-    qbool,
-    qint,
-    qorder,
-    qstr,
 )
 
 
@@ -332,72 +328,41 @@ class TestResourceCheck:
         mock_settings.refresh_interval = 60  # 60 seconds
 
         # Mock the plugin manager
-        mock_plugin_mgr = AsyncMock()
-        mock_plugin_mgr.check_health.return_value = {
-            "database": {"status": "ok"},
-            "redis": {"status": "ok"},
-            "sentry": {"status": "ok"},
-        }
-        mock_app.state.plugin_mgr = mock_plugin_mgr
+        with patch("faster.core.utilities.PluginManager.get_instance") as mock_get_instance:
+            mock_plugin_mgr = AsyncMock()
+            mock_plugin_mgr.check_health.return_value = {
+                "database": {"status": "ok"},
+                "redis": {"status": "ok"},
+                "sentry": {"status": "ok"},
+            }
+            mock_get_instance.return_value = mock_plugin_mgr
 
-        # Mock the app routes for get_all_endpoints
-        mock_route = MagicMock(spec=APIRoute)
-        mock_route.path = "/api/test"
-        mock_route.methods = {"GET"}
-        mock_route.tags = ["test"]
-        mock_route.name = "test_endpoint"
-        # Properly mock the endpoint function
-        mock_endpoint_func = MagicMock()
-        mock_endpoint_func.__name__ = "test_endpoint_func"
-        mock_route.endpoint = mock_endpoint_func
-        mock_app.routes = [mock_route]
+            # Mock the app routes for get_all_endpoints
+            mock_route = MagicMock(spec=APIRoute)
+            mock_route.path = "/api/test"
+            mock_route.methods = {"GET"}
+            mock_route.tags = ["test"]
+            mock_route.name = "test_endpoint"
+            # Properly mock the endpoint function
+            mock_endpoint_func = MagicMock()
+            mock_endpoint_func.__name__ = "test_endpoint_func"
+            mock_route.endpoint = mock_endpoint_func
+            mock_app.routes = [mock_route]
 
-        await check_all_resources(mock_app, mock_settings)
+            await check_all_resources(mock_app, mock_settings)
 
-        # Verify that endpoints were set
-        assert hasattr(mock_app.state, "endpoints")
-        assert len(mock_app.state.endpoints) == 1
+            # Verify that endpoints were set
+            assert hasattr(mock_app.state, "endpoints")
+            assert len(mock_app.state.endpoints) == 1
 
-        # Verify that plugin health check was called
-        mock_plugin_mgr.check_health.assert_called_once()
+            # Verify that plugin health check was called
+            mock_plugin_mgr.check_health.assert_called_once()
 
-        # Verify that latest status info was set
-        assert hasattr(mock_app.state, "latest_status_info")
-        assert "db" in mock_app.state.latest_status_info
-        assert "redis" in mock_app.state.latest_status_info
-        assert "sentry" in mock_app.state.latest_status_info
-
-
-class TestQueryUtilities:
-    """Test query utility functions."""
-
-    def test_qbool(self) -> None:
-        """Test qbool function casts condition correctly."""
-        # This is a simple cast test - in practice, this would be used with SQLAlchemy expressions
-        condition = True
-        result = qbool(condition)
-        assert result is True  # The cast doesn't change the value, just the type hint
-
-    def test_qorder(self) -> None:
-        """Test qorder function casts column correctly."""
-        # This is a simple cast test
-        column = "test_column"
-        result = qorder(column)
-        assert result == "test_column"  # The cast doesn't change the value, just the type hint
-
-    def test_qint(self) -> None:
-        """Test qint function casts column correctly."""
-        # This is a simple cast test
-        column = 42
-        result = qint(column)
-        assert result == 42  # The cast doesn't change the value, just the type hint
-
-    def test_qstr(self) -> None:
-        """Test qstr function casts column correctly."""
-        # This is a simple cast test
-        column = "test_string"
-        result = qstr(column)
-        assert result == "test_string"  # The cast doesn't change the value, just the type hint
+            # Verify that latest status info was set
+            assert hasattr(mock_app.state, "latest_status_info")
+            assert "db" in mock_app.state.latest_status_info
+            assert "redis" in mock_app.state.latest_status_info
+            assert "sentry" in mock_app.state.latest_status_info
 
 
 class TestExceptionHandlers:
@@ -415,7 +380,7 @@ class TestExceptionHandlers:
             assert isinstance(result, AppResponse)
             # Parse the JSON content to check the values
 
-            content = json.loads(result.body)
+            content = json.loads(bytes(result.body))
             assert content["status"] == "error"
             assert content["message"] == "Test error message"
             assert content["data"] == [{"field": "test", "error": "invalid"}]
@@ -435,7 +400,7 @@ class TestExceptionHandlers:
             assert isinstance(result, AppResponse)
             # Parse the JSON content to check the values
 
-            content = json.loads(result.body)
+            content = json.loads(bytes(result.body))
             assert content["status"] == "error"
             assert content["message"] == "Test error message"
             assert content["data"] == {}  # Default to empty dict when None
@@ -462,7 +427,7 @@ class TestExceptionHandlers:
             assert isinstance(result, AppResponse)
             # Parse the JSON content to check the values
 
-            content = json.loads(result.body)
+            content = json.loads(bytes(result.body))
             assert content["status"] == "validation error"
             assert content["message"] == "Request validation failed"
             assert result.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -488,7 +453,7 @@ class TestExceptionHandlers:
             assert isinstance(result, AppResponse)
             # Parse the JSON content to check the values
 
-            content = json.loads(result.body)
+            content = json.loads(bytes(result.body))
             assert content["status"] == "Authentication failed"
             assert content["message"] == "Authentication failed"
             assert result.status_code == 401
@@ -508,7 +473,7 @@ class TestExceptionHandlers:
             assert isinstance(result, AppResponse)
             # Parse the JSON content to check the values
 
-            content = json.loads(result.body)
+            content = json.loads(bytes(result.body))
             assert content["status"] == "Authentication failed"
             assert content["message"] == "Authentication failed"
             assert result.status_code == 401
