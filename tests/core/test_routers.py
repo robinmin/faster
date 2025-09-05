@@ -6,6 +6,7 @@
 # to simulate HTTP requests and responses.
 # #############################################################################
 
+from typing import cast
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -52,9 +53,11 @@ class TestDevRouter:
         mock_settings.supabase_anon_key = "test-anon-key"
         mock_settings.sentry_client_dsn = "test-dsn"
         mock_settings.environment = "test"
+        mock_settings.host = "127.0.0.1"
+        mock_settings.port = 8000
 
         # Override the app state for testing
-        client.app.state.settings = mock_settings
+        cast(FastAPI, client.app).state.settings = mock_settings
 
         # Make a request to the endpoint
         response = client.get("/dev/settings")
@@ -103,7 +106,7 @@ class TestSysRouter:
         # Create a mock app state with debug settings
         mock_settings = MagicMock()
         mock_settings.is_debug = True
-        client.app.state.settings = mock_settings
+        cast(FastAPI, client.app).state.settings = mock_settings
 
         # Make a request to the endpoint
         response = client.get("/.well-known/appspecific/com.chrome.devtools.json")
@@ -133,7 +136,7 @@ class TestSysRouter:
         # Create a mock app state with non-debug settings
         mock_settings = MagicMock()
         mock_settings.is_debug = False
-        client.app.state.settings = mock_settings
+        cast(FastAPI, client.app).state.settings = mock_settings
 
         # Make a request to the endpoint
         response = client.get("/.well-known/appspecific/com.chrome.devtools.json")
@@ -154,7 +157,7 @@ class TestSysRouter:
         # Create a mock app state with metrics enabled
         mock_settings = MagicMock()
         mock_settings.vps_enable_metrics = True
-        client.app.state.settings = mock_settings
+        cast(FastAPI, client.app).state.settings = mock_settings
 
         # Make a request to the endpoint
         response = client.get("/metrics")
@@ -171,7 +174,7 @@ class TestSysRouter:
         # Create a mock app state with metrics disabled
         mock_settings = MagicMock()
         mock_settings.vps_enable_metrics = False
-        client.app.state.settings = mock_settings
+        cast(FastAPI, client.app).state.settings = mock_settings
 
         # Make a request to the endpoint
         response = client.get("/metrics")
@@ -188,7 +191,7 @@ class TestSysRouter:
         # Create a mock app state with metrics enabled
         mock_settings = MagicMock()
         mock_settings.vps_enable_metrics = True
-        client.app.state.settings = mock_settings
+        cast(FastAPI, client.app).state.settings = mock_settings
 
         # Make generate_latest raise an ImportError
         mock_generate_latest.side_effect = ImportError("prometheus_client not installed")
@@ -205,13 +208,13 @@ class TestSysRouter:
         """Test health endpoint returns status information."""
         # Create a mock app state with settings
         mock_settings = MagicMock()
-        client.app.state.settings = mock_settings
+        cast(FastAPI, client.app).state.settings = mock_settings
 
         # Mock the check_all_resources function
         with patch("faster.core.routers.check_all_resources") as mock_check_resources:
             # Set up mock app state with health data
-            client.app.state.latest_status_check = "2023-01-01T00:00:00Z"
-            client.app.state.latest_status_info = {
+            cast(FastAPI, client.app).state.latest_status_check = "2023-01-01T00:00:00Z"
+            cast(FastAPI, client.app).state.latest_status_info = {
                 "db": {"status": "ok"},
                 "redis": {"status": "ok"},
                 "sentry": {"status": "ok"},
@@ -248,15 +251,15 @@ class TestSysRouter:
         """Test health endpoint works when status info is not available."""
         # Create a mock app state with settings
         mock_settings = MagicMock()
-        client.app.state.settings = mock_settings
+        cast(FastAPI, client.app).state.settings = mock_settings
 
         # Mock the check_all_resources function
         with patch("faster.core.routers.check_all_resources") as mock_check_resources:
             # Set up mock app state without health data
-            if hasattr(client.app.state, "latest_status_check"):
-                delattr(client.app.state, "latest_status_check")
-            if hasattr(client.app.state, "latest_status_info"):
-                delattr(client.app.state, "latest_status_info")
+            if hasattr(cast(FastAPI, client.app).state, "latest_status_check"):
+                delattr(cast(FastAPI, client.app).state, "latest_status_check")
+            if hasattr(cast(FastAPI, client.app).state, "latest_status_info"):
+                delattr(cast(FastAPI, client.app).state, "latest_status_info")
 
             # Make a request to the endpoint
             response = client.get("/health")
