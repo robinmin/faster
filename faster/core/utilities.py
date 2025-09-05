@@ -1,20 +1,24 @@
 from collections import defaultdict
 from datetime import datetime
 import os
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
-from sqlalchemy.sql.elements import ColumnClause, ColumnElement
 
 from .config import Settings
 from .exceptions import AppError, AuthError
 from .logger import get_logger
-from .schemas import AppResponse
+from .models import AppResponse
+from .plugins import PluginManager
 from .sentry import capture_it
 
+###############################################################################
+
 logger = get_logger(__name__)
+T = TypeVar("T")
+
 
 ###############################################################################
 # Platform Detection Utilities
@@ -97,7 +101,7 @@ def get_all_endpoints(app: FastAPI) -> list[dict[str, Any]]:
     Return a list of all endpoints with method, path, tags, and function name.
     Includes routes defined via decorators and normal route registration.
     """
-    endpoints = []
+    endpoints: list[dict[str, Any]] = []
 
     for route in app.routes:
         if isinstance(route, APIRoute):
@@ -155,7 +159,7 @@ async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     app.state.endpoints = endpoints
 
     # Refresh plugin statuses
-    plugin_health = await app.state.plugin_mgr.check_health()
+    plugin_health = await PluginManager.get_instance().check_health()
 
     db_health = plugin_health.get("database", {})
     redis_health = plugin_health.get("redis", {})
@@ -164,108 +168,16 @@ async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     # Refresh latest status info
     app.state.latest_status_info = {"db": db_health, "redis": redis_health, "sentry": sentry_health}
 
-
 ###############################################################################
-# Query utility functions for SQLModel with proper typing.
+# Query Builders
 #
-# This module provides helper functions to cast SQLAlchemy expressions
-# to their proper types, helping to avoid mypy errors when working with SQLModel.
+# Query builders have been moved to a separate module for better organization.
+# Import them from the builders module:
 #
-# Example usage:
-#     from .query_utils import qbool, qorder
+#     from .builders import QueryBuilder, query_builder, soft_delete_query_builder
 #
-#     query = select(SysMap)
-#     query = query.where(qbool(SysMap.category == category))
-#     query = query.order_by(qorder(SysMap.order))
+# For backward compatibility, we re-export the main classes here.
 ###############################################################################
-
-
-# Type variable for column types
-T = TypeVar("T")
-
-
-def qbool(condition: bool) -> ColumnElement[bool]:
-    """
-    Cast a boolean condition to a SQLAlchemy ColumnElement[bool].
-
-    This function helps resolve mypy errors when using boolean conditions
-    in SQLAlchemy where() clauses with SQLModel.
-
-    Example:
-        query = select(SysMap)
-        query = query.where(qbool(SysMap.category == category))
-        query = query.where(qbool(SysMap.in_used == 1))
-
-    Args:
-        condition: A boolean condition expression (e.g., model.field == value)
-
-    Returns:
-        ColumnElement[bool]: The condition cast to SQLAlchemy column element
-    """
-    return cast(ColumnElement[bool], condition)
-
-
-def qorder(column: Any) -> ColumnClause[Any]:
-    """
-    Cast a column to a SQLAlchemy ColumnClause for ordering.
-
-    This function helps resolve mypy errors when using columns
-    in SQLAlchemy order_by() clauses with SQLModel.
-
-    Example:
-        query = select(SysMap)
-        query = query.order_by(qorder(SysMap.order))
-        query = query.order_by(qorder(SysMap.category))
-
-    Args:
-        column: A column reference (e.g., model.field)
-
-    Returns:
-        ColumnClause[Any]: The column cast to SQLAlchemy column clause
-    """
-    return cast(ColumnClause[Any], column)
-
-
-def qint(column: Any) -> ColumnElement[int]:
-    """
-    Cast a column to a SQLAlchemy ColumnElement[int].
-
-    This function helps resolve mypy errors when using integer columns
-    in SQLAlchemy expressions with SQLModel.
-
-    Example:
-        query = select(SysMap)
-        query = query.where(qint(SysMap.order) > 5)
-        query = query.where(qint(SysMap.some_int_field) == 42)
-
-    Args:
-        column: A column reference (e.g., model.field)
-
-    Returns:
-        ColumnElement[int]: The column cast to SQLAlchemy column element
-    """
-    return cast(ColumnElement[int], column)
-
-
-def qstr(column: Any) -> ColumnElement[str]:
-    """
-    Cast a column to a SQLAlchemy ColumnElement[str].
-
-    This function helps resolve mypy errors when using string columns
-    in SQLAlchemy expressions with SQLModel.
-
-    Example:
-        query = select(SysMap)
-        query = query.where(qstr(SysMap.category).like('%test%'))
-        query = query.where(qstr(SysMap.name).startswith('prefix'))
-
-    Args:
-        column: A column reference (e.g., model.field)
-
-    Returns:
-        ColumnElement[str]: The column cast to SQLAlchemy column element
-    """
-    return cast(ColumnElement[str], column)
 
 
 ###############################################################################
