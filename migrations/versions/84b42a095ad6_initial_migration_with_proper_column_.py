@@ -57,7 +57,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("C_CATEGORY", "N_KEY", name="uk_sys_dict_category_key"),
     )
     op.create_index("idx_sys_dict_category", "SYS_DICT", ["C_CATEGORY"], unique=False)
-    _ =op.create_table(
+    _ = op.create_table(
         "SYS_MAP",
         sa.Column("N_IN_USED", sa.Integer(), server_default="1", nullable=False),
         sa.Column("D_CREATED_AT", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
