@@ -168,6 +168,7 @@ async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     # Refresh latest status info
     app.state.latest_status_info = {"db": db_health, "redis": redis_health, "sentry": sentry_health}
 
+
 ###############################################################################
 # Query Builders
 #
@@ -201,7 +202,7 @@ async def custom_validation_exception_handler(_: Request, exc: RequestValidation
     Custom global exception handler for Pydantic's RequestValidationError.
     This handler formats the validation errors to be more developer-friendly.
     """
-    error_details = defaultdict(list)
+    error_details: defaultdict[str, list[str]] = defaultdict(list)
     for error in exc.errors():
         field = ".".join(map(str, error["loc"])) if error["loc"] else "general"
         error_details[field].append(error["msg"])
