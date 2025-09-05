@@ -390,7 +390,8 @@ class RedisClient(RedisInterface):
     async def get(self, key: str) -> Any:
         try:
             result = await self.client.get(key)
-            return await result if isinstance(result, Awaitable) else result
+            actual_result = await result if isinstance(result, Awaitable) else result
+            return actual_result
         except (RedisError, Exception) as e:
             logger.error(f"Redis GET operation failed for key '{key}': {e}")
             raise RedisOperationError(f"GET operation failed: {e}") from e
@@ -467,7 +468,8 @@ class RedisClient(RedisInterface):
     async def hgetall(self, name: str) -> dict[str, str]:
         try:
             result = self.client.hgetall(name)
-            return await result if isinstance(result, Awaitable) else result
+            actual_result: dict[str, str] = await result if isinstance(result, Awaitable) else result
+            return actual_result
         except (RedisError, Exception) as e:
             logger.error(f"Redis HGETALL operation failed for hash '{name}': {e}")
             raise RedisOperationError(f"HGETALL operation failed: {e}") from e
@@ -505,7 +507,8 @@ class RedisClient(RedisInterface):
     async def lpop(self, name: str) -> str | list[Any] | None:
         try:
             result = self.client.lpop(name)
-            return await result if isinstance(result, Awaitable) else result
+            actual_result = await result if isinstance(result, Awaitable) else result
+            return actual_result
         except (RedisError, Exception) as e:
             logger.error(f"Redis LPOP operation failed for list '{name}': {e}")
             raise RedisOperationError(f"LPOP operation failed: {e}") from e
@@ -513,7 +516,8 @@ class RedisClient(RedisInterface):
     async def rpop(self, name: str) -> str | list[Any] | None:
         try:
             result = self.client.rpop(name)
-            return await result if isinstance(result, Awaitable) else result
+            actual_result = await result if isinstance(result, Awaitable) else result
+            return actual_result
         except (RedisError, Exception) as e:
             logger.error(f"Redis RPOP operation failed for list '{name}': {e}")
             raise RedisOperationError(f"RPOP operation failed: {e}") from e
@@ -549,7 +553,8 @@ class RedisClient(RedisInterface):
     async def smembers(self, name: str) -> builtins.set[Any]:
         try:
             result = self.client.smembers(name)
-            return await result if isinstance(result, Awaitable) else result
+            actual_result: builtins.set[Any] = await result if isinstance(result, Awaitable) else result
+            return actual_result
         except (RedisError, Exception) as e:
             logger.error(f"Redis SMEMBERS operation failed for set '{name}': {e}")
             raise RedisOperationError(f"SMEMBERS operation failed: {e}") from e
@@ -761,7 +766,7 @@ class RedisManager(BasePlugin):
                 )
             # Test connection
             if self._client:
-                await self._client.ping()
+                _ = await self._client.ping()
                 logger.info(f"Successfully connected to Redis provider: {provider.value}")
             self.is_ready = True
         except Exception as e:
