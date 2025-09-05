@@ -12,7 +12,6 @@ import logging
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.sql import text
-import sqlmodel
 
 # revision identifiers, used by Alembic.
 revision: str = "84b42a095ad6"
@@ -49,9 +48,9 @@ def upgrade() -> None:
         sa.Column("D_UPDATED_AT", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
         sa.Column("D_DELETED_AT", sa.DateTime(), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("C_CATEGORY", sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
+        sa.Column("C_CATEGORY", sa.String(length=64), nullable=False),
         sa.Column("N_KEY", sa.Integer(), nullable=False),
-        sa.Column("C_VALUE", sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
+        sa.Column("C_VALUE", sa.String(length=64), nullable=False),
         sa.Column("N_ORDER", sa.Integer(), server_default="0", nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("C_CATEGORY", "N_KEY", name="uk_sys_dict_category_key"),
@@ -64,9 +63,9 @@ def upgrade() -> None:
         sa.Column("D_UPDATED_AT", sa.DateTime(), server_default=sa.text("(CURRENT_TIMESTAMP)"), nullable=False),
         sa.Column("D_DELETED_AT", sa.DateTime(), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("C_CATEGORY", sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
-        sa.Column("C_LEFT_VALUE", sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
-        sa.Column("C_RIGHT_VALUE", sqlmodel.sql.sqltypes.AutoString(length=64), nullable=False),
+        sa.Column("C_CATEGORY", sa.String(length=64), nullable=False),
+        sa.Column("C_LEFT_VALUE", sa.String(length=64), nullable=False),
+        sa.Column("C_RIGHT_VALUE", sa.String(length=64), nullable=False),
         sa.Column("N_ORDER", sa.Integer(), server_default="0", nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("C_CATEGORY", "C_LEFT_VALUE", "C_RIGHT_VALUE", name="uk_sys_map_category_left_right"),
