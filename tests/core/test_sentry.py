@@ -1,8 +1,10 @@
 from collections.abc import Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import Request
 import pytest
+from sentry_sdk.types import Event
 
 from faster.core.config import Settings
 from faster.core.sentry import (
@@ -22,14 +24,14 @@ def reset_sentry_manager_singleton() -> None:
 
 
 @pytest.fixture
-def mock_sentry_init() -> MagicMock:
+def mock_sentry_init() -> Generator[MagicMock, None, None]:
     """Fixture to mock sentry_sdk.init."""
     with patch("faster.core.sentry.init") as mock:
         yield mock
 
 
 @pytest.fixture
-def mock_sentry_client() -> MagicMock:
+def mock_sentry_client() -> Generator[MagicMock, None, None]:
     """Fixture to mock the Sentry client and its close method."""
     with patch("faster.core.sentry.get_client") as mock_get_client:
         mock_client = MagicMock()
@@ -45,14 +47,14 @@ def mock_sentry_capture_exception() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture
-def mock_sentry_capture_message() -> MagicMock:
+def mock_sentry_capture_message() -> Generator[MagicMock, None, None]:
     """Fixture to mock sentry_sdk.capture_message."""
     with patch("faster.core.sentry.capture_message") as mock:
         yield mock
 
 
 @pytest.fixture
-def mock_sentry_context_setters() -> dict[str, MagicMock]:
+def mock_sentry_context_setters() -> Generator[dict[str, MagicMock], None, None]:
     """Fixture to mock all Sentry context-setting functions."""
     with (
         patch("faster.core.sentry.set_user") as mock_set_user,
@@ -67,7 +69,7 @@ def mock_sentry_context_setters() -> dict[str, MagicMock]:
 
 
 @pytest.fixture
-def mock_sentry_is_initialized() -> MagicMock:
+def mock_sentry_is_initialized() -> Generator[MagicMock, None, None]:
     """Fixture to mock sentry_sdk.is_initialized."""
     with patch("faster.core.sentry.is_initialized") as mock:
         yield mock
@@ -78,7 +80,7 @@ def mock_sentry_is_initialized() -> MagicMock:
 # =================================
 
 
-def test_sentry_manager_is_singleton():
+def test_sentry_manager_is_singleton() -> None:
     """Arrange: N/A, Act: Get two instances, Assert: They are the same object."""
     instance1 = SentryManager.get_instance()
     instance2 = SentryManager.get_instance()
@@ -86,7 +88,7 @@ def test_sentry_manager_is_singleton():
 
 
 @pytest.mark.asyncio
-async def test_setup_initializes_sentry_when_dsn_is_provided(mock_sentry_init: MagicMock):
+async def test_setup_initializes_sentry_when_dsn_is_provided(mock_sentry_init: MagicMock) -> None:
     """
     Arrange: DSN and other settings.
     Act: Call setup.
@@ -121,7 +123,9 @@ async def test_setup_initializes_sentry_when_dsn_is_provided(mock_sentry_init: M
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("dsn", [None, ""])
-async def test_setup_does_not_initialize_sentry_when_dsn_is_missing(dsn: str | None, mock_sentry_init: MagicMock):
+async def test_setup_does_not_initialize_sentry_when_dsn_is_missing(
+    dsn: str | None, mock_sentry_init: MagicMock
+) -> None:
     """
     Arrange: An invalid DSN (None or empty).
     Act: Call setup.
@@ -138,7 +142,7 @@ async def test_setup_does_not_initialize_sentry_when_dsn_is_missing(dsn: str | N
     mock_sentry_init.assert_not_called()
 
 
-def test_before_send_filters_health_check_events():
+def test_before_send_filters_health_check_events() -> None:
     """
 
     Arrange: A Sentry event for a /health transaction.
@@ -147,8 +151,8 @@ def test_before_send_filters_health_check_events():
     """
     # Arrange
     sentry_manager = SentryManager.get_instance()
-    health_event = {"transaction": "/health"}
-    hint = {}
+    health_event: Event = {"transaction": "/health"}
+    hint: dict[str, Any] = {}
 
     # Act
     result = sentry_manager.before_send(health_event, hint)
@@ -157,7 +161,7 @@ def test_before_send_filters_health_check_events():
     assert result is None
 
 
-def test_before_send_allows_other_events():
+def test_before_send_allows_other_events() -> None:
     """
     Arrange: A Sentry event for a normal transaction.
     Act: Call before_send.
@@ -165,8 +169,8 @@ def test_before_send_allows_other_events():
     """
     # Arrange
     sentry_manager = SentryManager.get_instance()
-    other_event = {"transaction": "/api/users"}
-    hint = {}
+    other_event: Event = {"transaction": "/api/users"}
+    hint: dict[str, Any] = {}
 
     # Act
     result = sentry_manager.before_send(other_event, hint)
@@ -176,7 +180,7 @@ def test_before_send_allows_other_events():
 
 
 @pytest.mark.asyncio
-async def test_teardown_flushes_sentry_client(mock_sentry_client: MagicMock):
+async def test_teardown_flushes_sentry_client(mock_sentry_client: MagicMock) -> None:
     """
     Arrange: A mocked Sentry client.
     Act: Call teardown.
@@ -193,7 +197,7 @@ async def test_teardown_flushes_sentry_client(mock_sentry_client: MagicMock):
 
 
 @pytest.mark.asyncio
-async def test_check_health_when_configured(mock_sentry_init: MagicMock, mock_sentry_is_initialized: MagicMock):
+async def test_check_health_when_configured(mock_sentry_init: MagicMock, mock_sentry_is_initialized: MagicMock) -> None:
     """
     Arrange: Setup SentryManager with a DSN.
     Act: Call check_health.
@@ -213,7 +217,9 @@ async def test_check_health_when_configured(mock_sentry_init: MagicMock, mock_se
 
 
 @pytest.mark.asyncio
-async def test_check_health_when_not_configured(mock_sentry_init: MagicMock, mock_sentry_is_initialized: MagicMock):
+async def test_check_health_when_not_configured(
+    mock_sentry_init: MagicMock, mock_sentry_is_initialized: MagicMock
+) -> None:
     """
     Arrange: SentryManager is not configured with a DSN.
     Act: Call check_health.
@@ -238,7 +244,7 @@ async def test_check_health_when_not_configured(mock_sentry_init: MagicMock, moc
 
 
 @pytest.mark.asyncio
-async def test_capture_it_with_exception(mock_sentry_capture_exception: MagicMock):
+async def test_capture_it_with_exception(mock_sentry_capture_exception: MagicMock) -> None:
     """
     Arrange: An exception object.
     Act: Call capture_it.
@@ -255,7 +261,7 @@ async def test_capture_it_with_exception(mock_sentry_capture_exception: MagicMoc
 
 
 @pytest.mark.asyncio
-async def test_capture_it_with_message(mock_sentry_capture_message: MagicMock):
+async def test_capture_it_with_message(mock_sentry_capture_message: MagicMock) -> None:
     """
     Arrange: A string message.
     Act: Call capture_it.
@@ -272,7 +278,7 @@ async def test_capture_it_with_message(mock_sentry_capture_message: MagicMock):
 
 
 @pytest.mark.asyncio
-async def test_add_sentry_context(mock_sentry_context_setters: dict[str, MagicMock]):
+async def test_add_sentry_context(mock_sentry_context_setters: dict[str, MagicMock]) -> None:
     """
     Arrange: A mock FastAPI request and user ID.
     Act: Call add_sentry_context.
