@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -6,7 +6,7 @@ import pytest
 
 from faster.core.auth.middlewares import AuthMiddleware, get_auth_user
 from faster.core.auth.services import AuthService
-from faster.core.schemas import AppResponse
+from faster.core.models import AppResponse
 
 # Constants
 TEST_USER_ID = "user-123"
@@ -63,7 +63,7 @@ class TestAuthMiddleware:
         middleware: AuthMiddleware,
         mock_request: MagicMock,
         mock_auth_service: MagicMock,
-    ):
+    ) -> None:
         """
         Tests that the middleware successfully processes a valid request
         for a protected endpoint.
@@ -76,25 +76,29 @@ class TestAuthMiddleware:
         mock_user_profile.email = TEST_EMAIL
         mock_auth_service.authenticate_token = AsyncMock(return_value=mock_user_profile)
 
-        async def call_next(request):
-            return JSONResponse({"status": "ok"}, status_code=200)
+        # Mock the blacklist_exists function to avoid Redis event loop issues
+        with patch("faster.core.auth.middlewares.blacklist_exists", new_callable=AsyncMock) as mock_blacklist_exists:
+            mock_blacklist_exists.return_value = False
 
-        # Act
-        response = await middleware.dispatch(mock_request, call_next)
+            async def call_next(request):
+                return JSONResponse({"status": "ok"}, status_code=200)
 
-        # Assert
-        mock_auth_service.authenticate_token.assert_awaited_once_with(TEST_TOKEN)
-        assert hasattr(mock_request.state, "user")
-        assert mock_request.state.user.id == TEST_USER_ID
-        assert mock_request.state.authenticated is True
-        assert response.status_code == 200
+            # Act
+            response = await middleware.dispatch(mock_request, call_next)
+
+            # Assert
+            mock_auth_service.authenticate_token.assert_awaited_once_with(TEST_TOKEN)
+            assert hasattr(mock_request.state, "user")
+            assert mock_request.state.user.id == TEST_USER_ID
+            assert mock_request.state.authenticated is True
+            assert response.status_code == 200
 
     async def test_middleware_skips_public_endpoint(
         self,
         middleware: AuthMiddleware,
         mock_request: MagicMock,
         mock_auth_service: MagicMock,
-    ):
+    ) -> None:
         """
         Tests that the middleware skips authentication and authorization for
         endpoints tagged as 'public'.
@@ -124,7 +128,7 @@ class TestAuthMiddleware:
         middleware: AuthMiddleware,
         mock_request: MagicMock,
         mock_auth_service: MagicMock,
-    ):
+    ) -> None:
         """
         Tests that the middleware allows requests to allowed paths.
         """
@@ -144,7 +148,9 @@ class TestAuthMiddleware:
         assert mock_request.state.authenticated is False
         assert response.status_code == 200
 
-    async def test_middleware_returns_401_if_no_auth_header(self, middleware: AuthMiddleware, mock_request: MagicMock):
+    async def test_middleware_returns_401_if_no_auth_header(
+        self, middleware: AuthMiddleware, mock_request: MagicMock
+    ) -> None:
         """
         Tests that a 401 Unauthorized response is returned if the Authorization
         header is missing.
@@ -175,7 +181,7 @@ class TestAuthMiddleware:
         middleware: AuthMiddleware,
         mock_request: MagicMock,
         mock_auth_service: MagicMock,
-    ):
+    ) -> None:
         """
         Tests that a 401 Unauthorized response is returned if the JWT is invalid.
         """
@@ -205,7 +211,7 @@ class TestAuthMiddleware:
         middleware: AuthMiddleware,
         mock_request: MagicMock,
         mock_auth_service: MagicMock,
-    ):
+    ) -> None:
         """
         Tests that a 401 Unauthorized response is returned if authentication fails.
         """
@@ -232,7 +238,7 @@ class TestAuthMiddleware:
 
     async def test_middleware_returns_404_if_endpoint_not_found(
         self, middleware: AuthMiddleware, mock_request: MagicMock
-    ):
+    ) -> None:
         """
         Tests that a 404 Not Found response is returned if the endpoint
         does not exist in the app's state.
@@ -255,7 +261,7 @@ class TestAuthMiddleware:
         self,
         middleware: AuthMiddleware,
         mock_request: MagicMock,
-    ):
+    ) -> None:
         """
         Tests that the middleware handles exceptions gracefully.
         """
