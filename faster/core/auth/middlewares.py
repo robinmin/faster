@@ -1,17 +1,17 @@
-from typing import Any, cast
+from typing import cast
 
 from fastapi import HTTPException, Request, status
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 from starlette.types import ASGIApp
-from supabase_auth.types import User as UserProfile
 
 from ..exceptions import AuthError
 from ..logger import get_logger
-from ..schemas import AppResponse
+from ..models import AppResponseDict
+from ..redisex import blacklist_exists
 from ..utilities import get_current_endpoint
-from .schemas import AuthUser
+from .models import AuthUser, UserProfileData
 from .services import AuthService
 
 logger = get_logger(__name__)
@@ -34,8 +34,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Process allowed paths for optimal performance
         raw_paths = allowed_paths or ["/docs", "/redoc", "/openapi.json", "/health"]
-        self._exact_allowed_paths = set()
-        self._prefix_allowed_paths = []
+        self._exact_allowed_paths = set[str]()
+        self._prefix_allowed_paths = list[str]()
 
         for path in raw_paths:
             if path.endswith("/*"):
@@ -66,7 +66,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         return None
 
-    async def _authenticate_request(self, request: Request) -> UserProfile | None:
+    async def _authenticate_request(self, request: Request) -> UserProfileData | None:
         """Authenticate the request and return user profile if valid."""
         token = await self._extract_token_from_request(request)
 
@@ -80,8 +80,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.warning("Authentication failed for token")
             return None
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponse[Any]:
-        """Process authentication for incoming requests."""
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponseDict:  # noqa: PLR0911
+        """
+        The core of the authentication middleware,to process authentication for incoming requests. The basic logic is
+        to extract token from request, authenticate it and set user profile in request state.
+
+        For public endpoints, the middleware will allow access without authentication.
+        For the other endpoints, the middleware will authenticate the request and set user profile in request state.
+        State change:
+            - request.state.user: Set user profile in request state.
+            - request.state.authenticated: Set authenticated flag in request state.
+        """
         current_path = request.url.path
         try:
             # 1, Allow default paths in debug mode
@@ -95,7 +104,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             current_endpoint = get_current_endpoint(request, request.app.state.endpoints)
             if not current_endpoint or "tags" not in current_endpoint:
                 logger.error(f"[auth] Not Found - 404: {current_path}")
-                return AppResponse(
+                return AppResponseDict(
                     status="http error",
                     message="Not Found",
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -107,31 +116,56 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 logger.debug(f"[auth] Skipping public endpoint : {current_path}")
                 return await call_next(request)
 
-            # 4, Attempt to authenticate the request
+            # 4, Check current token is in black list or not.
+            # When user login, token will be removed from blacklist, and when user logout, token will be added to blacklist
+            # This will avoid to validate token on every request to accelerate the response time
+            token = await self._extract_token_from_request(request)
+            if token and await blacklist_exists(token):
+                logger.error(f"[auth] Blacklisted token: {current_path}")
+                return AppResponseDict(
+                    status="http error",
+                    message="already logged out",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                )
+
+            # 5, Attempt to authenticate the request
+            user_id = ""
             user_profile = await self._authenticate_request(request)
             if user_profile:
                 # Successfully authenticated
+                user_id = user_profile.id
                 request.state.user = user_profile
+                request.state.roles = await self._auth_service.get_roles_by_user_id(user_id)
                 request.state.authenticated = True
             else:
                 # Authentication failed
                 request.state.user = None
+                request.state.roles = set()
                 request.state.authenticated = False
+                logger.info(f"[auth] Authentication failed for endpoint : {current_path}")
 
                 # If authentication is required and failed, return 401
                 if self._require_auth:
-                    return AppResponse(
+                    return AppResponseDict(
                         status="http error",
                         message="Authentication required",
                         status_code=status.HTTP_401_UNAUTHORIZED,
                     )
 
-            # 5, Continue to the next middleware/endpoint
+            # 6, check if current user has the permission to access the endpoint or not
+            if not await self._auth_service.check_access(user_id, tags):
+                return AppResponseDict(
+                    status="http error",
+                    message="Permission denied",
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+
+            # 7, Continue to the next middleware/endpoint
             response = await call_next(request)
             return response
         except Exception as exp:
             logger.error(f"[auth] Authentication error: {exp}")
-            return AppResponse(
+            return AppResponseDict(
                 status="http error",
                 message="Authentication failed",
                 status_code=status.HTTP_401_UNAUTHORIZED,
