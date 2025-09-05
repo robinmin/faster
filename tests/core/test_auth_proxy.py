@@ -188,7 +188,7 @@ class TestAuthProxyUserManagement:
             result = await auth_proxy.refresh_user_cache(user_id)
 
             assert result == mock_user
-            mock_get_user.assert_called_once_with(user_id, use_cache=False)
+            mock_get_user.assert_called_once_with(user_id, from_cache=False)
 
     @pytest.mark.asyncio
     async def test_invalidate_user_cache(self, auth_proxy: AuthProxy) -> None:
@@ -201,7 +201,7 @@ class TestAuthProxyUserManagement:
 
             await auth_proxy.invalidate_user_cache(user_id)
 
-            mock_get_user.assert_called_once_with(user_id, use_cache=False)
+            mock_get_user.assert_called_once_with(user_id, from_cache=False)
 
     @pytest.mark.asyncio
     async def test_get_user_by_id_with_cache_hit(self, auth_proxy: AuthProxy) -> None:
@@ -263,30 +263,36 @@ class TestAuthProxyUserManagement:
             created_at=datetime.fromisoformat("2023-01-01T00:00:00"),
         )
 
-        with patch("faster.core.auth.auth_proxy.get_user_profile", return_value=None) as mock_get_profile, patch.object(auth_proxy, "_service_client", new_callable=MagicMock) as mock_service_client:
-                mock_response = MagicMock()
-                mock_response.user = mock_user
-                mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
+        with (
+            patch("faster.core.auth.auth_proxy.get_user_profile", return_value=None) as mock_get_profile,
+            patch.object(auth_proxy, "_service_client", new_callable=MagicMock) as mock_service_client,
+        ):
+            mock_response = MagicMock()
+            mock_response.user = mock_user
+            mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
 
-                with patch("faster.core.auth.auth_proxy.set_user_profile", new_callable=AsyncMock) as mock_set_profile:
-                    result = await auth_proxy.get_user_by_id(user_id)
-                    assert result.id == user_id
-                    mock_get_profile.assert_called_once_with(user_id)
-                    mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
-                    mock_set_profile.assert_called_once()
+            with patch("faster.core.auth.auth_proxy.set_user_profile", new_callable=AsyncMock) as mock_set_profile:
+                result = await auth_proxy.get_user_by_id(user_id)
+                assert result.id == user_id
+                mock_get_profile.assert_called_once_with(user_id)
+                mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
+                mock_set_profile.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_user_by_id_service_error(self, auth_proxy: AuthProxy) -> None:
         """Test getting user by ID when service returns error."""
         user_id = "error-user"
 
-        with patch("faster.core.auth.auth_proxy.get_user_profile", return_value=None), patch.object(auth_proxy, "_service_client", new_callable=MagicMock) as mock_service_client:
-                mock_response = MagicMock()
-                mock_response.user = None
-                mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
+        with (
+            patch("faster.core.auth.auth_proxy.get_user_profile", return_value=None),
+            patch.object(auth_proxy, "_service_client", new_callable=MagicMock) as mock_service_client,
+        ):
+            mock_response = MagicMock()
+            mock_response.user = None
+            mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
 
-                with pytest.raises(AuthError, match="User not found"):
-                    _ = await auth_proxy.get_user_by_id(user_id)
+            with pytest.raises(AuthError, match="User not found"):
+                _ = await auth_proxy.get_user_by_id(user_id)
 
     @pytest.mark.asyncio
     async def test_get_user_by_id_without_cache(self, auth_proxy: AuthProxy) -> None:
@@ -302,7 +308,10 @@ class TestAuthProxyUserManagement:
             created_at=datetime.fromisoformat("2023-01-01T00:00:00"),
         )
 
-        with patch.object(auth_proxy, "_service_client", new_callable=MagicMock) as mock_service_client:
+        with (
+            patch.object(auth_proxy, "_service_client", new_callable=MagicMock) as mock_service_client,
+            patch("faster.core.auth.auth_proxy.set_user_profile", new_callable=AsyncMock) as mock_set_profile,
+        ):
             mock_response = MagicMock()
             mock_response.user = mock_user
             mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
@@ -310,6 +319,7 @@ class TestAuthProxyUserManagement:
             result = await auth_proxy.get_user_by_id(user_id, from_cache=False)
             assert result.id == user_id
             mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
+            mock_set_profile.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_verify_jwt_token_success(self, auth_proxy: AuthProxy) -> None:
