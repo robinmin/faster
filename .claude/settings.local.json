@@ -6,11 +6,7 @@
       "Read(faster/**)",
       "Bash(make:*)",
       "Bash(pytest:*)",
-      "Bash(python -m pytest tests/core/test_plugins.py -v)",
-      "Bash(python -m pytest tests/core/test_database.py -v)",
-      "Bash(python -m pytest tests/core/test_redis.py -v)",
-      "Bash(python -m pytest tests/core/test_plugin_integration.py -v)",
-      "Bash(python:*)",
+      "Bash(python -m pytest tests/core/test_*.py -v)",
       "Bash(uv sync:*)",
       "Bash(sqlite3:*)",
       "Bash(uv run:*)",
@@ -18,9 +14,12 @@
       "Bash(grep:*)",
       "Bash(find:*)",
       "Bash(mypy:*)",
-      "Bash(ruff check:*)"
+      "Bash(ls:*)",
+      "Bash(ruff check:*)",
+      "Bash(source:*)"
     ],
-    "deny": ["Read(.env)"],
-    "ask": []
-  }
+    "deny": ["Read(.env)", "Bash(git:*)"],
+    "ask": ["Bash(python:*)"]
+  },
+  "contextFileName": "docs/AGENTS.md"
 }
