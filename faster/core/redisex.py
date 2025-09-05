@@ -182,11 +182,15 @@ async def sysmap_set(category: str, mapping: dict[str, Any]) -> bool:
 # =============================================================================
 async def set_user_profile(user_id: str, profile_json: str, ttl: int = 3600) -> bool:
     """Cache user profile data as JSON string."""
+    # TODO: store user profile data in JSON format is not a good way to do it, use a more efficient data structure
+
     return bool(await get_redis().set(KeyPrefix.USER_PROFILE.get_key(user_id), profile_json, ttl))
 
 
 async def get_user_profile(user_id: str) -> str | None:
     """Retrieve cached user profile data as JSON string."""
+    # TODO: store user profile data in JSON format is not a good way to do it, use a more efficient data structure
+
     result = await get_redis().get(KeyPrefix.USER_PROFILE.get_key(user_id))
     return cast(str | None, result)
 
