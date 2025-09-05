@@ -4,6 +4,7 @@ from typing import Any, cast
 from fastapi import Request
 import httpx
 import jwt
+from jwt.algorithms import RSAAlgorithm
 from supabase import Client, create_client
 
 from ..exceptions import AuthError
@@ -119,7 +120,7 @@ class AuthProxy:
             jwks_key = await self._get_jwks_key(key_id)
 
             # Convert JWKS key to PEM format for verification
-            public_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwks_key)
+            public_key = RSAAlgorithm.from_jwk(jwks_key)
 
             # Verify and decode token
             payload = jwt.decode(
