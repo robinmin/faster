@@ -32,6 +32,7 @@ from .plugins import PluginManager
 from .redis import RedisManager
 from .routers import dev_router, sys_router
 from .sentry import SentryManager
+from .services import SysService
 from .utilities import (
     app_exception_handler,
     auth_exception_handler,
@@ -89,9 +90,6 @@ def _register_all_plugins(app: FastAPI) -> None:
     plugin_mgr.register("database", DatabaseManager.get_instance())
     plugin_mgr.register("redis", RedisManager.get_instance())
     plugin_mgr.register("sentry", SentryManager.get_instance())
-
-    # Attach to app state
-    app.state.plugin_mgr = plugin_mgr
     logger.debug("Plugin manager setup complete")
 
 
@@ -102,7 +100,7 @@ async def _setup_all(app: FastAPI, settings: Settings) -> None:
 
     # Initialize all plugins through plugin manager
     logger.info("Initializing all plugins...")
-    success = await app.state.plugin_mgr.setup(settings)
+    success = await PluginManager.get_instance().setup(settings)
     if not success:
         logger.warning("Some plugins failed to initialize, but continuing startup")
 
@@ -110,7 +108,7 @@ async def _setup_all(app: FastAPI, settings: Settings) -> None:
 async def _teardown_all(app: FastAPI) -> None:
     # Use plugin system for teardown
     logger.info("Tearing down all plugins...")
-    success = await app.state.plugin_mgr.teardown()
+    success = await PluginManager.get_instance().teardown()
     if not success:
         logger.warning("Some plugins failed to teardown properly")
 
@@ -187,6 +185,11 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
     If latest_status_check is too close to now, skip it -- avoid unnecessary checks.
     """
     await check_all_resources(app, app.state.settings)
+
+    # load system information into redis cache
+    service = SysService()
+    if not await service.get_sys_info():
+        logger.error("Failed to load system information from database into Redis")
 
     if not verbose:
         return
