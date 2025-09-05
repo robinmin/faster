@@ -1,22 +1,24 @@
 import asyncio
+from collections.abc import Generator
 from unittest.mock import patch
 
 import pytest
+from pytest import Config, FixtureRequest
 
 from faster.core.config import Settings
 from faster.core.redis import RedisManager
 
 
-def pytest_configure(config):
+def pytest_configure(config: Config) -> None:
     """
     Initializes the Redis manager with a fake provider before tests are collected.
     """
     settings = Settings(redis_provider="fake")
-    asyncio.run(RedisManager.get_instance().setup(settings))
+    _ = asyncio.run(RedisManager.get_instance().setup(settings))
 
 
 @pytest.fixture(autouse=True)
-def disable_sentry_for_non_sentry_tests(request):
+def disable_sentry_for_non_sentry_tests(request: FixtureRequest) -> Generator[None, None, None]:
     """
     Auto-used fixture to disable Sentry during non-Sentry tests to prevent logging errors
     when Sentry tries to send events after test completion.
