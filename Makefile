@@ -14,15 +14,15 @@ run: ## Run the FastAPI application
 test: ## Run tests
 	PYTHONPATH=. uv run pytest --cov=faster --cov-report=html:build/htmlcov
 
-lint: autofix ## Lint the code
-	uv run ruff check $(SRC_TARGETS)
+lint: ## Lint the code
+	uv run ruff check $(SRC_TARGETS) --fix
 	uv run mypy $(SRC_TARGETS)
 
-format: ## Format the code
-	ruff format $(SRC_TARGETS)
+# format: ## Format the code
+# 	uv run ruff format $(SRC_TARGETS)
 
-autofix: format ## Automatically fix linting errors
-	ruff check $(SRC_TARGETS) --fix
+autofix: ## Automatically fix linting errors
+	uv run ruff check $(SRC_TARGETS) --fix
 
 db-migrate: ## Create a new database migration (e.g., make db-migrate m="create users table")
 ifndef m
