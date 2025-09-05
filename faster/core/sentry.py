@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 
 
 class SentryManager(BasePlugin):
-    _instance = None
+    _instance: Self | None = None
 
     def __init__(self) -> None:
         self.dsn: str | None = None
@@ -134,10 +134,10 @@ async def capture_it(obj: Exception | str) -> None:
     """Helper function to capture an exception or message with Sentry."""
     if isinstance(obj, Exception):
         logger.error("[exception] %s", obj, exc_info=True)
-        capture_exception(obj)
+        _ = capture_exception(obj)
     elif isinstance(obj, str):
         logger.error(obj)
-        capture_message(obj)
+        _ = capture_message(obj)
     # elif isinstance(obj, Event):
     #     capture_event(obj)
 
