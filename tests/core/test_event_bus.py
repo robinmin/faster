@@ -44,7 +44,7 @@ def mock_redis_client(mocker: MagicMock) -> MagicMock:
 class TestEventModel:
     """Tests for the Event BaseModel."""
 
-    def test_event_initialization_with_all_fields(self):
+    def test_event_initialization_with_all_fields(self) -> None:
         """
         Tests that an Event can be created with all fields specified.
         """
@@ -54,7 +54,7 @@ class TestEventModel:
         event_id = uuid.uuid4().hex
 
         # Act
-        event = Event[dict](
+        event = Event[dict[str, Any]](
             event_type=TEST_EVENT_TYPE,
             event_id=event_id,
             timestamp=now,
@@ -73,14 +73,14 @@ class TestEventModel:
         assert event.payload == payload_data
         assert event.metadata == {"correlation_id": "corr-123"}
 
-    def test_event_initialization_with_default_values(self):
+    def test_event_initialization_with_default_values(self) -> None:
         """
         Tests that an Event is created with correct default values
         when optional fields are not provided.
         """
 
         # Arrange
-        class MyEvent(Event[dict]): ...
+        class MyEvent(Event[dict[str, Any]]): ...
 
         # Act
         event = MyEvent(payload={"data": "value"})
@@ -95,12 +95,12 @@ class TestEventModel:
         assert event.payload == {"data": "value"}
         assert event.metadata == {}
 
-    def test_event_initialization_with_empty_payload_defaults_to_dict(self):
+    def test_event_initialization_with_empty_payload_defaults_to_dict(self) -> None:
         """
         Tests that an Event payload defaults to an empty dictionary if not provided.
         """
         # Arrange & Act
-        event = Event[dict](event_type=TEST_EVENT_TYPE)
+        event = Event[dict[str, Any]](event_type=TEST_EVENT_TYPE)
 
         # Assert
         assert event.payload == {}
@@ -115,7 +115,7 @@ class TestEventModel:
             42,
         ],
     )
-    def test_event_serialization_with_various_payloads(self, payload: Any):
+    def test_event_serialization_with_various_payloads(self, payload: Any) -> None:
         """
         Tests that an Event can be serialized to JSON with different payload types.
         """
@@ -138,13 +138,13 @@ class TestEventModel:
 class TestEventBus:
     """Tests for the EventBus."""
 
-    async def test_fire_event_uses_event_type_as_default_channel(self, mock_redis_client: MagicMock):
+    async def test_fire_event_uses_event_type_as_default_channel(self, mock_redis_client: MagicMock) -> None:
         """
         Tests that fire_event uses the event's type as the default channel
         if no channel is specified.
         """
         # Arrange
-        event = Event[dict](event_type=TEST_EVENT_TYPE, payload={})
+        event = Event[dict[str, Any]](event_type=TEST_EVENT_TYPE, payload={})
 
         # Act
         await event_bus.fire_event(event)
@@ -155,12 +155,12 @@ class TestEventBus:
         assert args[0] == TEST_EVENT_TYPE
         assert isinstance(args[1], str)
 
-    async def test_fire_event_uses_provided_channel(self, mock_redis_client: MagicMock):
+    async def test_fire_event_uses_provided_channel(self, mock_redis_client: MagicMock) -> None:
         """
         Tests that fire_event uses the explicitly provided channel for publishing.
         """
         # Arrange
-        event = Event[dict](event_type=TEST_EVENT_TYPE, payload={})
+        event = Event[dict[str, Any]](event_type=TEST_EVENT_TYPE, payload={})
 
         # Act
         await event_bus.fire_event(event, channel=TEST_CHANNEL)
@@ -168,14 +168,14 @@ class TestEventBus:
         # Assert
         mock_redis_client.publish.assert_awaited_once_with(TEST_CHANNEL, event.model_dump_json())
 
-    async def test_fire_event_returns_publish_result(self, mock_redis_client: MagicMock):
+    async def test_fire_event_returns_publish_result(self, mock_redis_client: MagicMock) -> None:
         """
         Tests that fire_event returns the result from the redis_manager's
         publish call.
         """
         # Arrange
         mock_redis_client.publish.return_value = 5  # Simulate 5 subscribers
-        event = Event[dict](event_type=TEST_EVENT_TYPE, payload={})
+        event = Event[dict[str, Any]](event_type=TEST_EVENT_TYPE, payload={})
 
         # Act
         result = await event_bus.fire_event(event)
@@ -183,7 +183,7 @@ class TestEventBus:
         # Assert
         assert result == 5
 
-    async def test_process_events_yields_correctly_decoded_events(self, mock_redis_client: MagicMock):
+    async def test_process_events_yields_correctly_decoded_events(self, mock_redis_client: MagicMock) -> None:
         """
         Tests that process_events correctly subscribes, listens, and yields
         deserialized Event objects.
@@ -202,7 +202,7 @@ class TestEventBus:
             "data": json.dumps(event_data).encode("utf-8"),
         }
 
-        async def message_generator() -> AsyncGenerator[dict, None]:
+        async def message_generator() -> AsyncGenerator[dict[str, Any], None]:
             yield message
 
         mock_pubsub = MagicMock()
@@ -219,7 +219,9 @@ class TestEventBus:
         assert event.event_type == event_data["event_type"]
         assert event.payload == event_data["payload"]
 
-    async def test_process_events_handles_json_decode_error(self, mock_redis_client: MagicMock, mocker: MagicMock):
+    async def test_process_events_handles_json_decode_error(
+        self, mock_redis_client: MagicMock, mocker: MagicMock
+    ) -> None:
         """
         Tests that process_events logs an error and continues if a message
         is not valid JSON.
@@ -227,7 +229,7 @@ class TestEventBus:
         # Arrange
         invalid_message = {"type": "message", "data": b"this is not json"}
 
-        async def message_generator() -> AsyncGenerator[dict, None]:
+        async def message_generator() -> AsyncGenerator[dict[str, Any], None]:
             yield invalid_message
 
         mock_pubsub = MagicMock()
@@ -242,7 +244,9 @@ class TestEventBus:
         assert len(processed_events) == 0
         mock_logger.error.assert_called_once_with(f"Failed to decode event message: {invalid_message['data']}")
 
-    async def test_process_events_handles_general_exception(self, mock_redis_client: MagicMock, mocker: MagicMock):
+    async def test_process_events_handles_general_exception(
+        self, mock_redis_client: MagicMock, mocker: MagicMock
+    ) -> None:
         """
         Tests that process_events logs an error and continues if an unexpected
         exception occurs during event processing.
@@ -254,7 +258,7 @@ class TestEventBus:
         event_data = {"event_type": "AnyEvent", "payload": {"data": "some_data"}}
         message = {"type": "message", "data": json.dumps(event_data)}
 
-        async def message_generator() -> AsyncGenerator[dict, None]:
+        async def message_generator() -> AsyncGenerator[dict[str, Any], None]:
             yield message
 
         mock_pubsub = MagicMock()
@@ -270,7 +274,9 @@ class TestEventBus:
         mock_logger.error.assert_called_once()
         assert "Error processing event: " in mock_logger.error.call_args[0][0]
 
-    async def test_process_events_handles_subscription_failure(self, mock_redis_client: MagicMock, mocker: MagicMock):
+    async def test_process_events_handles_subscription_failure(
+        self, mock_redis_client: MagicMock, mocker: MagicMock
+    ) -> None:
         """
         Tests that process_events logs a warning if the subscription to a
         channel fails.
@@ -283,7 +289,7 @@ class TestEventBus:
         async def consume():
             return [ev async for ev in event_bus.process_events(TEST_CHANNEL)]
 
-        result = await asyncio.wait_for(consume(), timeout=0.1)
+        result = await asyncio.wait_for(consume(), timeout=0.1)  # type: ignore[no-untyped-call]
 
         # Assert
         assert result == []
