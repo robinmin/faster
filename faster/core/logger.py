@@ -176,7 +176,7 @@ def setup_logger(
 
     level = logging.DEBUG if is_debug else logging.INFO
     if log_level:
-        level = logging.getLevelName(log_level)
+        level = getattr(logging, log_level.upper(), logging.INFO)
 
     # Root logger cleanup
     root_logger = logging.getLogger()
