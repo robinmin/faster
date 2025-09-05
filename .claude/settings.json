@@ -14,5 +14,5 @@
       "Read(./secrets/**)"
     ]
   },
-  "contextFileName": "README.md"
+  "contextFileName": "docs/AGENTS.md"
 }
