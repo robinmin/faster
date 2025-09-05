@@ -40,7 +40,7 @@ class Event(BaseModel, Generic[T]):
 
     @model_validator(mode="before")
     @classmethod
-    def set_defaults(cls, data: Any) -> Any:
+    def set_defaults(cls, data: Any) -> dict[str, Any] | Any:
         """Set dynamic default values before validation."""
         if isinstance(data, dict):
             if "event_type" not in data or data["event_type"] is None:
@@ -75,6 +75,7 @@ class EventBus:
         pubsub = await self._redis_client.subscribe(channel)
         if pubsub:
             async for message in pubsub.listen():
+                # message is already typed as dict[str, Any] from Redis pubsub
                 if message["type"] == "message":
                     try:
                         event_data = json.loads(message["data"])
