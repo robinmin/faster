@@ -17,6 +17,7 @@ test: ## Run tests
 lint: ## Lint the code
 	uv run ruff check $(SRC_TARGETS) --fix
 	uv run mypy $(SRC_TARGETS)
+	uv run basedpyright $(SRC_TARGETS)
 
 # format: ## Format the code
 # 	uv run ruff format $(SRC_TARGETS)

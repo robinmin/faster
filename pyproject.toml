@@ -184,10 +184,9 @@ module = "tests.*"
 # This prevents mypy from complaining if a test function doesn't have a return type.
 disallow_untyped_defs = false
 
-[tool.pyright]
+[tool.basedpyright]
 typeCheckingMode = "strict"
-venvPath = "."
-venv = ".venv"
+pythonVersion = "3.10"
 
 # Specify the root directory or files to include in the analysis.
 include = ["faster/**/*.py", "main.py", "tests/**/*.py"]
@@ -217,6 +216,7 @@ reportUnknownArgumentType = false
 reportUnknownMemberType = false
 reportAssignmentType = false
 reportArgumentType = false
+reportUnnecessaryIsInstance = false
 
 [tool.pytest.ini_options]
 filterwarnings = []
@@ -225,6 +225,7 @@ pythonpath = "."    # If your package is in a 'src' directory
 [dependency-groups]
 dev = [
     "alembic>=1.16.5",
+    "basedpyright>=1.31.4",
     "debugpy>=1.8.16",
     "mypy>=1.17.1",
     "pyls-mypy>=0.1.8",
