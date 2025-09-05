@@ -176,7 +176,7 @@ class AuthService:
     async def _remove_token_from_blacklist(self, user_id: str) -> None:
         """Remove user from blacklist."""
         try:
-            await blacklist_delete(user_id)
+            _ = await blacklist_delete(user_id)
             logger.debug(f"Removed user {user_id} from blacklist")
         except Exception as e:
             logger.warning(f"Failed to remove user {user_id} from blacklist: {e}")
