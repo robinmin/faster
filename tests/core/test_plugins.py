@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 from typing_extensions import Self
 
@@ -29,7 +31,7 @@ class MockPlugin(BasePlugin):
         self.is_ready = False
         return True
 
-    async def check_health(self) -> dict:
+    async def check_health(self) -> dict[str, Any]:
         self.check_health_called = True
         if not self.is_ready:
             return {"status": "error", "reason": "Plugin not ready"}
@@ -37,13 +39,13 @@ class MockPlugin(BasePlugin):
 
 
 class FailingPlugin(BasePlugin):
-    def __init__(self):
+    def __init__(self, name: str = "failing_plugin"):
         self.is_ready = False
 
     @classmethod
     def get_instance(cls) -> Self:
         # For testing, we don't enforce singleton pattern
-        return cls()
+        return cls("failing_instance")
 
     async def setup(self, settings: Settings) -> bool:
         self.is_ready = False
@@ -53,7 +55,7 @@ class FailingPlugin(BasePlugin):
         self.is_ready = False
         raise RuntimeError("Teardown failed")
 
-    async def check_health(self) -> dict:
+    async def check_health(self) -> dict[str, Any]:
         if not self.is_ready:
             return {"status": "error", "reason": "Plugin not ready"}
         raise RuntimeError("Health check failed")
@@ -146,7 +148,7 @@ class TestPluginManager:
     @pytest.mark.asyncio
     async def test_setup_continues_on_plugin_failure(self, plugin_manager, settings):
         """Test setup continues even if one plugin fails"""
-        failing_plugin = FailingPlugin()
+        failing_plugin = FailingPlugin("failing")
         working_plugin = MockPlugin("working")
 
         plugin_manager.register("failing", failing_plugin)
@@ -164,7 +166,7 @@ class TestPluginManager:
     @pytest.mark.asyncio
     async def test_teardown_continues_on_plugin_failure(self, plugin_manager, settings):
         """Test teardown continues even if one plugin fails"""
-        failing_plugin = FailingPlugin()
+        failing_plugin = FailingPlugin("failing")
         working_plugin = MockPlugin("working")
 
         plugin_manager.register("failing", failing_plugin)
@@ -179,7 +181,7 @@ class TestPluginManager:
     @pytest.mark.asyncio
     async def test_health_check_handles_plugin_failure(self, plugin_manager, settings):
         """Test health check handles plugin failures gracefully"""
-        failing_plugin = FailingPlugin()
+        failing_plugin = FailingPlugin("failing")
         working_plugin = MockPlugin("working")
 
         plugin_manager.register("failing", failing_plugin)
@@ -198,8 +200,8 @@ class TestPluginManager:
 class TestBasePlugin:
     def test_base_plugin_is_abstract(self):
         """Test that BasePlugin cannot be instantiated directly"""
-        with pytest.raises(TypeError):
-            BasePlugin()
+        with pytest.raises(TypeError, match="Can't instantiate abstract class BasePlugin with abstract"):
+            BasePlugin()  # type: ignore[abstract]
 
     @pytest.mark.asyncio
     async def test_mock_plugin_implements_interface(self):
