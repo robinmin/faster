@@ -97,7 +97,7 @@ class TestAuthRepository:
     @pytest.mark.asyncio
     async def test_get_user_by_auth_id_found(self, auth_repository: AuthRepository, mock_session: MagicMock) -> None:
         """Test get_user_by_auth_id when user is found."""
-        mock_user = User(id=uuid.uuid4(), auth_id="auth-123")
+        mock_user = User(id=uuid.uuid4(), auth_id="auth-123", aud="test-aud", role="user", email="test@example.com")
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = mock_user
         mock_session.execute.return_value = mock_result
@@ -167,7 +167,9 @@ class TestAuthRepository:
         self, auth_repository: AuthRepository, mock_session: MagicMock, mock_user_profile: UserProfileData
     ) -> None:
         """Test create_or_update_user updates an existing user."""
-        existing_user = User(id=uuid.uuid4(), auth_id=mock_user_profile.id, email="old@example.com")
+        existing_user = User(
+            id=uuid.uuid4(), auth_id=mock_user_profile.id, aud="test-aud", role="user", email="old@example.com"
+        )
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = existing_user
         mock_session.execute.return_value = mock_result
