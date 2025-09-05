@@ -406,3 +406,54 @@ Here comes a sample of Supabase Auth returned user information(via Google OAuth)
   "is_anonymous": false
 }
 ```
+
+########################################################################################
+Current implementaion on endpint /login in file @faster/core/auth/routers.py is wrong be another agent, as he/she against the responsbility of each file. For example, it access the Supabase Auth in @faster/core/auth/repositories.py.
+
+Here are the basic responsbility for module @faster/core/auth:
+- @faster/core/auth/models.py : define non-database related entities, no business logic here
+- @faster/core/auth/schemas.py : define database related entities, no business logic here
+- @faster/core/auth/auth_proxy.py : Proxy layer to interact with Supabase Auth, all access to Supabase Auth must go through with this file.
+- @faster/core/auth/repositories.py : Proxy layter to access local database, all access ti local database must go through with this file.
+- @faster/core/auth/services.py : combinate business logic here with support of @faster/core/auth/auth_proxy.py and @faster/core/auth/repositories.py
+- @faster/core/auth/routers.py : define RESTful API endpoints here.
+- @faster/core/auth/middlewares.py : define middlewares
+- @@faster/core/auth/utilities.py : define utilities
+
+Please follow abouve responsbility, help to refactory file @faster/core/auth/repositories.py. Please majorly focus on this file. Of course, you can do some relavant adjustment with other files if necessary.
+
+#################
+
+## Background
+After several rounds with multiple LLM/Agents, my @faster/core/auth module is becoming more and more messy. We need to do a set of refactoring to simplify this redundant and someplace overdesigned code and some other place messy.
+
+Before you start to change anything, you should understand my project rules you must obey in file @docs/AGENTS.md.
+
+## Requirements
+
+My FastAPI based application to use Supabase Auth as the authentication provider. This module is responsible for interacting with Supabase Auth and local database, providing authentication and authorization services. Here comes each file's responsibility:
+- @faster/core/auth/models.py : Define non-database related entities, no business logic here
+- @faster/core/auth/schemas.py : Define database related entities, no business logic here
+- @faster/core/auth/auth_proxy.py : Proxy layer to interact with Supabase Auth, all access to Supabase Auth must go through with this file.
+- @faster/core/auth/repositories.py : Proxy layer to access local database, all access to local database must go through with this file.
+- @faster/core/auth/services.py : Combine business logic here with support of @faster/core/auth/auth_proxy.py and @faster/core/auth/repositories.py
+- @faster/core/auth/routers.py : Define RESTful API endpoints here.
+- @faster/core/auth/middlewares.py : Define middlewares
+- @faster/core/auth/utilities.py : Define utilities
+
+The core requirements is quite simple: Work with Supabase Auth and store data into local database.
+
+## Current Issues
+- Duplicate table definition: for example, class UserIdentityData vs class UserIdentity in @faster/core/auth/schemas.py
+- Confusing naming: class UserProfile vs class UserProfileData(Original is the same, I already changed on as well)
+- Code logic is also messy.
+
+## Goals
+- Refactor this module, make it easy to understand and maintain and use. You should focus on improving the code structure and readability.
+- Majorly, you should focusing on the following files, if necessary, you can do some change on other as well:
+  - @faster/core/auth/repositories.py : only this file can interact with local database
+  - @faster/core/auth/services.py
+  - @faster/core/auth/models.py
+  - @faster/core/auth/schemas.py
+  - @faster/core/auth/auth_proxy.py : only this file can interact with Supabase Auth API
+- All code should pass ryff, mypy and pyright, by the end of the work, we should make all unit test pass(In case any design change, unit test should be updated accordingly, and make sure all unit test pass)
