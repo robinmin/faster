@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .logger import get_logger
-from .schemas import AppResponse
+from .models import AppResponseDict
 from .utilities import check_all_resources
 
 logger = get_logger(__name__)
@@ -32,22 +32,42 @@ async def health_check() -> FileResponse:
 
 
 @dev_router.get("/settings", response_model=None)
-async def settings(request: Request) -> AppResponse[dict[str, Any]]:
+async def settings(request: Request) -> AppResponseDict:
     """
     Returns the settings for dev-admin.
     """
 
-    return AppResponse(
+    return AppResponseDict(
         status="success",
         data={
             "supabaseUrl": request.app.state.settings.supabase_url,
             "supabaseKey": request.app.state.settings.supabase_anon_key,
-            "backendUrl": "http://127.0.0.1:8000",
+            "backendUrl": f"http://{request.app.state.settings.host}:{request.app.state.settings.port}",
             "isSignUp": False,
             "sentryDsn": request.app.state.settings.sentry_client_dsn,
             "sentryEnvironment": request.app.state.settings.environment,
             "sentryEnabled": True,
         },
+    )
+
+
+@dev_router.get("/app_state", response_model=None, tags=["public"])
+async def app_state(request: Request) -> AppResponseDict:
+    """
+    Returns the app state for dev-admin.
+    """
+    return AppResponseDict(
+        data=getattr(request.app.state, "_state", {}),
+    )
+
+
+@dev_router.get("/request_state", response_model=None, tags=["public"])
+async def request_state(request: Request) -> AppResponseDict:
+    """
+    Returns the request state for dev-admin.
+    """
+    return AppResponseDict(
+        data=getattr(request.state, "_state", {}),
     )
 
 
@@ -88,13 +108,13 @@ async def metrics(request: Request) -> Response:
 
 
 @sys_router.get("/health", response_model=None)
-async def check_health(request: Request) -> AppResponse[dict[str, Any]]:
+async def check_health(request: Request) -> AppResponseDict:
     await check_all_resources(request.app, request.app.state.settings)
 
     latest_status_check = getattr(request.app.state, "latest_status_check", None)
     latest_status_info = getattr(request.app.state, "latest_status_info", {})
 
-    return AppResponse(
+    return AppResponseDict(
         data={
             "latest_status_check": latest_status_check,
             "db": latest_status_info.get("db", None),
