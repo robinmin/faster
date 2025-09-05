@@ -2,6 +2,7 @@
 Comprehensive tests for the RedisManager and its components.
 """
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -48,7 +49,7 @@ async def fake_redis_client() -> RedisClient:
 class TestRedisManagerSetup:
     """Tests for the setup, close, and state of the RedisManager."""
 
-    def test_initialization(self, manager: RedisManager):
+    def test_initialization(self, manager: RedisManager) -> None:
         """
         Arrange: A new RedisManager instance.
         Act: -
@@ -60,7 +61,7 @@ class TestRedisManagerSetup:
             manager.get_client()
 
     @pytest.mark.asyncio
-    async def test_setup_with_fake_provider(self, manager: RedisManager):
+    async def test_setup_with_fake_provider(self, manager: RedisManager) -> None:
         """
         Arrange: An uninitialized RedisManager.
         Act: Call setup with the 'fake' provider.
@@ -76,7 +77,7 @@ class TestRedisManagerSetup:
         assert await client.ping() is True
 
     @pytest.mark.asyncio
-    async def test_setup_with_invalid_provider_returns_false(self, manager: RedisManager):
+    async def test_setup_with_invalid_provider_returns_false(self, manager: RedisManager) -> None:
         """
         Arrange: An uninitialized RedisManager.
         Act: Call setup with an invalid provider string.
@@ -90,7 +91,9 @@ class TestRedisManagerSetup:
     @pytest.mark.asyncio
     @patch("faster.core.redis.redis.Redis")
     @patch("faster.core.redis.redis.ConnectionPool.from_url")
-    async def test_setup_with_url_success(self, mock_pool_from_url, mock_redis_class, manager: RedisManager):
+    async def test_setup_with_url_success(
+        self, mock_pool_from_url: Any, mock_redis_class: Any, manager: RedisManager
+    ) -> None:
         """
         Arrange: Mock the underlying redis client to simulate a successful connection.
         Act: Call setup with a URL.
@@ -115,8 +118,8 @@ class TestRedisManagerSetup:
     @patch("faster.core.redis.redis.Redis", side_effect=ConnectionError("Failed"))
     @patch("faster.core.redis.redis.ConnectionPool.from_url")
     async def test_setup_connection_failure_with_fallback_enabled(
-        self, mock_pool_from_url, mock_redis_class, manager: RedisManager, caplog
-    ):
+        self, mock_pool_from_url: Any, mock_redis_class: Any, manager: RedisManager, caplog: Any
+    ) -> None:
         """
         Arrange: Mock the redis client to raise a ConnectionError.
         Act: Call setup with fallback_to_fake=True (default).
@@ -137,8 +140,8 @@ class TestRedisManagerSetup:
     @patch("faster.core.redis.redis.Redis", side_effect=ConnectionError("Failed"))
     @patch("faster.core.redis.redis.ConnectionPool.from_url")
     async def test_setup_connection_failure_with_fallback_disabled(
-        self, mock_pool_from_url, mock_redis_class, manager: RedisManager
-    ):
+        self, mock_pool_from_url: Any, mock_redis_class: Any, manager: RedisManager
+    ) -> None:
         """
         Arrange: Mock the redis client to raise a ConnectionError.
         Act: Call setup in production environment (no fallback).
@@ -157,7 +160,7 @@ class TestRedisManagerSetup:
         assert not manager.is_connected
 
     @pytest.mark.asyncio
-    async def test_teardown(self, manager: RedisManager):
+    async def test_teardown(self, manager: RedisManager) -> None:
         """
         Arrange: A manager connected to a fake provider.
         Act: Call the teardown method.
@@ -183,7 +186,7 @@ class TestRedisManagerSetup:
 class TestRedisClient:
     """Test suite for all RedisClient methods using a fake Redis backend."""
 
-    async def test_get_set(self, fake_redis_client: RedisClient):
+    async def test_get_set(self, fake_redis_client: RedisClient) -> None:
         """Covers GET, SET, and basic existence."""
         # Arrange
         key, value = "test_key", "test_value"
@@ -195,7 +198,7 @@ class TestRedisClient:
         assert await fake_redis_client.set(key, value) is True
         assert await fake_redis_client.get(key) == value
 
-    async def test_set_with_expiry(self, fake_redis_client: RedisClient):
+    async def test_set_with_expiry(self, fake_redis_client: RedisClient) -> None:
         """Covers SET with 'ex' parameter and TTL."""
         # Arrange
         key, value = "exp_key", "exp_value"
@@ -208,7 +211,7 @@ class TestRedisClient:
         assert await fake_redis_client.get(key) == value
         assert 0 < ttl <= 10
 
-    async def test_set_nx_xx(self, fake_redis_client: RedisClient):
+    async def test_set_nx_xx(self, fake_redis_client: RedisClient) -> None:
         """Covers SET with 'nx' (not exist) and 'xx' (exist) conditions."""
         # Arrange
         key = "cond_key"
@@ -231,7 +234,7 @@ class TestRedisClient:
         assert await fake_redis_client.set(key, "v4", xx=True) is False
         assert await fake_redis_client.get(key) is None
 
-    async def test_delete(self, fake_redis_client: RedisClient):
+    async def test_delete(self, fake_redis_client: RedisClient) -> None:
         """Covers DELETE on single and multiple keys."""
         # Arrange
         await fake_redis_client.set("k1", "v1")
@@ -250,7 +253,7 @@ class TestRedisClient:
         # Act & Assert (delete non-existent)
         assert await fake_redis_client.delete("k4") == 0
 
-    async def test_exists(self, fake_redis_client: RedisClient):
+    async def test_exists(self, fake_redis_client: RedisClient) -> None:
         """Covers EXISTS on single and multiple keys."""
         # Arrange
         await fake_redis_client.set("k1", "v1")
@@ -262,7 +265,7 @@ class TestRedisClient:
         assert await fake_redis_client.exists("k1", "k2") == 2
         assert await fake_redis_client.exists("k1", "k3") == 1
 
-    async def test_expire(self, fake_redis_client: RedisClient):
+    async def test_expire(self, fake_redis_client: RedisClient) -> None:
         """Covers EXPIRE."""
         # Arrange
         await fake_redis_client.set("k1", "v1")
@@ -272,7 +275,7 @@ class TestRedisClient:
         assert 0 < await fake_redis_client.ttl("k1") <= 10
         assert await fake_redis_client.expire("k2", 10) is False
 
-    async def test_hashing(self, fake_redis_client: RedisClient):
+    async def test_hashing(self, fake_redis_client: RedisClient) -> None:
         """Covers HSET, HGET, HGETALL, HDEL."""
         # Arrange
         hash_name = "my_hash"
@@ -293,7 +296,7 @@ class TestRedisClient:
         assert await fake_redis_client.hget(hash_name, "f1") is None
         assert await fake_redis_client.hdel(hash_name, "f3") == 0
 
-    async def test_lists(self, fake_redis_client: RedisClient):
+    async def test_lists(self, fake_redis_client: RedisClient) -> None:
         """Covers LPUSH, RPUSH, LPOP, RPOP, LLEN."""
         # Arrange
         list_name = "my_list"
@@ -314,7 +317,7 @@ class TestRedisClient:
         assert await fake_redis_client.rpop(list_name) == "c"  # List: [a]
         assert await fake_redis_client.llen(list_name) == 1
 
-    async def test_sets(self, fake_redis_client: RedisClient):
+    async def test_sets(self, fake_redis_client: RedisClient) -> None:
         """Covers SADD, SMEMBERS, SISMEMBER, SREM."""
         # Arrange
         set_name = "my_set"
@@ -335,7 +338,7 @@ class TestRedisClient:
         assert await fake_redis_client.srem(set_name, "c", "d") == 1
         assert await fake_redis_client.smembers(set_name) == {"a", "b"}
 
-    async def test_incr_decr(self, fake_redis_client: RedisClient):
+    async def test_incr_decr(self, fake_redis_client: RedisClient) -> None:
         """Covers INCR and DECR."""
         # Arrange
         counter_key = "my_counter"
@@ -350,7 +353,7 @@ class TestRedisClient:
         assert await fake_redis_client.decr(counter_key, amount=2) == 0
         assert await fake_redis_client.get(counter_key) == "0"
 
-    async def test_flushdb(self, fake_redis_client: RedisClient):
+    async def test_flushdb(self, fake_redis_client: RedisClient) -> None:
         """Covers FLUSHDB."""
         # Arrange
         await fake_redis_client.set("k1", "v1")
@@ -363,7 +366,7 @@ class TestRedisClient:
         assert await fake_redis_client.exists("k1") == 0
         assert await fake_redis_client.exists("h1") == 0
 
-    async def test_publish_and_subscribe(self, fake_redis_client: RedisClient):
+    async def test_publish_and_subscribe(self, fake_redis_client: RedisClient) -> None:
         """Covers PUBLISH and SUBSCRIBE operations."""
         # Arrange
         channel = "test_channel"
@@ -381,9 +384,9 @@ class TestRedisClient:
         assert subscribers >= 0
 
         # Clean up
-        await pubsub.aclose()
+        await pubsub.aclose()  # type: ignore[no-untyped-call]
 
-    async def test_subscribe_multiple_channels(self, fake_redis_client: RedisClient):
+    async def test_subscribe_multiple_channels(self, fake_redis_client: RedisClient) -> None:
         """Covers SUBSCRIBE with multiple channels."""
         # Arrange
         channels = ["channel1", "channel2", "channel3"]
@@ -395,9 +398,9 @@ class TestRedisClient:
         assert pubsub is not None
 
         # Clean up
-        await pubsub.aclose()
+        await pubsub.aclose()  # type: ignore[no-untyped-call]
 
-    async def test_publish_error_wrapping(self, fake_redis_client: RedisClient):
+    async def test_publish_error_wrapping(self, fake_redis_client: RedisClient) -> None:
         """Covers error wrapping for PUBLISH operation."""
         # Arrange
         with patch.object(fake_redis_client.client, "publish", new_callable=AsyncMock) as mock_publish:
@@ -407,7 +410,7 @@ class TestRedisClient:
             with pytest.raises(RedisOperationError, match="Publish error"):
                 await fake_redis_client.publish("channel", "message")
 
-    async def test_subscribe_error_wrapping(self, fake_redis_client: RedisClient):
+    async def test_subscribe_error_wrapping(self, fake_redis_client: RedisClient) -> None:
         """Covers error wrapping for SUBSCRIBE operation."""
         # Arrange
         with patch.object(fake_redis_client.client, "pubsub") as mock_pubsub:
@@ -446,7 +449,9 @@ class TestRedisClient:
             ("publish", ("channel", "message")),
         ],
     )
-    async def test_operation_error_wrapping(self, fake_redis_client: RedisClient, method_name, args):
+    async def test_operation_error_wrapping(
+        self, fake_redis_client: RedisClient, method_name: str, args: tuple[Any, ...]
+    ) -> None:
         """
         Arrange: Mock the underlying client to raise a RedisError.
         Act: Call the corresponding RedisClient method.
@@ -470,7 +475,7 @@ class TestRedisClient:
 class TestErrorRecovery:
     """Tests for @redis_safe decorator and redis_safe_context."""
 
-    async def test_redis_safe_decorator_returns_default_on_error(self):
+    async def test_redis_safe_decorator_returns_default_on_error(self) -> None:
         """
         Arrange: A function decorated with @redis_safe that will raise an error.
         Act: Call the decorated function.
@@ -486,7 +491,7 @@ class TestErrorRecovery:
         result = await get_data(mock_client, "some_key")
         assert result == "fallback"
 
-    async def test_redis_safe_decorator_returns_value_on_success(self):
+    async def test_redis_safe_decorator_returns_value_on_success(self) -> None:
         """
         Arrange: A function decorated with @redis_safe that will succeed.
         Act: Call the decorated function.
@@ -502,7 +507,7 @@ class TestErrorRecovery:
         result = await get_data(mock_client, "some_key")
         assert result == "actual_value"
 
-    async def test_redis_safe_context_returns_default_on_error(self):
+    async def test_redis_safe_context_returns_default_on_error(self) -> None:
         """
         Arrange: A client method that will raise an error.
         Act: Execute the method within the redis_safe_context.
@@ -516,7 +521,7 @@ class TestErrorRecovery:
 
         assert result == "fallback"
 
-    async def test_redis_safe_context_returns_value_on_success(self):
+    async def test_redis_safe_context_returns_value_on_success(self) -> None:
         """
         Arrange: A client method that will succeed.
         Act: Execute the method within the redis_safe_context.
@@ -539,7 +544,7 @@ class TestErrorRecovery:
 class TestHealthAndDependency:
     """Tests for health checks and the get_redis dependency."""
 
-    async def test_health_check_success(self, manager: RedisManager):
+    async def test_health_check_success(self, manager: RedisManager) -> None:
         """
         Arrange: A successfully connected manager.
         Act: Call check_health.
@@ -555,7 +560,7 @@ class TestHealthAndDependency:
             "error": None,
         }
 
-    async def test_health_check_failure(self, manager: RedisManager):
+    async def test_health_check_failure(self, manager: RedisManager) -> None:
         """
         Arrange: A manager whose client will fail the ping test.
         Act: Call check_health.
@@ -575,7 +580,7 @@ class TestHealthAndDependency:
             "error": "Ping failed",
         }
 
-    async def test_get_redis_dependency(self, fake_redis_client: RedisClient):
+    async def test_get_redis_dependency(self, fake_redis_client: RedisClient) -> None:
         """
         Arrange: The RedisManager singleton is initialized (via fixture).
         Act: Call the get_redis() dependency function.
