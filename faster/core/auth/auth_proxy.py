@@ -5,10 +5,10 @@ from fastapi import Request
 import httpx
 import jwt
 from supabase import Client, create_client
-from supabase_auth.types import User as UserProfile
 
 from ..exceptions import AuthError
 from ..redisex import get_jwks_key, get_user_profile, set_jwks_key, set_user_profile
+from .models import SupabaseUser, UserIdentityData, UserProfileData
 
 # =============================================================================
 # Core Authentication Proxy to Supabase Auth
@@ -76,7 +76,7 @@ class AuthProxy:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(self._supabase_jwks_url)
-                response.raise_for_status()
+                _ = response.raise_for_status()
                 return dict(response.json())
         except Exception as e:
             raise AuthError(f"Failed to fetch JWKS keys: {e}") from e
@@ -96,7 +96,7 @@ class AuthProxy:
 
             # Cache all keys
             for key in jwks_data.get("keys", []):
-                await set_jwks_key(key["kid"], key, self._cache_ttl)
+                _ = await set_jwks_key(key["kid"], key, self._cache_ttl)
 
         # Try cache again after refresh
         cached_key = await get_jwks_key(key_id)
@@ -141,12 +141,13 @@ class AuthProxy:
         except Exception as e:
             raise AuthError(f"Token verification failed: {e}") from e
 
-    async def get_user_by_id(self, user_id: str, use_cache: bool = True) -> UserProfile:
+    async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> SupabaseUser:
         """Get user profile by ID with optional caching."""
-        if use_cache:
-            cached_profile = await get_user_profile(user_id)
-            if cached_profile:
-                return cached_profile
+        if from_cache:
+            cached_profile_json = await get_user_profile(user_id)
+            if cached_profile_json:
+                # Convert JSON string back to SupabaseUser object
+                return SupabaseUser.model_validate_json(cached_profile_json)
 
         try:
             # Fetch from Supabase
@@ -157,7 +158,7 @@ class AuthProxy:
                 raise AuthError("User not found", status_code=404)
 
             # Create user profile
-            profile = UserProfile(
+            profile = SupabaseUser(
                 id=user_data.id,
                 email=user_data.email or "",
                 email_confirmed_at=user_data.email_confirmed_at,
@@ -172,8 +173,8 @@ class AuthProxy:
             )
 
             # Cache the profile
-            if use_cache:
-                await set_user_profile(user_id, profile, self._cache_ttl)
+            profile_json = profile.model_dump_json()
+            _ = await set_user_profile(user_id, profile_json, self._cache_ttl)
 
             return profile
 
@@ -182,7 +183,7 @@ class AuthProxy:
                 raise
             raise AuthError(f"Failed to fetch user profile: {e}") from e
 
-    async def authenticate_token(self, token: str) -> UserProfile:
+    async def authenticate_token(self, token: str) -> SupabaseUser:
         """Authenticate token and return user profile."""
         # Verify JWT token
         payload = await self.verify_jwt_token(token)
@@ -195,35 +196,70 @@ class AuthProxy:
         # Get user profile
         return await self.get_user_by_id(user_id)
 
-    async def refresh_user_cache(self, user_id: str) -> UserProfile:
+    async def refresh_user_cache(self, user_id: str) -> SupabaseUser:
         """Force refresh user profile cache."""
-        return await self.get_user_by_id(user_id, use_cache=False)
+        return await self.get_user_by_id(user_id, from_cache=False)
 
     async def invalidate_user_cache(self, user_id: str) -> None:
         """Invalidate user profile cache."""
         # This would depend on your cache implementation
         # For now, we'll just fetch fresh data
-        await self.get_user_by_id(user_id, use_cache=False)
+        _ = await self.get_user_by_id(user_id, from_cache=False)
+
+    def _convert_supabase_user_to_profile(self, supabase_user: SupabaseUser) -> UserProfileData:
+        """Convert Supabase User to internal UserProfileData."""
+        # Convert identities if they exist
+        converted_identities = []
+        if hasattr(supabase_user, "identities") and supabase_user.identities:
+            for identity in supabase_user.identities:
+                converted_identities.append(
+                    UserIdentityData(
+                        identity_id=getattr(identity, "identity_id", ""),
+                        id=getattr(identity, "id", ""),
+                        user_id=getattr(identity, "user_id", ""),
+                        identity_data=getattr(identity, "identity_data", {}) or {},
+                        provider=getattr(identity, "provider", ""),
+                        last_sign_in_at=getattr(identity, "last_sign_in_at", None),
+                        created_at=getattr(identity, "created_at", None),
+                        updated_at=getattr(identity, "updated_at", None),
+                    )
+                )
+
+        return UserProfileData(
+            id=supabase_user.id,
+            aud=getattr(supabase_user, "aud", "") or "",
+            role=getattr(supabase_user, "role", "") or "",
+            email=getattr(supabase_user, "email", "") or "",
+            email_confirmed_at=getattr(supabase_user, "email_confirmed_at", None),
+            phone=getattr(supabase_user, "phone", None),
+            confirmed_at=getattr(supabase_user, "confirmed_at", None),
+            last_sign_in_at=getattr(supabase_user, "last_sign_in_at", None),
+            is_anonymous=getattr(supabase_user, "is_anonymous", False),
+            created_at=getattr(supabase_user, "created_at", None),
+            updated_at=getattr(supabase_user, "updated_at", None),
+            app_metadata=getattr(supabase_user, "app_metadata", {}) or {},
+            user_metadata=getattr(supabase_user, "user_metadata", {}) or {},
+            identities=converted_identities,
+        )
+
+    async def authenticate_and_convert(self, token: str) -> UserProfileData:
+        """Authenticate JWT token and return converted user profile data."""
+        supabase_user = await self.authenticate_token(token)
+        return self._convert_supabase_user_to_profile(supabase_user)
 
 
-# FastAPI Dependencies
-# def get_auth_proxy() -> AuthProxy:
-#     """Dependency to get AuthProxy instance."""
-#     return AuthProxy()
-
-
-async def get_current_user(request: Request) -> UserProfile:
+async def get_current_user(request: Request) -> UserProfileData:
     """Dependency to get current authenticated user."""
     if not hasattr(request.state, "authenticated") or not request.state.authenticated:
         raise AuthError("Authentication required")
 
-    return cast(UserProfile, request.state.user)
+    return cast(UserProfileData, request.state.user)
 
 
-async def get_optional_user(request: Request) -> UserProfile | None:
+async def get_optional_user(request: Request) -> UserProfileData | None:
     """Dependency to get current user if authenticated, None otherwise."""
     if hasattr(request.state, "user") and request.state.authenticated:
-        return cast(UserProfile, request.state.user)
+        return cast(UserProfileData, request.state.user)
     return None
 
 
