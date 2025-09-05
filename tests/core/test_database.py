@@ -1,6 +1,7 @@
 """Unit tests for the DatabaseManager."""
 
 import asyncio
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -45,7 +46,7 @@ def master_replica_settings() -> Settings:
 
 
 @pytest.fixture
-def mock_create_async_engine(mocker: MagicMock) -> MagicMock:
+def mock_create_async_engine(mocker: Any) -> MagicMock:
     """
     Mocks the create_async_engine function to return a new mock engine on each call.
     This prevents mock objects from being shared between master and replica engines.
@@ -64,13 +65,13 @@ def mock_create_async_engine(mocker: MagicMock) -> MagicMock:
         engine.connect.return_value = connect_context
         return engine
 
-    return mocker.patch("faster.core.database.create_async_engine", side_effect=engine_factory)
+    return mocker.patch("faster.core.database.create_async_engine", side_effect=engine_factory)  # type: ignore[no-any-return]
 
 
 class TestDatabaseManagerInitialization:
     """Tests for the initial state and setup of the DatabaseManager."""
 
-    def test_initial_state_is_none(self, db_manager: DatabaseManager):
+    def test_initial_state_is_none(self, db_manager: DatabaseManager) -> None:
         """
         Arrange: A new DatabaseManager instance.
         Act: -
@@ -89,7 +90,7 @@ class TestDatabaseManagerInitialization:
         db_manager: DatabaseManager,
         mock_create_async_engine: MagicMock,
         master_only_settings: Settings,
-    ):
+    ) -> None:
         """
         Arrange: A DatabaseManager and a mocked engine creator.
         Act: Call setup with only a master URL.
@@ -112,7 +113,7 @@ class TestDatabaseManagerInitialization:
         db_manager: DatabaseManager,
         mock_create_async_engine: MagicMock,
         master_replica_settings: Settings,
-    ):
+    ) -> None:
         """
         Arrange: A DatabaseManager and a mocked engine creator.
         Act: Call setup with master URL via Settings.
@@ -140,8 +141,8 @@ class TestDatabaseManagerInitialization:
         db_manager: DatabaseManager,
         mock_create_async_engine: MagicMock,
         url: str,
-        expected_args: dict,
-    ):
+        expected_args: dict[str, Any],
+    ) -> None:
         """
         Arrange: A DatabaseManager and a mocked engine creator.
         Act: Call setup with different database URLs.
@@ -158,7 +159,7 @@ class TestDatabaseManagerInitialization:
     @pytest.mark.asyncio
     async def test_setup_raises_dberror_on_failure(
         self, mock_logger: MagicMock, db_manager: DatabaseManager, mock_create_async_engine: MagicMock
-    ):
+    ) -> None:
         """
         Arrange: A mocked engine creator that raises an exception.
         Act: Call setup.
@@ -174,7 +175,7 @@ class TestDatabaseManagerInitialization:
     @pytest.mark.asyncio
     async def test_teardown_disposes_engines_and_resets_state(
         self, mock_logger: MagicMock, db_manager: DatabaseManager, mock_create_async_engine: MagicMock
-    ):
+    ) -> None:
         """
         Arrange: A DatabaseManager with initialized engines.
         Act: Call the teardown method.
@@ -186,7 +187,8 @@ class TestDatabaseManagerInitialization:
 
         await db_manager.teardown()
 
-        master_engine_mock.dispose.assert_awaited_once()
+        if master_engine_mock is not None:
+            master_engine_mock.dispose.assert_awaited_once()  # type: ignore[attr-defined]
         assert db_manager.master_engine is None
         assert db_manager.replica_engine is None
         mock_logger.info.assert_any_call("Master DB engine disposed")
@@ -196,13 +198,13 @@ class TestDatabaseManagerSessionHandling:
     """Tests for session generation and transaction management."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock):
+    def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock) -> None:
         """Auto-used fixture to initialize the db_manager for session tests."""
         settings = Settings(database_url=TEST_MASTER_URL)
         asyncio.run(db_manager.setup(settings))
 
     @pytest.mark.asyncio
-    async def test_get_raw_session_raises_dberror_if_not_initialized(self):
+    async def test_get_raw_session_raises_dberror_if_not_initialized(self) -> None:
         """
         Arrange: A non-initialized DatabaseManager.
         Act: Attempt to get a DB session.
@@ -225,11 +227,11 @@ class TestDatabaseManagerSessionHandling:
     async def test_get_raw_session_session_selection(
         self,
         db_manager: DatabaseManager,
-        mocker: MagicMock,
+        mocker: Any,
         readonly: bool,
         use_replica: bool,
         expected_session_attr: str,
-    ):
+    ) -> None:
         """
         Arrange: A configured DatabaseManager.
         Act: Request a session with different readonly flags.
@@ -250,7 +252,7 @@ class TestDatabaseManagerSessionHandling:
         mock_session.close.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_get_txn_success_commits_and_closes(self, db_manager: DatabaseManager, mocker: MagicMock):
+    async def test_get_txn_success_commits_and_closes(self, db_manager: DatabaseManager, mocker: Any) -> None:
         """
         Arrange: A mocked session that successfully completes a transaction.
         Act: Use the async transaction context manager.
@@ -273,8 +275,8 @@ class TestDatabaseManagerSessionHandling:
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
     async def test_get_txn_failure_rolls_back_and_raises(
-        self, mock_logger: MagicMock, db_manager: DatabaseManager, mocker: MagicMock
-    ):
+        self, mock_logger: MagicMock, db_manager: DatabaseManager, mocker: Any
+    ) -> None:
         """
         Arrange: A mocked session where the transaction fails.
         Act: Use the transaction context manager and raise an exception inside.
@@ -303,13 +305,13 @@ class TestDatabaseManagerModelsAndHealth:
     """Tests for database model initialization and health checks."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock):
+    def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock) -> None:
         """Auto-used fixture to initialize the db_manager for these tests."""
         settings = Settings(database_url=TEST_MASTER_URL)
         asyncio.run(db_manager.setup(settings))
 
     @pytest.mark.asyncio
-    async def test_init_db_models_raises_dberror_if_not_initialized(self):
+    async def test_init_db_models_raises_dberror_if_not_initialized(self) -> None:
         """
         Arrange: A non-initialized DatabaseManager.
         Act: Attempt to initialize DB models.
@@ -324,7 +326,7 @@ class TestDatabaseManagerModelsAndHealth:
     @pytest.mark.asyncio
     async def test_init_db_models_creates_tables(
         self, mock_logger: MagicMock, mock_metadata: MagicMock, db_manager: DatabaseManager
-    ):
+    ) -> None:
         """
         Arrange: A configured DatabaseManager and mocked SQLModel metadata.
         Act: Call init_db_models.
@@ -334,7 +336,7 @@ class TestDatabaseManagerModelsAndHealth:
 
         # The mock engine is configured in the fixture to handle the context manager
         # and provide a mock connection with a mock run_sync
-        mock_run_sync = db_manager.master_engine.begin.return_value.__aenter__.return_value.run_sync
+        mock_run_sync = db_manager.master_engine.begin.return_value.__aenter__.return_value.run_sync  # type: ignore[union-attr]
         mock_run_sync.assert_awaited_once_with(mock_metadata.create_all)
         assert not mock_metadata.drop_all.called
         mock_logger.info.assert_any_call("Creating all tables...")
@@ -344,7 +346,7 @@ class TestDatabaseManagerModelsAndHealth:
     @pytest.mark.asyncio
     async def test_init_db_models_drops_and_creates_tables(
         self, mock_logger: MagicMock, mock_metadata: MagicMock, db_manager: DatabaseManager
-    ):
+    ) -> None:
         """
         Arrange: A configured DatabaseManager and mocked SQLModel metadata.
         Act: Call init_db_models with drop_all=True.
@@ -352,14 +354,14 @@ class TestDatabaseManagerModelsAndHealth:
         """
         await db_manager.init_db_models(drop_all=True)
 
-        mock_run_sync = db_manager.master_engine.begin.return_value.__aenter__.return_value.run_sync
+        mock_run_sync = db_manager.master_engine.begin.return_value.__aenter__.return_value.run_sync  # type: ignore[union-attr]
         assert mock_run_sync.call_count == 2
         mock_run_sync.assert_any_await(mock_metadata.drop_all)
         mock_run_sync.assert_any_await(mock_metadata.create_all)
         mock_logger.warning.assert_called_once_with("Dropping all tables...")
 
     @pytest.mark.asyncio
-    async def test_check_health_master_ok(self, db_manager: DatabaseManager):
+    async def test_check_health_master_ok(self, db_manager: DatabaseManager) -> None:
         """
         Arrange: Mocked master engine that successfully returns a value for 'SELECT 1'.
         Act: Call check_health.
@@ -367,21 +369,21 @@ class TestDatabaseManagerModelsAndHealth:
         """
         mock_result = MagicMock()
         mock_result.scalar_one.return_value = 1
-        db_manager.master_engine.connect.return_value.__aenter__.return_value.execute.return_value = mock_result
+        db_manager.master_engine.connect.return_value.__aenter__.return_value.execute.return_value = mock_result  # type: ignore[union-attr]
 
         result = await db_manager.check_health()
         assert result == {"master": True, "replica": False}
 
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
-    async def test_check_health_master_fails(self, mock_logger: MagicMock, db_manager: DatabaseManager):
+    async def test_check_health_master_fails(self, mock_logger: MagicMock, db_manager: DatabaseManager) -> None:
         """
         Arrange: A mocked master engine that fails.
         Act: Call check_health.
         Assert: Returns a dict indicating master failed and replica is false (not configured).
         """
         error = ConnectionRefusedError("Connection refused")
-        db_manager.master_engine.connect.side_effect = error
+        db_manager.master_engine.connect.side_effect = error  # type: ignore[union-attr]
 
         result = await db_manager.check_health()
 
@@ -389,7 +391,7 @@ class TestDatabaseManagerModelsAndHealth:
         mock_logger.exception.assert_called_once_with(f"Health check failed for master DB: {error}")
 
     @pytest.mark.asyncio
-    async def test_check_health_no_engines_configured(self):
+    async def test_check_health_no_engines_configured(self) -> None:
         """
         Arrange: A DatabaseManager with no engines configured.
         Act: Call check_health.
