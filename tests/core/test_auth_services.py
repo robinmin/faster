@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from faster.core.auth.services import AuthService
@@ -18,7 +20,7 @@ def auth_service() -> AuthService:
 class TestAuthServiceRoles:
     """Tests for role and access control logic in AuthService."""
 
-    async def test_get_roles_by_user_id_returns_correct_roles(self, auth_service: AuthService, mocker):
+    async def test_get_roles_by_user_id_returns_correct_roles(self, auth_service: AuthService, mocker: Any) -> None:
         """
         Tests that get_roles_by_user_id correctly fetches and returns a set of roles.
         """
@@ -35,7 +37,9 @@ class TestAuthServiceRoles:
         mock_user2role_get.assert_awaited_once_with(TEST_USER_ID)
         assert roles == {"admin", "editor"}
 
-    async def test_get_roles_by_user_id_returns_empty_set_for_no_roles(self, auth_service: AuthService, mocker):
+    async def test_get_roles_by_user_id_returns_empty_set_for_no_roles(
+        self, auth_service: AuthService, mocker: Any
+    ) -> None:
         """
         Tests that get_roles_by_user_id returns an empty set if the user has no roles.
         """
@@ -48,7 +52,7 @@ class TestAuthServiceRoles:
         # Assert
         assert roles == set()
 
-    async def test_get_roles_by_user_id_returns_empty_set_for_empty_user_id(self, auth_service: AuthService):
+    async def test_get_roles_by_user_id_returns_empty_set_for_empty_user_id(self, auth_service: AuthService) -> None:
         """
         Tests that get_roles_by_user_id returns an empty set if user_id is empty.
         """
@@ -58,7 +62,7 @@ class TestAuthServiceRoles:
         # Assert
         assert roles == set()
 
-    async def test_get_roles_by_tags_returns_correct_roles(self, auth_service: AuthService, mocker):
+    async def test_get_roles_by_tags_returns_correct_roles(self, auth_service: AuthService, mocker: Any) -> None:
         """
         Tests that get_roles_by_tags aggregates roles from multiple tags.
         """
@@ -83,7 +87,7 @@ class TestAuthServiceRoles:
         assert mock_tag2role_get.await_count == 2
         assert roles == {"admin", "editor"}
 
-    async def test_get_roles_by_tags_returns_empty_set_for_no_tags(self, auth_service: AuthService):
+    async def test_get_roles_by_tags_returns_empty_set_for_no_tags(self, auth_service: AuthService) -> None:
         """
         Tests that get_roles_by_tags returns an empty set if no tags are provided.
         """
@@ -112,11 +116,11 @@ class TestAuthServiceAccessCheck:
     async def test_check_access_logic(
         self,
         auth_service: AuthService,
-        mocker,
-        user_roles: set,
-        required_roles: set,
+        mocker: Any,
+        user_roles: set[str],
+        required_roles: set[str],
         expected_result: bool,
-    ):
+    ) -> None:
         """
         Tests the access logic with various combinations of user and required roles.
         """
@@ -130,7 +134,7 @@ class TestAuthServiceAccessCheck:
         # Assert
         assert has_access is expected_result
 
-    async def test_check_access_denies_if_no_required_roles(self, auth_service: AuthService, mocker):
+    async def test_check_access_denies_if_no_required_roles(self, auth_service: AuthService, mocker: Any) -> None:
         """
         Tests that access is denied if the endpoint has no required roles,
         regardless of user roles.
