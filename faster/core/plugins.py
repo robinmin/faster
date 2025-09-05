@@ -120,12 +120,12 @@ class PluginManager(BasePlugin):
         self.is_ready = False
         return all_success
 
-    async def check_health(self) -> dict[str, Any]:
+    async def check_health(self) -> dict[str, dict[str, Any]]:
         """Check health of all plugins."""
         if not self.is_ready:
-            return {"status": "error", "reason": "Plugin manager not ready"}
+            return {"status": {"error": "Plugin manager not ready"}}
 
-        health_status = {}
+        health_status: dict[str, dict[str, Any]] = {}
 
         for name, plugin in self._plugins.items():
             try:
