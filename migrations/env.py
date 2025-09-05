@@ -7,7 +7,7 @@ from sqlalchemy import engine_from_config, pool
 # Import your models here so Alembic can detect them
 # We need to import all models that inherit from SQLModel
 try:
-    from faster.core.models import SysDict, SysMap  # noqa: F401
+    from faster.core.schemas import SysDict, SysMap  # noqa: F401
 except ImportError as e:
     print(f"Warning: Could not import models: {e}")
 
