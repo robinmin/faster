@@ -1,10 +1,11 @@
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 import pytest
-from supabase_auth.types import User as UserProfile
 
+from faster.core.auth.models import SupabaseUser
 from faster.core.auth.routers import router
 
 
@@ -23,15 +24,15 @@ class TestAuthRouters:
         """Create a test client."""
         return TestClient(app)
 
-    def create_mock_user(self) -> UserProfile:
+    def create_mock_user(self) -> SupabaseUser:
         """Create a mock user profile."""
-        return UserProfile(
+        return SupabaseUser(
             id="user-123",
             email="test@example.com",
             email_confirmed_at=None,
             phone=None,
-            created_at="2023-01-01T00:00:00Z",
-            updated_at="2023-01-01T00:00:00Z",
+            created_at=datetime(2023, 1, 1),
+            updated_at=datetime(2023, 1, 1),
             last_sign_in_at=None,
             app_metadata={},
             user_metadata={},
@@ -48,29 +49,35 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return True
+            # Mock the auth_service.process_user_login to avoid database initialization issues
             with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
-                mock_check_onboarding.return_value = True
+                "faster.core.auth.routers.auth_service.process_user_login", new_callable=AsyncMock
+            ) as mock_process_login:
+                mock_process_login.return_value = AsyncMock()
 
-                # Mock is_api_call to return False to trigger redirect
-                with patch("faster.core.auth.routers.is_api_call", return_value=False):
-                    # Make a request to the endpoint
-                    response = client.get("/auth/login")
+                # Mock the auth_service.check_user_onboarding_complete to return True
+                with patch(
+                    "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
+                ) as mock_check_onboarding:
+                    mock_check_onboarding.return_value = True
 
-                    # For authenticated users with profile, they should be redirected to dashboard
-                    # But if there's a self-redirect prevention issue, they might get JSON response
-                    if response.status_code == status.HTTP_200_OK:
-                        # Self-redirect prevention kicked in or is_api_call returned True
-                        assert response.headers["content-type"] == "application/json"
-                        data = response.json()
-                        # Check that it contains dashboard-related content
-                        assert "dashboard" in data["message"].lower() or "welcome" in data["message"].lower()
-                    else:
-                        # Normal redirect
-                        assert response.status_code == status.HTTP_303_SEE_OTHER
-                        assert response.headers["location"] == "/auth/dashboard"
+                    # Mock is_api_call to return False to trigger redirect
+                    with patch("faster.core.auth.routers.is_api_call", return_value=False):
+                        # Make a request to the endpoint
+                        response = client.get("/auth/login")
+
+                        # For authenticated users with profile, they should be redirected to dashboard
+                        # But if there's a self-redirect prevention issue, they might get JSON response
+                        if response.status_code == status.HTTP_200_OK:
+                            # Self-redirect prevention kicked in or is_api_call returned True
+                            assert response.headers["content-type"] == "application/json"
+                            data = response.json()
+                            # Check that it contains dashboard-related content
+                            assert "dashboard" in data["message"].lower() or "welcome" in data["message"].lower()
+                        else:
+                            # Normal redirect
+                            assert response.status_code == status.HTTP_303_SEE_OTHER
+                            assert response.headers["location"] == "/auth/dashboard"
 
     @pytest.mark.asyncio
     async def test_login_endpoint_authenticated_user_without_profile(self, client: TestClient) -> None:
@@ -81,21 +88,27 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return False
+            # Mock the auth_service.process_user_login to avoid database initialization issues
             with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
-                mock_check_onboarding.return_value = False
+                "faster.core.auth.routers.auth_service.process_user_login", new_callable=AsyncMock
+            ) as mock_process_login:
+                mock_process_login.return_value = AsyncMock()
 
-                # Make a request to the endpoint
-                response = client.get("/auth/login")
+                # Mock the auth_service.check_user_onboarding_complete to return False
+                with patch(
+                    "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
+                ) as mock_check_onboarding:
+                    mock_check_onboarding.return_value = False
 
-                # Check that it's a JSON response with onboarding message
-                assert response.status_code == status.HTTP_200_OK
-                assert response.headers["content-type"] == "application/json"
+                    # Make a request to the endpoint
+                    response = client.get("/auth/login")
 
-                # Parse the JSON response
-                data = response.json()
+                    # Check that it's a JSON response with onboarding message
+                    assert response.status_code == status.HTTP_200_OK
+                    assert response.headers["content-type"] == "application/json"
+
+                    # Parse the JSON response
+                    data = response.json()
 
                 # Check the response structure
                 assert "status" in data
@@ -144,27 +157,33 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return True
+            # Mock the auth_service.process_user_login to avoid database initialization issues
             with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
-                mock_check_onboarding.return_value = True
+                "faster.core.auth.routers.auth_service.process_user_login", new_callable=AsyncMock
+            ) as mock_process_login:
+                mock_process_login.return_value = AsyncMock()
 
-                # Make a request to the endpoint with code parameter
-                response = client.get("/auth/login?code=abc123")
+                # Mock the auth_service.check_user_onboarding_complete to return True
+                with patch(
+                    "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
+                ) as mock_check_onboarding:
+                    mock_check_onboarding.return_value = True
 
-                # Check that it's a JSON response with dashboard message
-                assert response.status_code == status.HTTP_200_OK
-                assert response.headers["content-type"] == "application/json"
+                    # Make a request to the endpoint with code parameter
+                    response = client.get("/auth/login?code=abc123")
 
-                # Parse the JSON response
-                data = response.json()
+                    # Check that it's a JSON response with dashboard message
+                    assert response.status_code == status.HTTP_200_OK
+                    assert response.headers["content-type"] == "application/json"
 
-                # Check the response structure
-                assert "status" in data
-                assert data["status"] == "success"
-                assert "message" in data
-                assert "Welcome to your dashboard" in data["message"]
+                    # Parse the JSON response
+                    data = response.json()
+
+                    # Check the response structure
+                    assert "status" in data
+                    assert data["status"] == "success"
+                    assert "message" in data
+                    assert "Welcome to your dashboard" in data["message"]
                 assert "data" in data
                 assert isinstance(data["data"], dict)
                 assert data["data"]["user_id"] == "user-123"
@@ -179,31 +198,37 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return True
+            # Mock the auth_service.process_user_login to avoid database initialization issues
             with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
-                mock_check_onboarding.return_value = True
+                "faster.core.auth.routers.auth_service.process_user_login", new_callable=AsyncMock
+            ) as mock_process_login:
+                mock_process_login.return_value = AsyncMock()
 
-                # Mock is_api_call to return True
-                with patch("faster.core.auth.routers.is_api_call", return_value=True):
-                    # Make a request to the endpoint
-                    response = client.get("/auth/login")
+                # Mock the auth_service.check_user_onboarding_complete to return True
+                with patch(
+                    "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
+                ) as mock_check_onboarding:
+                    mock_check_onboarding.return_value = True
 
-                    # Check that it's a JSON response for API calls
-                    assert response.status_code == status.HTTP_200_OK
-                    assert response.headers["content-type"] == "application/json"
+                    # Mock is_api_call to return True
+                    with patch("faster.core.auth.routers.is_api_call", return_value=True):
+                        # Make a request to the endpoint
+                        response = client.get("/auth/login")
 
-                    # Parse the JSON response
-                    data = response.json()
+                        # Check that it's a JSON response for API calls
+                        assert response.status_code == status.HTTP_200_OK
+                        assert response.headers["content-type"] == "application/json"
 
-                    # Check the response structure
-                    assert "status" in data
-                    assert data["status"] == "success"
-                    assert "message" in data
-                    assert "data" in data
-                    assert isinstance(data["data"], dict)
-                    assert data["data"]["url"] == "/auth/dashboard"
+                        # Parse the JSON response
+                        data = response.json()
+
+                        # Check the response structure
+                        assert "status" in data
+                        assert data["status"] == "success"
+                        assert "message" in data
+                        assert "data" in data
+                        assert isinstance(data["data"], dict)
+                        assert data["data"]["url"] == "/auth/dashboard"
                     assert data["data"]["status_code"] == status.HTTP_303_SEE_OTHER
 
     @pytest.mark.asyncio
@@ -548,7 +573,7 @@ class TestAuthRouters:
                 assert data["data"]["id"] == "user-123"
                 assert data["data"]["email"] == "test@example.com"
                 assert data["data"]["email_confirmed_at"] is None
-                assert data["data"]["created_at"] == "2023-01-01T00:00:00Z"
+                assert "2023-01-01T00:00:00" in str(data["data"]["created_at"])
                 assert data["data"]["last_sign_in_at"] is None
                 assert data["data"]["user_metadata"] == {}
 
