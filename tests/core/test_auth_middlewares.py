@@ -292,7 +292,7 @@ class TestAuthMiddleware:
             assert isinstance(response, AppResponse)
             assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    async def test_middleware_with_prefix_allowed_paths(self):
+    async def test_middleware_with_prefix_allowed_paths(self) -> None:
         """
         Tests that the middleware correctly handles prefix allowed paths.
         """
@@ -335,7 +335,7 @@ class TestAuthMiddleware:
 class TestGetAuthUser:
     """Tests for the get_auth_user dependency."""
 
-    def test_get_auth_user_success(self):
+    def test_get_auth_user_success(self) -> None:
         """
         Tests that get_auth_user returns the user object if it exists on the
         request state.
@@ -350,7 +350,7 @@ class TestGetAuthUser:
         # Assert
         assert user == request.state.auth_user
 
-    def test_get_auth_user_raises_401_if_user_not_on_state(self):
+    def test_get_auth_user_raises_401_if_user_not_on_state(self) -> None:
         """
         Tests that get_auth_user raises a 401 HTTPException if the user
         object is not on the request state.
