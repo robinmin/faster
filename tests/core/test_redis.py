@@ -36,9 +36,9 @@ async def fake_redis_client() -> RedisClient:
     yielding the underlying client.
     """
     settings = Settings(redis_provider="fake")
-    await RedisManager.get_instance().setup(settings)
+    _ = await RedisManager.get_instance().setup(settings)
     client = RedisManager.get_instance().get_client()
-    await client.flushdb()  # Ensure clean state
+    _ = await client.flushdb()  # Ensure clean state
     return client
 
 
@@ -58,7 +58,7 @@ class TestRedisManagerSetup:
         assert manager.provider is None
         assert not manager.is_connected
         with pytest.raises(AppError, match="Redis client not initialized"):
-            manager.get_client()
+            _ = manager.get_client()
 
     @pytest.mark.asyncio
     async def test_setup_with_fake_provider(self, manager: RedisManager) -> None:
@@ -68,7 +68,7 @@ class TestRedisManagerSetup:
         Assert: The manager is connected, the provider is FAKE, and the client is available.
         """
         settings = Settings(redis_provider="fake")
-        await manager.setup(settings)
+        _ = await manager.setup(settings)
 
         assert manager.is_connected
         assert manager.provider == RedisProvider.FAKE
@@ -106,7 +106,7 @@ class TestRedisManagerSetup:
         mock_redis_class.return_value = mock_redis_instance
 
         settings = Settings(redis_provider="local", redis_url="redis://localhost")
-        await manager.setup(settings)
+        _ = await manager.setup(settings)
 
         # Since Settings has max_connections=50, it uses connection pool path
         mock_pool_from_url.assert_called_once()
@@ -167,15 +167,15 @@ class TestRedisManagerSetup:
         Assert: The client and provider are reset to None, and is_connected is False.
         """
         settings = Settings(redis_provider="fake")
-        await manager.setup(settings)
+        _ = await manager.setup(settings)
         assert manager.is_connected
 
-        await manager.teardown()
+        _ = await manager.teardown()
 
         assert not manager.is_connected
         assert manager.provider is None
         with pytest.raises(AppError):
-            manager.get_client()
+            _ = manager.get_client()
 
 
 # endregion
@@ -204,7 +204,7 @@ class TestRedisClient:
         key, value = "exp_key", "exp_value"
 
         # Act
-        await fake_redis_client.set(key, value, ex=10)
+        _ = await fake_redis_client.set(key, value, ex=10)
         ttl = await fake_redis_client.ttl(key)
 
         # Assert
@@ -215,7 +215,7 @@ class TestRedisClient:
         """Covers SET with 'nx' (not exist) and 'xx' (exist) conditions."""
         # Arrange
         key = "cond_key"
-        await fake_redis_client.delete(key)  # Ensure key doesn't exist
+        _ = await fake_redis_client.delete(key)  # Ensure key doesn't exist
 
         # Act & Assert (nx on non-existent key)
         assert await fake_redis_client.set(key, "v1", nx=True) is True
@@ -230,16 +230,16 @@ class TestRedisClient:
         assert await fake_redis_client.get(key) == "v3"
 
         # Act & Assert (xx on non-existent key)
-        await fake_redis_client.delete(key)
+        _ = await fake_redis_client.delete(key)
         assert await fake_redis_client.set(key, "v4", xx=True) is False
         assert await fake_redis_client.get(key) is None
 
     async def test_delete(self, fake_redis_client: RedisClient) -> None:
         """Covers DELETE on single and multiple keys."""
         # Arrange
-        await fake_redis_client.set("k1", "v1")
-        await fake_redis_client.set("k2", "v2")
-        await fake_redis_client.set("k3", "v3")
+        _ = await fake_redis_client.set("k1", "v1")
+        _ = await fake_redis_client.set("k2", "v2")
+        _ = await fake_redis_client.set("k3", "v3")
 
         # Act & Assert (delete single)
         assert await fake_redis_client.delete("k1") == 1
@@ -256,8 +256,8 @@ class TestRedisClient:
     async def test_exists(self, fake_redis_client: RedisClient) -> None:
         """Covers EXISTS on single and multiple keys."""
         # Arrange
-        await fake_redis_client.set("k1", "v1")
-        await fake_redis_client.set("k2", "v2")
+        _ = await fake_redis_client.set("k1", "v1")
+        _ = await fake_redis_client.set("k2", "v2")
 
         # Act & Assert
         assert await fake_redis_client.exists("k1") == 1
@@ -268,7 +268,7 @@ class TestRedisClient:
     async def test_expire(self, fake_redis_client: RedisClient) -> None:
         """Covers EXPIRE."""
         # Arrange
-        await fake_redis_client.set("k1", "v1")
+        _ = await fake_redis_client.set("k1", "v1")
 
         # Act & Assert
         assert await fake_redis_client.expire("k1", 10) is True
@@ -356,8 +356,8 @@ class TestRedisClient:
     async def test_flushdb(self, fake_redis_client: RedisClient) -> None:
         """Covers FLUSHDB."""
         # Arrange
-        await fake_redis_client.set("k1", "v1")
-        await fake_redis_client.hset("h1", mapping={"f1": "v1"})
+        _ = await fake_redis_client.set("k1", "v1")
+        _ = await fake_redis_client.hset("h1", mapping={"f1": "v1"})
 
         # Act
         assert await fake_redis_client.flushdb() is True
@@ -408,7 +408,7 @@ class TestRedisClient:
 
             # Act & Assert
             with pytest.raises(RedisOperationError, match="Publish error"):
-                await fake_redis_client.publish("channel", "message")
+                _ = await fake_redis_client.publish("channel", "message")
 
     async def test_subscribe_error_wrapping(self, fake_redis_client: RedisClient) -> None:
         """Covers error wrapping for SUBSCRIBE operation."""
@@ -418,7 +418,7 @@ class TestRedisClient:
 
             # Act & Assert
             with pytest.raises(RedisOperationError, match="Subscribe error"):
-                await fake_redis_client.subscribe("channel")
+                _ = await fake_redis_client.subscribe("channel")
 
     @pytest.mark.parametrize(
         "method_name, args",
@@ -485,7 +485,7 @@ class TestErrorRecovery:
         mock_client.get.side_effect = RedisOperationError("Failed")
 
         @redis_safe(default="fallback")
-        async def get_data(client, key):
+        async def get_data(client: Any, key: str) -> Any:
             return await client.get(key)
 
         result = await get_data(mock_client, "some_key")
@@ -501,7 +501,7 @@ class TestErrorRecovery:
         mock_client.get.return_value = "actual_value"
 
         @redis_safe(default="fallback")
-        async def get_data(client, key):
+        async def get_data(client: Any, key: str) -> Any:
             return await client.get(key)
 
         result = await get_data(mock_client, "some_key")
@@ -551,7 +551,7 @@ class TestHealthAndDependency:
         Assert: Returns a healthy status dictionary.
         """
         settings = Settings(redis_provider="fake")
-        await manager.setup(settings)
+        _ = await manager.setup(settings)
         health = await manager.check_health()
         assert health == {
             "provider": "fake",
@@ -567,7 +567,7 @@ class TestHealthAndDependency:
         Assert: Returns an unhealthy status dictionary with the error message.
         """
         settings = Settings(redis_provider="fake")
-        await manager.setup(settings)
+        _ = await manager.setup(settings)
         with patch(
             "faster.core.redis.RedisClient.ping",
             side_effect=RedisOperationError("Ping failed"),
