@@ -108,11 +108,11 @@ async def test_setup_initializes_sentry_when_dsn_is_provided(mock_sentry_init: M
         sentry_profiles_sample_rate=profiles_sample_rate,
         environment=environment,
     )
-    await sentry_manager.setup(settings)
+    _ = await sentry_manager.setup(settings)
 
     # Assert
     mock_sentry_init.assert_called_once()
-    args, kwargs = mock_sentry_init.call_args
+    _, kwargs = mock_sentry_init.call_args
     assert kwargs["dsn"] == dsn
     assert kwargs["traces_sample_rate"] == trace_sample_rate
     assert kwargs["profiles_sample_rate"] == profiles_sample_rate
@@ -136,7 +136,7 @@ async def test_setup_does_not_initialize_sentry_when_dsn_is_missing(
 
     # Act
     settings = Settings(sentry_dsn=dsn)
-    await sentry_manager.setup(settings)
+    _ = await sentry_manager.setup(settings)
 
     # Assert
     mock_sentry_init.assert_not_called()
@@ -190,7 +190,7 @@ async def test_teardown_flushes_sentry_client(mock_sentry_client: MagicMock) -> 
     sentry_manager = SentryManager.get_instance()
 
     # Act
-    await sentry_manager.teardown()
+    _ = await sentry_manager.teardown()
 
     # Assert
     mock_sentry_client.close.assert_called_once_with(timeout=2.0)
@@ -207,7 +207,7 @@ async def test_check_health_when_configured(mock_sentry_init: MagicMock, mock_se
     sentry_manager = SentryManager.get_instance()
     settings = Settings(sentry_dsn="https://fake-dsn")
     mock_sentry_is_initialized.return_value = True
-    await sentry_manager.setup(settings)
+    _ = await sentry_manager.setup(settings)
 
     # Act
     health = await sentry_manager.check_health()
@@ -229,7 +229,7 @@ async def test_check_health_when_not_configured(
     sentry_manager = SentryManager.get_instance()
     settings = Settings(sentry_dsn=None)
     mock_sentry_is_initialized.return_value = False
-    await sentry_manager.setup(settings)
+    _ = await sentry_manager.setup(settings)
 
     # Act
     health = await sentry_manager.check_health()
