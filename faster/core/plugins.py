@@ -82,6 +82,10 @@ class PluginManager(BasePlugin):
         self._plugin_list.append(plugin)
         logger.debug(f"Registered plugin: {name}")
 
+    def get_registered_plugins(self) -> list[str]:
+        """Get list of registered plugin names."""
+        return list(self._plugins.keys())
+
     async def setup(self, settings: Settings) -> bool:
         """Setup all plugins in registration order."""
         all_success = True
