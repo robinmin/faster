@@ -285,4 +285,4 @@ class TestAuthRepository:
         mock_session.execute.side_effect = SQLAlchemyError("DB Error")
 
         with pytest.raises(SQLAlchemyError):
-            await auth_repository.create_or_update_user(mock_session, user_data)
+            _ = await auth_repository.create_or_update_user(mock_session, user_data)
