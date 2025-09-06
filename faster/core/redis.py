@@ -397,10 +397,10 @@ class RedisClient(RedisInterface):
         try:
             result = await self.client.get(key)
             if isinstance(result, Awaitable):
-                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = await result  # pyright: ignore[reportUnknownVariableType]
             else:
                 actual_result = result
-            return cast(Any, actual_result)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            return cast(Any, actual_result)  # pyright: ignore[reportUnknownVariableType]
         except (RedisError, Exception) as e:
             logger.error(f"Redis GET operation failed for key '{key}': {e}")
             raise RedisOperationError(f"GET operation failed: {e}") from e
@@ -476,12 +476,12 @@ class RedisClient(RedisInterface):
 
     async def hgetall(self, name: str) -> dict[str, Any]:
         try:
-            result = self.client.hgetall(name)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            result = self.client.hgetall(name)  # pyright: ignore[reportUnknownVariableType]
             if isinstance(result, Awaitable):
-                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = await result  # pyright: ignore[reportUnknownVariableType]
             else:
-                actual_result = result  # type: ignore[reportUnknownVariableType, unused-ignore]
-            return cast(dict[str, Any], actual_result)  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = result  # pyright: ignore[reportUnknownVariableType]
+            return cast(dict[str, Any], actual_result)  # pyright: ignore[reportUnknownVariableType]
         except (RedisError, Exception) as e:
             logger.error(f"Redis HGETALL operation failed for hash '{name}': {e}")
             raise RedisOperationError(f"HGETALL operation failed: {e}") from e
@@ -518,24 +518,24 @@ class RedisClient(RedisInterface):
 
     async def lpop(self, name: str) -> str | list[Any] | None:
         try:
-            result = self.client.lpop(name)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            result = self.client.lpop(name)  # pyright: ignore[reportUnknownVariableType]
             if isinstance(result, Awaitable):
-                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = await result  # pyright: ignore[reportUnknownVariableType]
             else:
-                actual_result = result  # type: ignore[reportUnknownVariableType, unused-ignore]
-            return actual_result  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = result  # pyright: ignore[reportUnknownVariableType]
+            return actual_result  # pyright: ignore[reportUnknownVariableType]
         except (RedisError, Exception) as e:
             logger.error(f"Redis LPOP operation failed for list '{name}': {e}")
             raise RedisOperationError(f"LPOP operation failed: {e}") from e
 
     async def rpop(self, name: str) -> str | list[Any] | None:
         try:
-            result = self.client.rpop(name)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            result = self.client.rpop(name)  # pyright: ignore[reportUnknownVariableType]
             if isinstance(result, Awaitable):
-                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = await result  # pyright: ignore[reportUnknownVariableType]
             else:
-                actual_result = result  # type: ignore[reportUnknownVariableType, unused-ignore]
-            return actual_result  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = result  # pyright: ignore[reportUnknownVariableType]
+            return actual_result  # pyright: ignore[reportUnknownVariableType]
         except (RedisError, Exception) as e:
             logger.error(f"Redis RPOP operation failed for list '{name}': {e}")
             raise RedisOperationError(f"RPOP operation failed: {e}") from e
@@ -570,12 +570,12 @@ class RedisClient(RedisInterface):
 
     async def smembers(self, name: str) -> builtins.set[Any]:
         try:
-            result = self.client.smembers(name)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            result = self.client.smembers(name)  # pyright: ignore[reportUnknownVariableType]
             if isinstance(result, Awaitable):
-                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = await result  # pyright: ignore[reportUnknownVariableType]
             else:
-                actual_result = result  # type: ignore[reportUnknownVariableType, unused-ignore]
-            return actual_result  # type: ignore[reportUnknownVariableType, unused-ignore]
+                actual_result = result  # pyright: ignore[reportUnknownVariableType]
+            return actual_result  # pyright: ignore[reportUnknownVariableType]
         except (RedisError, Exception) as e:
             logger.error(f"Redis SMEMBERS operation failed for set '{name}': {e}")
             raise RedisOperationError(f"SMEMBERS operation failed: {e}") from e
