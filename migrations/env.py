@@ -8,7 +8,7 @@ from sqlalchemy import engine_from_config, pool
 # We need to import all models that inherit from SQLModel
 try:
     # Import all models for Alembic auto-detection
-    import faster.core.schemas  # noqa: F401
+    import faster.core.schemas  # noqa: F401  # type: ignore[unused-ignore]
 except ImportError as e:
     print(f"Warning: Could not import models: {e}")
 
