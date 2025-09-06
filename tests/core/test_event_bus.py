@@ -286,10 +286,10 @@ class TestEventBus:
         mock_logger = mocker.patch("faster.core.event_bus.logger")
 
         # Act
-        async def consume():
+        async def consume() -> list[Event[Any]]:
             return [ev async for ev in event_bus.process_events(TEST_CHANNEL)]
 
-        result = await asyncio.wait_for(consume(), timeout=0.1)  # type: ignore[no-untyped-call]
+        result = await asyncio.wait_for(consume(), timeout=0.1)
 
         # Assert
         assert result == []
