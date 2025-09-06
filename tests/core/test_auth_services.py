@@ -68,12 +68,12 @@ class TestAuthServiceRoles:
         """
 
         # Arrange
-        async def tag_role_side_effect(tag):
+        async def tag_role_side_effect(tag: str) -> list[str]:
             if tag == "protected":
                 return ["admin"]
             if tag == "editor-content":
                 return ["editor", "admin"]
-            return None
+            return []
 
         mock_tag2role_get = mocker.patch(
             "faster.core.auth.services.tag2role_get",
