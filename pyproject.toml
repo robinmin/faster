@@ -173,23 +173,16 @@ extend-immutable-calls = [
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["faster/**/*.py", "main.py", "tests/**/*.py"]
+files = ["faster/**/*.py", "main.py", "tests/**/*.py", "migrations/versions/*.py"]
 namespace_packages = true
 explicit_package_bases = true
-
-[[tool.mypy.overrides]]
-# Applies special rules to all modules under the 'tests' directory.
-module = "tests.*"
-# Disable checking for untyped function definitions in tests.
-# This prevents mypy from complaining if a test function doesn't have a return type.
-disallow_untyped_defs = false
 
 [tool.basedpyright]
 typeCheckingMode = "strict"
 pythonVersion = "3.10"
 
 # Specify the root directory or files to include in the analysis.
-include = ["faster/**/*.py", "main.py", "tests/**/*.py"]
+include = ["faster/**/*.py", "main.py", "tests/**/*.py", "migrations/versions/*.py"]
 
 # Specify directories or files to exclude from analysis.
 exclude = ["**/__pycache__", "**/node_modules"]
