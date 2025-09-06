@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from enum import Enum
 import json
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 import uuid
 
 from pydantic import BaseModel, Field, model_validator
@@ -40,14 +40,16 @@ class Event(BaseModel, Generic[T]):
 
     @model_validator(mode="before")
     @classmethod
-    def set_defaults(cls, data: Any) -> dict[str, Any] | Any:
+    def set_defaults(cls, data: Any) -> dict[str, Any]:
         """Set dynamic default values before validation."""
         if isinstance(data, dict):
             if "event_type" not in data or data["event_type"] is None:
                 data["event_type"] = cls.__name__
             if "payload" not in data or data["payload"] is None:
                 data["payload"] = {}
-        return data
+            return cast(dict[str, Any], data)
+        # If not a dict, convert to dict
+        return dict(data) if hasattr(data, "__dict__") else {}
 
 
 class EventBus:
@@ -74,14 +76,15 @@ class EventBus:
         """
         pubsub = await self._redis_client.subscribe(channel)
         if pubsub:
-            async for message in pubsub.listen():
-                # message is already typed as dict[str, Any] from Redis pubsub
-                if message["type"] == "message":
+            async for message in pubsub.listen():  # type: ignore[reportUnknownVariableType, unused-ignore]
+                # Cast the message to dict type for proper typing
+                message_dict = cast(dict[str, Any], message)
+                if message_dict.get("type") == "message":
                     try:
-                        event_data = json.loads(message["data"])
+                        event_data = json.loads(message_dict["data"])
                         yield Event[Any](**event_data)
                     except json.JSONDecodeError:
-                        logger.error(f"Failed to decode event message: {message['data']}")
+                        logger.error(f"Failed to decode event message: {message_dict['data']}")
                     except Exception as e:
                         logger.error(f"Error processing event: {e}")
         else:
