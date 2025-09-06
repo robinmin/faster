@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 import pytest
+from starlette.responses import Response
 
 from faster.core.auth.middlewares import AuthMiddleware, get_auth_user
 from faster.core.auth.services import AuthService
@@ -80,7 +81,7 @@ class TestAuthMiddleware:
         with patch("faster.core.auth.middlewares.blacklist_exists", new_callable=AsyncMock) as mock_blacklist_exists:
             mock_blacklist_exists.return_value = False
 
-            async def call_next(request):
+            async def call_next(request: Request) -> Response:
                 return JSONResponse({"status": "ok"}, status_code=200)
 
             # Act
@@ -111,7 +112,7 @@ class TestAuthMiddleware:
         ]
         mock_auth_service.authenticate_token = AsyncMock()
 
-        async def call_next(request):
+        async def call_next(request: Request) -> Response:
             return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
@@ -136,7 +137,7 @@ class TestAuthMiddleware:
         mock_request.url.path = "/docs"
         mock_auth_service.authenticate_token = AsyncMock()
 
-        async def call_next(request):
+        async def call_next(request: Request) -> Response:
             return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
@@ -166,7 +167,7 @@ class TestAuthMiddleware:
             }
         ]
 
-        async def call_next(request):
+        async def call_next(request: Request) -> Response:
             return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
@@ -196,7 +197,7 @@ class TestAuthMiddleware:
             }
         ]
 
-        async def call_next(request):
+        async def call_next(request: Request) -> Response:
             return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
@@ -226,7 +227,7 @@ class TestAuthMiddleware:
             }
         ]
 
-        async def call_next(request):
+        async def call_next(request: Request) -> Response:
             return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
@@ -247,7 +248,7 @@ class TestAuthMiddleware:
         mock_request.url.path = "/nonexistent"
         mock_request.app.state.endpoints = []
 
-        async def call_next(request):
+        async def call_next(request: Request) -> Response:
             return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
@@ -281,7 +282,7 @@ class TestAuthMiddleware:
                 "faster.core.auth.middlewares.get_current_endpoint", MagicMock(side_effect=Exception("Test error"))
             )
 
-            async def call_next(request):
+            async def call_next(request: Request) -> Response:
                 return JSONResponse({"status": "ok"}, status_code=200)
 
             # Act
@@ -318,7 +319,7 @@ class TestAuthMiddleware:
         ]
         mock_auth_service.authenticate_token = AsyncMock()
 
-        async def call_next(request):
+        async def call_next(request: Request) -> Response:
             return JSONResponse({"status": "ok"}, status_code=200)
 
         # Act
@@ -361,5 +362,5 @@ class TestGetAuthUser:
 
         # Act & Assert
         with pytest.raises(HTTPException) as exc_info:
-            get_auth_user(request)
+            _ = get_auth_user(request)
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
