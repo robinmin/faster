@@ -76,7 +76,7 @@ class EventBus:
         """
         pubsub = await self._redis_client.subscribe(channel)
         if pubsub:
-            async for message in pubsub.listen():  # type: ignore[reportUnknownVariableType, unused-ignore]
+            async for message in pubsub.listen():  # pyright: ignore[reportUnknownVariableType]
                 # Cast the message to dict type for proper typing
                 message_dict = cast(dict[str, Any], message)
                 if message_dict.get("type") == "message":
