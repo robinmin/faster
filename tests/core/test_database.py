@@ -52,7 +52,7 @@ def mock_create_async_engine(mocker: Any) -> MagicMock:
     This prevents mock objects from being shared between master and replica engines.
     """
 
-    def engine_factory(*args, **kwargs):
+    def engine_factory(*args: Any, **kwargs: Any) -> Any:
         engine = mocker.AsyncMock(spec=AsyncEngine)
         engine.dispose = mocker.AsyncMock()
         # Mock the async context manager for engine.begin()
@@ -96,7 +96,7 @@ class TestDatabaseManagerInitialization:
         Act: Call setup with only a master URL.
         Assert: Correctly initializes the master engine and session, leaving replica as None.
         """
-        await db_manager.setup(master_only_settings)
+        _ = await db_manager.setup(master_only_settings)
 
         mock_create_async_engine.assert_called_once()
         assert db_manager.master_engine is not None
@@ -119,7 +119,7 @@ class TestDatabaseManagerInitialization:
         Act: Call setup with master URL via Settings.
         Assert: Correctly initializes only the master engine and session (replica not supported in current Settings).
         """
-        await db_manager.setup(master_replica_settings)
+        _ = await db_manager.setup(master_replica_settings)
 
         assert mock_create_async_engine.call_count == 1
         assert db_manager.master_engine is not None
@@ -149,7 +149,7 @@ class TestDatabaseManagerInitialization:
         Assert: The engine is created with the correct arguments based on the DB type.
         """
         settings = Settings(database_url=url, database_pool_size=10, database_max_overflow=20)
-        await db_manager.setup(settings)
+        _ = await db_manager.setup(settings)
 
         call_args = mock_create_async_engine.call_args[1]
         for key, value in expected_args.items():
@@ -182,10 +182,10 @@ class TestDatabaseManagerInitialization:
         Assert: Engine dispose method is called and attributes are reset to None.
         """
         settings = Settings(database_url=TEST_MASTER_URL)
-        await db_manager.setup(settings)
+        _ = await db_manager.setup(settings)
         master_engine_mock = db_manager.master_engine
 
-        await db_manager.teardown()
+        _ = await db_manager.teardown()
 
         if master_engine_mock is not None:
             master_engine_mock.dispose.assert_awaited_once()  # type: ignore[attr-defined]
@@ -201,7 +201,7 @@ class TestDatabaseManagerSessionHandling:
     def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock) -> None:
         """Auto-used fixture to initialize the db_manager for session tests."""
         settings = Settings(database_url=TEST_MASTER_URL)
-        asyncio.run(db_manager.setup(settings))
+        _ = asyncio.run(db_manager.setup(settings))
 
     @pytest.mark.asyncio
     async def test_get_raw_session_raises_dberror_if_not_initialized(self) -> None:
@@ -308,7 +308,7 @@ class TestDatabaseManagerModelsAndHealth:
     def setup(self, db_manager: DatabaseManager, mock_create_async_engine: MagicMock) -> None:
         """Auto-used fixture to initialize the db_manager for these tests."""
         settings = Settings(database_url=TEST_MASTER_URL)
-        asyncio.run(db_manager.setup(settings))
+        _ = asyncio.run(db_manager.setup(settings))
 
     @pytest.mark.asyncio
     async def test_init_db_models_raises_dberror_if_not_initialized(self) -> None:
