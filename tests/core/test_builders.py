@@ -69,7 +69,7 @@ class TestWhereClauseMixin:
         builder = QueryBuilder(SysDict)
 
         # Create a test model with a float field for testing
-        float_col = sa.Column("score", sa.Float)
+        float_col: sa.Column[float] = sa.Column("score", sa.Float)
 
         result = builder.where_float(float_col, 3.14)
         assert result is builder
@@ -210,8 +210,13 @@ class TestQueryBuilder:
         """Test QueryBuilder initialization."""
         builder = QueryBuilder(SysMap)
 
-        assert builder._model is SysMap
-        assert builder._query is not None
+        # Verify the builder can build a valid query
+        query = builder.build()
+        assert query is not None
+
+        # Verify the query is for the correct model by checking the SQL
+        sql_str = get_sql_string(query)
+        assert "sys_map" in sql_str.lower()  # Table name should be in the query
 
     def test_active_only_soft_delete_model(self) -> None:
         """Test active_only method for soft delete models."""
@@ -292,7 +297,7 @@ class TestQueryBuilder:
     def test_build_delete_returns_delete_query(self) -> None:
         """Test that build_delete method returns a Delete query."""
         builder = QueryBuilder(SysMap)
-        builder.where_str(SysMap.category, "test")
+        _ = builder.where_str(SysMap.category, "test")
 
         delete_query = builder.build_delete()
 
@@ -330,8 +335,13 @@ class TestDeleteBuilder:
         """Test DeleteBuilder initialization."""
         builder = DeleteBuilder(SysMap)
 
-        assert builder._model is SysMap
-        assert builder._query is not None
+        # Verify the builder can build a valid query
+        query = builder.build()
+        assert query is not None
+
+        # Verify the query is for the correct model by checking the SQL
+        sql_str = get_sql_string(query)
+        assert "sys_map" in sql_str.lower()  # Table name should be in the query
 
     def test_build_returns_delete_query(self) -> None:
         """Test that build method returns a Delete query."""
@@ -377,9 +387,13 @@ class TestUpdateBuilder:
         """Test UpdateBuilder initialization."""
         builder = UpdateBuilder(SysMap)
 
-        assert builder._model is SysMap
-        assert builder._query is not None
-        assert builder._values == {}
+        # Verify the builder can build a valid query
+        query = builder.build()
+        assert query is not None
+
+        # Verify the query is for the correct model by checking the SQL
+        sql_str = get_sql_string(query)
+        assert "sys_map" in sql_str.lower()  # Table name should be in the query
 
     def test_set_str(self) -> None:
         """Test set_str method for setting string values."""
@@ -521,7 +535,7 @@ class TestUpdateBuilder:
     def test_build_returns_update_query(self) -> None:
         """Test that build method returns an Update query."""
         builder = UpdateBuilder(SysMap)
-        builder.set_str(SysMap.category, "test")
+        _ = builder.set_str(SysMap.category, "test")
 
         query = builder.build()
         sql_str = get_sql_string(query)
@@ -554,14 +568,14 @@ class TestFactoryFunctions:
         builder = query_builder(SysMap)
 
         assert isinstance(builder, QueryBuilder)
-        assert builder._model is SysMap
+        assert builder._model is SysMap  # type: ignore[reportPrivateUsage, unused-ignore]
 
     def test_soft_delete_query_builder_factory(self) -> None:
         """Test soft_delete_query_builder factory function."""
         builder = soft_delete_query_builder(SysMap)
 
         assert isinstance(builder, QueryBuilder)
-        assert builder._model is SysMap
+        assert builder._model is SysMap  # type: ignore[reportPrivateUsage, unused-ignore]
 
         # Test that soft delete methods are available
         result = builder.active_only()
@@ -572,14 +586,14 @@ class TestFactoryFunctions:
         builder = delete_builder(SysMap)
 
         assert isinstance(builder, DeleteBuilder)
-        assert builder._model is SysMap
+        assert builder._model is SysMap  # type: ignore[reportPrivateUsage, unused-ignore]
 
     def test_update_builder_factory(self) -> None:
         """Test update_builder factory function."""
         builder = update_builder(SysMap)
 
         assert isinstance(builder, UpdateBuilder)
-        assert builder._model is SysMap
+        assert builder._model is SysMap  # type: ignore[reportPrivateUsage, unused-ignore]
 
 
 class TestConvenienceAliases:
@@ -693,8 +707,8 @@ class TestIntegration:
         builder2 = QueryBuilder(SysMap)
 
         # Modify each independently
-        builder1.where_str(SysMap.category, "user1")
-        builder2.where_str(SysMap.category, "user2")
+        _ = builder1.where_str(SysMap.category, "user1")
+        _ = builder2.where_str(SysMap.category, "user2")
 
         query1 = builder1.build()
         query2 = builder2.build()
