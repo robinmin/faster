@@ -29,7 +29,7 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from functools import wraps
 import re
-from typing import Any, ParamSpec, TypeVar
+from typing import Any, ParamSpec, TypeVar, cast
 
 import fakeredis.aioredis
 import redis.asyncio as redis
@@ -48,6 +48,9 @@ logger = get_logger(__name__)
 T = TypeVar("T")
 P = ParamSpec("P")
 R = TypeVar("R")
+
+# Legacy type aliases for backward compatibility
+RedisValue = Any
 
 
 class RedisProvider(str, Enum):
@@ -312,7 +315,7 @@ class RedisInterface(ABC):
         """Set hash fields."""
 
     @abstractmethod
-    async def hgetall(self, name: str) -> dict[str, str]:
+    async def hgetall(self, name: str) -> dict[str, Any]:
         """Get all hash fields and values."""
 
     @abstractmethod
@@ -340,7 +343,7 @@ class RedisInterface(ABC):
         """Get list length."""
 
     @abstractmethod
-    async def sadd(self, name: str, *values: str) -> int:
+    async def sadd(self, name: str, *values: FieldT) -> int:
         """Add members to set."""
 
     @abstractmethod
@@ -380,6 +383,9 @@ class RedisInterface(ABC):
         """Subscribe to channel."""
 
 
+###############################################################################
+
+
 class RedisClient(RedisInterface):
     """Redis client wrapper implementing the RedisInterface."""
 
@@ -390,8 +396,11 @@ class RedisClient(RedisInterface):
     async def get(self, key: str) -> Any:
         try:
             result = await self.client.get(key)
-            actual_result = await result if isinstance(result, Awaitable) else result
-            return actual_result
+            if isinstance(result, Awaitable):
+                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            else:
+                actual_result = result
+            return cast(Any, actual_result)  # type: ignore[reportUnknownVariableType, unused-ignore]
         except (RedisError, Exception) as e:
             logger.error(f"Redis GET operation failed for key '{key}': {e}")
             raise RedisOperationError(f"GET operation failed: {e}") from e
@@ -465,11 +474,14 @@ class RedisClient(RedisInterface):
             logger.error(f"Redis HSET operation failed for hash '{name}': {e}")
             raise RedisOperationError(f"HSET operation failed: {e}") from e
 
-    async def hgetall(self, name: str) -> dict[str, str]:
+    async def hgetall(self, name: str) -> dict[str, Any]:
         try:
-            result = self.client.hgetall(name)
-            actual_result: dict[str, str] = await result if isinstance(result, Awaitable) else result
-            return actual_result
+            result = self.client.hgetall(name)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            if isinstance(result, Awaitable):
+                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            else:
+                actual_result = result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            return cast(dict[str, Any], actual_result)  # type: ignore[reportUnknownVariableType, unused-ignore]
         except (RedisError, Exception) as e:
             logger.error(f"Redis HGETALL operation failed for hash '{name}': {e}")
             raise RedisOperationError(f"HGETALL operation failed: {e}") from e
@@ -506,18 +518,24 @@ class RedisClient(RedisInterface):
 
     async def lpop(self, name: str) -> str | list[Any] | None:
         try:
-            result = self.client.lpop(name)
-            actual_result = await result if isinstance(result, Awaitable) else result
-            return actual_result
+            result = self.client.lpop(name)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            if isinstance(result, Awaitable):
+                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            else:
+                actual_result = result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            return actual_result  # type: ignore[reportUnknownVariableType, unused-ignore]
         except (RedisError, Exception) as e:
             logger.error(f"Redis LPOP operation failed for list '{name}': {e}")
             raise RedisOperationError(f"LPOP operation failed: {e}") from e
 
     async def rpop(self, name: str) -> str | list[Any] | None:
         try:
-            result = self.client.rpop(name)
-            actual_result = await result if isinstance(result, Awaitable) else result
-            return actual_result
+            result = self.client.rpop(name)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            if isinstance(result, Awaitable):
+                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            else:
+                actual_result = result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            return actual_result  # type: ignore[reportUnknownVariableType, unused-ignore]
         except (RedisError, Exception) as e:
             logger.error(f"Redis RPOP operation failed for list '{name}': {e}")
             raise RedisOperationError(f"RPOP operation failed: {e}") from e
@@ -552,9 +570,12 @@ class RedisClient(RedisInterface):
 
     async def smembers(self, name: str) -> builtins.set[Any]:
         try:
-            result = self.client.smembers(name)
-            actual_result: builtins.set[Any] = await result if isinstance(result, Awaitable) else result
-            return actual_result
+            result = self.client.smembers(name)  # type: ignore[reportUnknownVariableType, unused-ignore]
+            if isinstance(result, Awaitable):
+                actual_result = await result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            else:
+                actual_result = result  # type: ignore[reportUnknownVariableType, unused-ignore]
+            return actual_result  # type: ignore[reportUnknownVariableType, unused-ignore]
         except (RedisError, Exception) as e:
             logger.error(f"Redis SMEMBERS operation failed for set '{name}': {e}")
             raise RedisOperationError(f"SMEMBERS operation failed: {e}") from e
