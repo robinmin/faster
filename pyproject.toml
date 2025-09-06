@@ -210,7 +210,6 @@ reportUntypedBaseClass = true
 reportUntypedClassDecorator = true
 reportUntypedFunctionDecorator = true
 reportUntypedNamedTuple = true
-reportUntypedNamedTupleAsReturnType = true
 reportUnusedCallResult = true
 reportUnknownArgumentType = false
 reportUnknownMemberType = false
