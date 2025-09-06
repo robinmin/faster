@@ -52,10 +52,11 @@ class TestPluginInterfaceIntegration:
         plugin_manager.register("sentry", sentry_mgr)
 
         # Verify registration
-        assert len(plugin_manager._plugins) == 3
-        assert plugin_manager._plugins["database"] == db_mgr
-        assert plugin_manager._plugins["redis"] == redis_mgr
-        assert plugin_manager._plugins["sentry"] == sentry_mgr
+        registered_plugins = plugin_manager.get_registered_plugins()
+        assert len(registered_plugins) == 3
+        assert "database" in registered_plugins
+        assert "redis" in registered_plugins
+        assert "sentry" in registered_plugins
 
     @pytest.mark.asyncio
     async def test_plugin_teardown_calls_existing_manager_methods(self):
@@ -72,10 +73,10 @@ class TestPluginInterfaceIntegration:
 
         # Setup before teardown (minimal setup for testing)
         settings = Settings(redis_provider="fake")
-        await redis_mgr.setup(settings)
+        _ = await redis_mgr.setup(settings)
 
         # This should not raise an exception
-        await plugin_manager.teardown()
+        _ = await plugin_manager.teardown()
 
     @pytest.mark.asyncio
     async def test_plugin_health_check_works_with_existing_managers(self):
@@ -93,10 +94,10 @@ class TestPluginInterfaceIntegration:
 
         # Setup Redis for health check to work
         redis_settings = Settings(redis_provider="fake")
-        await redis_mgr.setup(redis_settings)
+        _ = await redis_mgr.setup(redis_settings)
 
         # Setup the plugin manager
-        await plugin_manager.setup(settings)
+        _ = await plugin_manager.setup(settings)
 
         # Get health status
         health_status = await plugin_manager.check_health()
