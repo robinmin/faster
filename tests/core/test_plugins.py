@@ -63,15 +63,15 @@ class FailingPlugin(BasePlugin):
 
 class TestPluginManager:
     @pytest.fixture
-    def plugin_manager(self):
+    def plugin_manager(self) -> PluginManager:
         return PluginManager()
 
     @pytest.fixture
-    def mock_plugin(self):
+    def mock_plugin(self) -> MockPlugin:
         return MockPlugin("test_plugin")
 
     @pytest.fixture
-    def settings(self):
+    def settings(self) -> Settings:
         return Settings()
 
     def test_register_plugin(self, plugin_manager: PluginManager, mock_plugin: MockPlugin) -> None:
@@ -229,11 +229,11 @@ class TestBasePlugin:
 
 class TestPluginReadyState:
     @pytest.fixture
-    def plugin(self):
+    def plugin(self) -> MockPlugin:
         return MockPlugin("test")
 
     @pytest.fixture
-    def settings(self):
+    def settings(self) -> Settings:
         return Settings()
 
     def test_initial_state(self, plugin: MockPlugin) -> None:
