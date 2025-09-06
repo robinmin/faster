@@ -280,7 +280,7 @@ class TestAuthModuleFunctions:
 
             assert result is True
             mock_redis.set.assert_called_once()
-            args, kwargs = mock_redis.set.call_args
+            args, _ = mock_redis.set.call_args
             assert args[0] == "user:profile:user-123"
             assert args[2] == 3600
             # Check that the data is JSON
@@ -347,7 +347,7 @@ class TestAuthModuleFunctions:
 
             assert result is True
             mock_redis.set.assert_called_once()
-            args, kwargs = mock_redis.set.call_args
+            args, _ = mock_redis.set.call_args
             assert args[0] == "jwks:key:test-key"
             assert args[2] == 3600
             # Check that the data is JSON
