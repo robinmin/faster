@@ -14,7 +14,7 @@ from faster.core.sentry import SentryManager
 class TestPluginInterfaceIntegration:
     """Test that existing managers properly implement the plugin interface."""
 
-    def test_database_manager_implements_plugin_interface(self):
+    def test_database_manager_implements_plugin_interface(self) -> None:
         """Test that DatabaseManager implements BasePlugin interface."""
         db_mgr = DatabaseManager.get_instance()
         assert isinstance(db_mgr, BasePlugin)
@@ -22,7 +22,7 @@ class TestPluginInterfaceIntegration:
         assert hasattr(db_mgr, "teardown")
         assert hasattr(db_mgr, "check_health")
 
-    def test_redis_manager_implements_plugin_interface(self):
+    def test_redis_manager_implements_plugin_interface(self) -> None:
         """Test that RedisManager implements BasePlugin interface."""
         redis_mgr = RedisManager.get_instance()
         assert isinstance(redis_mgr, BasePlugin)
@@ -30,7 +30,7 @@ class TestPluginInterfaceIntegration:
         assert hasattr(redis_mgr, "teardown")
         assert hasattr(redis_mgr, "check_health")
 
-    def test_sentry_manager_implements_plugin_interface(self):
+    def test_sentry_manager_implements_plugin_interface(self) -> None:
         """Test that SentryManager implements BasePlugin interface."""
         sentry_mgr = SentryManager.get_instance()
         assert isinstance(sentry_mgr, BasePlugin)
@@ -39,7 +39,7 @@ class TestPluginInterfaceIntegration:
         assert hasattr(sentry_mgr, "check_health")
 
     @pytest.mark.asyncio
-    async def test_plugin_manager_can_register_existing_managers(self):
+    async def test_plugin_manager_can_register_existing_managers(self) -> None:
         """Test that PluginManager can register and manage existing managers."""
         plugin_manager = PluginManager.get_instance()
         sentry_mgr = SentryManager.get_instance()
@@ -59,7 +59,7 @@ class TestPluginInterfaceIntegration:
         assert "sentry" in registered_plugins
 
     @pytest.mark.asyncio
-    async def test_plugin_teardown_calls_existing_manager_methods(self):
+    async def test_plugin_teardown_calls_existing_manager_methods(self) -> None:
         """Test that plugin teardown properly calls existing manager close methods."""
         plugin_manager = PluginManager.get_instance()
         sentry_mgr = SentryManager.get_instance()
@@ -79,7 +79,7 @@ class TestPluginInterfaceIntegration:
         _ = await plugin_manager.teardown()
 
     @pytest.mark.asyncio
-    async def test_plugin_health_check_works_with_existing_managers(self):
+    async def test_plugin_health_check_works_with_existing_managers(self) -> None:
         """Test that plugin health check works with existing managers."""
         plugin_manager = PluginManager.get_instance()
         sentry_mgr = SentryManager.get_instance()
