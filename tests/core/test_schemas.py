@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from sqlmodel import Field
+from sqlmodel import Field, SQLModel
 
-from faster.core.schemas import MyBase, SysDict, SysMap
+from faster.core.schemas import SysDict, SysMap
+from tests.core.conftest import TestMyBaseMixin
 
 
 class TestMyBase:
@@ -12,7 +13,7 @@ class TestMyBase:
         """Test MyBase initialization with default values."""
 
         # Create a concrete subclass for testing
-        class TestModel1(MyBase, table=True):
+        class TestModel1(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_1"
             id: int = Field(primary_key=True)
             name: str
@@ -27,7 +28,7 @@ class TestMyBase:
     def test_mybase_soft_delete(self) -> None:
         """Test soft delete functionality."""
 
-        class TestModel2(MyBase, table=True):
+        class TestModel2(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_2"
             id: int = Field(primary_key=True)
             name: str
@@ -44,7 +45,7 @@ class TestMyBase:
     def test_mybase_restore(self) -> None:
         """Test restore functionality."""
 
-        class TestModel3(MyBase, table=True):
+        class TestModel3(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_3"
             id: int = Field(primary_key=True)
             name: str
@@ -66,7 +67,7 @@ class TestMyBase:
     def test_mybase_is_active_property(self) -> None:
         """Test is_active property."""
 
-        class TestModel4(MyBase, table=True):
+        class TestModel4(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_4"
             id: int = Field(primary_key=True)
             name: str
@@ -87,7 +88,7 @@ class TestMyBase:
     def test_mybase_is_deleted_property(self) -> None:
         """Test is_deleted property."""
 
-        class TestModel5(MyBase, table=True):
+        class TestModel5(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_5"
             id: int = Field(primary_key=True)
             name: str
@@ -108,7 +109,7 @@ class TestMyBase:
     def test_mybase_soft_delete_preserves_other_fields(self) -> None:
         """Test that soft delete only affects in_used and deleted_at."""
 
-        class TestModel6(MyBase, table=True):
+        class TestModel6(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_6"
             id: int = Field(primary_key=True)
             name: str
@@ -129,7 +130,7 @@ class TestMyBase:
     def test_mybase_restore_preserves_other_fields(self) -> None:
         """Test that restore only affects in_used and deleted_at."""
 
-        class TestModel7(MyBase, table=True):
+        class TestModel7(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_7"
             id: int = Field(primary_key=True)
             name: str
@@ -218,7 +219,7 @@ class TestModelIntegration:
     def test_multiple_soft_deletes(self) -> None:
         """Test soft deleting multiple records."""
 
-        class TestModel(MyBase, table=True):
+        class TestModel(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_integration"
             id: int = Field(primary_key=True)
             name: str
@@ -237,7 +238,7 @@ class TestModelIntegration:
     def test_mixed_active_deleted_state(self) -> None:
         """Test having both active and deleted records."""
 
-        class TestModelMixed(MyBase, table=True):
+        class TestModelMixed(TestMyBaseMixin, SQLModel, table=True):
             __tablename__ = "test_model_mixed"
             id: int = Field(primary_key=True)
             name: str
