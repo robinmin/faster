@@ -1,8 +1,10 @@
-from collections.abc import AsyncGenerator
+from abc import ABC, abstractmethod
+from collections.abc import AsyncGenerator, Callable
 from contextlib import _AsyncGeneratorContextManager, asynccontextmanager  # pyright: ignore[reportPrivateUsage]
-from typing import Any, TypedDict
+from typing import Any, TypeAlias, TypedDict, TypeVar
 
 from sqlalchemy import text
+from sqlalchemy.engine import Result
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateIndex, CreateTable
 from sqlmodel import SQLModel, create_engine
@@ -14,8 +16,18 @@ from .exceptions import DBError
 from .logger import get_logger
 from .plugins import BasePlugin
 
+###############################################################################
+
 logger = get_logger(__name__)
 
+# Type definitions
+ModelType = TypeVar("ModelType")
+
+DBSession: TypeAlias = AsyncSession # for Python 3.10+
+# type DBSession = AsyncSession     # for Python 3.12+
+
+DBResult: TypeAlias = Result[Any] # for Python 3.10+
+# type DBResult = Result[Any] # for Python 3.12+
 
 class EngineKwargs(TypedDict, total=False):
     echo: bool
@@ -26,13 +38,18 @@ class EngineKwargs(TypedDict, total=False):
 
 
 class DatabaseManager(BasePlugin):
+    """
+    Enhanced database manager that provides abstraction layer for database access.
+    Acts as a wrapper to hide implementation details from client code.
+    """
+
     _instance = None
 
     def __init__(self) -> None:
         self.master_engine: AsyncEngine | None = None
         self.replica_engine: AsyncEngine | None = None
-        self.master_session: async_sessionmaker[AsyncSession] | None = None
-        self.replica_session: async_sessionmaker[AsyncSession] | None = None
+        self.master_session: async_sessionmaker[DBSession] | None = None
+        self.replica_session: async_sessionmaker[DBSession] | None = None
         self.is_ready: bool = False
 
     @classmethod
@@ -52,23 +69,42 @@ class DatabaseManager(BasePlugin):
 
         return create_async_engine(url, **engine_kwargs)
 
+    def get_session_factory(self, readonly: bool = False) -> Callable[[], DBSession]:
+        """Get an async session factory function for dependency injection."""
+        session_factory = self.replica_session if readonly and self.replica_session else self.master_session
+        if session_factory is None:
+            raise DBError("Database not initialized. Call setup first.")
+        return session_factory
+
+    # Enhanced abstraction methods
+    def create_session(self, readonly: bool = False) -> DBSession:
+        """Create a new database session. Client code should use this instead of direct access."""
+        session_factory = self.get_session_factory(readonly=readonly)
+        return session_factory()
+
+    async def execute_raw_query(self, query: str, readonly: bool = True) -> Any:
+        """
+        Execute raw SQL query with abstraction.
+        Returns results in a database-agnostic way.
+        """
+        async with self.get_raw_session(readonly=readonly) as session:
+            result = await session.execute(text(query))  # pyright: ignore[reportDeprecated]
+            return result
+
     # -----------------------------
     # FastAPI dependency
     # -----------------------------
-    async def get_raw_session(self, readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
+    @asynccontextmanager
+    async def get_raw_session(self, readonly: bool = False) -> AsyncGenerator[DBSession, None]:
         """
         Get a FastAPI dependency session. Please note that this session is not managed by the database engine. That means you need to close it manually. Carefully handle exceptions and errors.
         Example:
         @app.get("/users")
-            async def get_users(db: AsyncSession = Depends(get_raw_session)):
+            async def get_users(db: DBSession = Depends(get_raw_session)):
                 query = select(User)
                 return await db.execute(query).scalars().all()
         """
-        session_factory = self.replica_session if readonly and self.replica_session else self.master_session
-        if session_factory is None:
-            raise DBError("Database not initialized. Call setup first.")
-
-        session = session_factory()
+        session = self.create_session(readonly)
         try:
             yield session
         finally:
@@ -78,22 +114,18 @@ class DatabaseManager(BasePlugin):
     # Transaction manager
     # -----------------------------
     @asynccontextmanager
-    async def get_txn(self, readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
+    async def get_txn(self, readonly: bool = False) -> AsyncGenerator[DBSession, None]:
         """
         FastAPI dependency transaction.
         Example:
-            async def get_users(txn: AsyncSession = Depends(get_txn)):
+            async def get_users(txn: DBSession = Depends(get_txn)):
                 # Check if user already exists
                 existing_user = await txn.exec(select(User).where(User.email == user_data.email))
                 if existing_user.first():
                     # If you raise an exception here, the transaction will be automatically rolled back.
                     raise HTTPException(status_code=400, detail="Email already registered")
         """
-        session_factory = self.replica_session if readonly and self.replica_session else self.master_session
-        if session_factory is None:
-            raise DBError("Database not initialized. Call setup first.")
-
-        session = session_factory()
+        session = self.create_session(readonly)
         try:
             async with session.begin():
                 yield session
@@ -143,13 +175,13 @@ class DatabaseManager(BasePlugin):
                 settings.database_max_overflow,
                 settings.database_echo,
             )
-            self.master_session = async_sessionmaker(self.master_engine, class_=AsyncSession)
+            self.master_session = async_sessionmaker(self.master_engine, class_=DBSession)
             logger.info("Master DB engine initialized", extra={"url": settings.database_url})
 
             # TODO : Note: replica_url is not in current Settings, but could be added later
             # if replica_url:
             #     self.replica_engine = self._make_engine(replica_url, pool_size, max_overflow, echo)
-            #     self.replica_session = async_sessionmaker(self.replica_engine, class_=AsyncSession)
+            #     self.replica_session = async_sessionmaker(self.replica_engine, class_=DBSession)
             #     logger.info("Replica DB engine initialized", extra={"url": replica_url})
 
             self.is_ready = True
@@ -213,11 +245,11 @@ class DatabaseManager(BasePlugin):
 ################################################################################
 # Utility functions
 ################################################################################
-async def get_raw_session(readonly: bool = False) -> AsyncGenerator[AsyncSession, None]:
+async def get_raw_session(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
     return DatabaseManager.get_instance().get_raw_session(readonly=readonly)
 
 
-async def get_txn(readonly: bool = False) -> _AsyncGeneratorContextManager[AsyncSession, None]:
+async def get_txn(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
     return DatabaseManager.get_instance().get_txn(readonly=readonly)
 
 
@@ -240,3 +272,143 @@ def generate_ddl(url: str = "sqlite:///:memory:") -> str:
             ddl_statements.append(str(CreateIndex(idx).compile(engine)))
 
     return ";\n\n".join(ddl_statements) + ";"
+
+
+################################################################################
+# Base Repository Class
+################################################################################
+
+
+class BaseRepository(ABC):
+    """
+    Abstract base repository class that provides common database operations.
+    All repository classes should inherit from this to get standard functionality.
+    """
+
+    def __init__(self, db_manager: DatabaseManager | None = None) -> None:
+        """
+        Initialize repository with database manager.
+        If db_manager is None, uses the singleton instance.
+        """
+        self.db_manager = db_manager or DatabaseManager.get_instance()
+        self._session_factory: Callable[[], DBSession] | None = None
+
+    # Session Management (Abstraction Layer)
+    @property
+    def session_factory(self) -> Callable[[], DBSession]:
+        """Get session factory with lazy initialization."""
+        if self._session_factory is None:
+            self._session_factory = self.db_manager.get_session_factory()
+        return self._session_factory
+
+    @asynccontextmanager
+    async def session(self, readonly: bool = False) -> AsyncGenerator[DBSession, None]:
+        """
+        Get a managed database session.
+        Automatically handles session lifecycle and cleanup.
+        """
+        async with self.db_manager.get_raw_session(readonly=readonly) as session:
+            yield session
+
+    @asynccontextmanager
+    async def transaction(self, readonly: bool = False) -> AsyncGenerator[DBSession, None]:
+        """
+        Get a transactional database session.
+        Automatically handles transaction commit/rollback.
+        """
+        async with self.db_manager.get_txn(readonly=readonly) as session:
+            yield session
+
+    # Common Repository Operations
+    async def get_by_id(self, entity_class: type[ModelType], entity_id: Any, readonly: bool = True) -> ModelType | None:
+        """
+        Get entity by ID. Template method for common get operations.
+        Override in subclasses for custom logic.
+        """
+        async with self.session(readonly=readonly) as session:
+            return await session.get(entity_class, entity_id)
+
+    async def create(self, entity: ModelType, commit: bool = True) -> ModelType:
+        """
+        Create a new entity.
+        """
+        async with self.transaction() as session:
+            session.add(entity)
+            if commit:
+                await session.flush()
+            return entity
+
+    async def create_many(self, entities: list[ModelType], commit: bool = True) -> list[ModelType]:
+        """
+        Create multiple entities in a single transaction.
+        """
+        async with self.transaction() as session:
+            session.add_all(entities)
+            if commit:
+                await session.flush()
+            return entities
+
+    async def update(self, entity: object, commit: bool = True) -> object:
+        """
+        Update an existing entity.
+        """
+        async with self.transaction() as session:
+            # Entity should be attached to session already or merged
+            session.add(entity)
+            if commit:
+                await session.flush()
+            return entity
+
+    async def delete(self, entity: object, commit: bool = True) -> bool:
+        """
+        Delete an entity.
+        """
+        try:
+            async with self.transaction() as session:
+                # If entity is detached, merge it first
+                merged_entity = await session.merge(entity)
+                await session.delete(merged_entity)
+                if commit:
+                    await session.flush()
+                return True
+        except Exception as e:
+            logger.error(f"Error deleting entity: {e}")
+            return False
+
+    async def execute_query(self, query: Any, readonly: bool = True) -> Any:
+        """
+        Execute a custom query.
+        Provides abstraction over query execution.
+        """
+        async with self.session(readonly=readonly) as session:
+            return await session.execute(query)  # pyright: ignore[reportDeprecated]
+
+    async def execute_raw_sql(self, sql: str, readonly: bool = True) -> Any:
+        """
+        Execute raw SQL query.
+        """
+        return await self.db_manager.execute_raw_query(sql, readonly=readonly)
+
+    # Health and Status
+    async def is_connected(self) -> bool:
+        """
+        Check if database is connected and ready.
+        """
+        try:
+            health = await self.db_manager.check_health()
+            return bool(health.get("master", False))
+        except Exception:
+            return False
+
+    # Template Methods for Subclasses
+    @abstractmethod
+    async def find_by_criteria(self, criteria: dict[str, Any]) -> list[object]:
+        """
+        Abstract method for finding entities by criteria.
+        Must be implemented by subclasses.
+        """
+
+    def configure_session_factory(self, factory: Callable[[], DBSession]) -> None:
+        self._session_factory = factory
+
+    # Utility Methods
