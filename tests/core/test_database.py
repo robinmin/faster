@@ -212,8 +212,8 @@ class TestDatabaseManagerSessionHandling:
         """
         db_manager = DatabaseManager()  # Fresh instance
         with pytest.raises(DBError, match="Database not initialized"):
-            async for _ in db_manager.get_raw_session():
-                pass  # pragma: no cover
+            async with db_manager.get_raw_session() as session:
+                _ = session  # pragma: no cover
 
     @pytest.mark.parametrize(
         "readonly, use_replica, expected_session_attr",
@@ -245,7 +245,7 @@ class TestDatabaseManagerSessionHandling:
         mock_session_factory = mocker.MagicMock(return_value=mock_session)
         mocker.patch.object(db_manager, expected_session_attr, mock_session_factory)
 
-        async for session in db_manager.get_raw_session(readonly=readonly):
+        async with db_manager.get_raw_session(readonly=readonly) as session:
             assert session is mock_session
 
         mock_session_factory.assert_called_once()
