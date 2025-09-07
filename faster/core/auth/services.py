@@ -128,8 +128,7 @@ class AuthService:
         """
         Check if a user has completed onboarding by checking if they have a profile.
         """
-        async with await get_txn(readonly=True) as session:
-            return await self._repository.check_user_profile_exists(session, user_id)
+        return await self._repository.check_user_profile_exists(user_id)
 
     async def get_user_by_auth_id(self, auth_id: str) -> User | None:
         """Get user from database by Supabase auth ID."""
