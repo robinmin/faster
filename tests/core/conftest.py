@@ -1,12 +1,94 @@
 import asyncio
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
 from pytest import Config, FixtureRequest
+import pytest_asyncio
+from sqlmodel import Field, SQLModel
 
 from faster.core.config import Settings
+from faster.core.database import DatabaseManager, DBSession
 from faster.core.redis import RedisManager
+
+
+class TestMyBaseMixin:
+    """
+    Test-specific mixin class that uses datetime.now() for SQLite compatibility.
+    This ensures timestamps are set at object creation time during tests.
+    """
+
+    in_used: int = Field(
+        default=1,
+        sa_column_kwargs={
+            "name": "N_IN_USED",
+            "server_default": "1",
+        },
+        description="1=active, 0=soft deleted",
+    )
+    created_at: datetime = Field(
+        default_factory=datetime.now,
+        sa_column_kwargs={
+            "name": "D_CREATED_AT",
+        },
+        description="Creation timestamp",
+    )
+    updated_at: datetime = Field(
+        default_factory=datetime.now,
+        sa_column_kwargs={
+            "name": "D_UPDATED_AT",
+        },
+        description="Last update timestamp",
+    )
+    deleted_at: datetime | None = Field(
+        default=None,
+        sa_column_kwargs={
+            "name": "D_DELETED_AT",
+        },
+        description="Soft deleting timestamp",
+    )
+
+    # Instance methods
+    def soft_delete(self) -> None:
+        """Soft delete the record by setting in_used=0 and recording timestamp."""
+        self.in_used = 0
+        self.deleted_at = datetime.now()
+
+    def restore(self) -> None:
+        """Restore soft deleted record by setting in_used=1."""
+        self.in_used = 1
+        self.deleted_at = None
+
+    @property
+    def is_active(self) -> bool:
+        """Check if record is active (in_used=1)."""
+        return self.in_used == 1
+
+    @property
+    def is_deleted(self) -> bool:
+        """Check if record is soft deleted (in_used=0)."""
+        return self.in_used == 0
+
+    # Class methods for common query filters
+    @classmethod
+    def active_filter(cls) -> bool:
+        """Filter for active records (in_used=1)."""
+        return cls.in_used == 1
+
+    @classmethod
+    def deleted_filter(cls) -> bool:
+        """Filter for soft deleted records (in_used=0)."""
+        return cls.in_used == 0
+
+
+# TestMyBase is now just the mixin - use it with SQLModel in tests
+
+
+# TestMyBase can be used directly with table=True in test classes
+
+
+# TestUserProfile will be created dynamically in tests to avoid table conflicts
 
 
 def pytest_configure(config: Config) -> None:
@@ -39,3 +121,34 @@ def disable_sentry_for_non_sentry_tests(request: FixtureRequest) -> Generator[No
     else:
         # For Sentry tests, don't mock anything
         yield
+
+
+@pytest_asyncio.fixture(scope="session")
+async def test_settings() -> Settings:
+    """Create test settings with in-memory SQLite database."""
+    return Settings(database_url="sqlite+aiosqlite:///:memory:", redis_provider="fake")
+
+
+@pytest_asyncio.fixture(scope="session")
+async def db_manager(test_settings: Settings) -> DatabaseManager:
+    """Initialize database manager with test settings."""
+
+    manager = DatabaseManager.get_instance()
+    _ = await manager.setup(test_settings)
+
+    # Create all tables for testing
+    if manager.master_engine is not None:
+        async with manager.master_engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+
+    return manager
+
+
+@pytest_asyncio.fixture
+async def db_session(db_manager: DatabaseManager) -> AsyncGenerator[DBSession, None]:
+    """Create a test database session."""
+    session = db_manager.create_session()
+    try:
+        yield session
+    finally:
+        await session.close()
