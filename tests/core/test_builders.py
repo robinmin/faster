@@ -3,10 +3,6 @@ from typing import Any
 import sqlalchemy as sa
 
 from faster.core.builders import (
-    DB,
-    # Convenience aliases
-    QB,
-    UB,
     DeleteBuilder,
     QueryBuilder,
     UpdateBuilder,
@@ -14,8 +10,6 @@ from faster.core.builders import (
     delete_builder,
     qb,
     query_builder,
-    sdb,
-    soft_delete_query_builder,
     ub,
     update_builder,
 )
@@ -30,10 +24,10 @@ def get_sql_string(query: Any) -> str:
 class TestWhereClauseMixin:
     """Test cases for WhereClauseMixin functionality."""
 
-    def test_where_str(self) -> None:
-        """Test where_str method adds string equality condition."""
+    def test_where(self) -> None:
+        """Test where method adds equality condition."""
         builder = QueryBuilder(SysMap)
-        result = builder.where_str(SysMap.category, "user")
+        result = builder.where(SysMap.category, "user")
 
         assert result is builder  # Should return self for chaining
 
@@ -43,9 +37,9 @@ class TestWhereClauseMixin:
         assert "C_CATEGORY" in sql_str and "user" in sql_str
 
     def test_where_int(self) -> None:
-        """Test where_int method adds integer equality condition."""
+        """Test where method with integer values."""
         builder = QueryBuilder(SysMap)
-        result = builder.where_int(SysMap.order, 42)
+        result = builder.where(SysMap.order, 42)
 
         assert result is builder
 
@@ -54,9 +48,9 @@ class TestWhereClauseMixin:
         assert "N_ORDER" in sql_str and "42" in sql_str
 
     def test_where_bool(self) -> None:
-        """Test where_bool method adds boolean equality condition."""
+        """Test where method with boolean values."""
         builder = QueryBuilder(SysMap)
-        result = builder.where_bool(SysMap.in_used, True)
+        result = builder.where(SysMap.in_used, True)
 
         assert result is builder
 
@@ -65,17 +59,17 @@ class TestWhereClauseMixin:
         assert "N_IN_USED" in sql_str and ("true" in sql_str.lower() or "1" in sql_str)
 
     def test_where_float(self) -> None:
-        """Test where_float method adds float equality condition."""
+        """Test where method with float values."""
         builder = QueryBuilder(SysDict)
 
         # Create a test model with a float field for testing
         float_col: sa.Column[float] = sa.Column("score", sa.Float)
 
-        result = builder.where_float(float_col, 3.14)
+        result = builder.where(float_col, 3.14)
         assert result is builder
 
-    def test_generic_where_method_string(self) -> None:
-        """Test generic where method with string value."""
+    def test_where_string(self) -> None:
+        """Test where method with string value."""
         builder = QueryBuilder(SysMap)
         result = builder.where(SysMap.category, "admin")
 
@@ -85,8 +79,8 @@ class TestWhereClauseMixin:
         sql_str = get_sql_string(query)
         assert "C_CATEGORY" in sql_str and "admin" in sql_str
 
-    def test_generic_where_method_int(self) -> None:
-        """Test generic where method with integer value."""
+    def test_where_integer(self) -> None:
+        """Test where method with integer value."""
         builder = QueryBuilder(SysMap)
         result = builder.where(SysMap.order, 100)
 
@@ -96,8 +90,8 @@ class TestWhereClauseMixin:
         sql_str = get_sql_string(query)
         assert "N_ORDER" in sql_str and "100" in sql_str
 
-    def test_generic_where_method_bool(self) -> None:
-        """Test generic where method with boolean value."""
+    def test_where_boolean(self) -> None:
+        """Test where method with boolean value."""
         builder = QueryBuilder(SysMap)
         result = builder.where(SysMap.in_used, 1)  # Using 1 as truthy value
 
@@ -189,7 +183,7 @@ class TestWhereClauseMixin:
         """Test that multiple where methods can be chained together."""
         builder = QueryBuilder(SysMap)
         result = (
-            builder.where_str(SysMap.category, "user")
+            builder.where(SysMap.category, "user")
             .where_gt(SysMap.order, 10)
             .where_in(SysMap.left_value, ["key1", "key2"])
         )
@@ -297,7 +291,7 @@ class TestQueryBuilder:
     def test_build_delete_returns_delete_query(self) -> None:
         """Test that build_delete method returns a Delete query."""
         builder = QueryBuilder(SysMap)
-        _ = builder.where_str(SysMap.category, "test")
+        _ = builder.where(SysMap.category, "test")
 
         delete_query = builder.build_delete()
 
@@ -310,7 +304,7 @@ class TestQueryBuilder:
         """Test building a complex query with multiple conditions."""
         builder = QueryBuilder(SysMap)
         query = (
-            builder.where_str(SysMap.category, "user")
+            builder.where(SysMap.category, "user")
             .where_gt(SysMap.order, 10)
             .active_only()
             .order_by(SysMap.order, desc=True)
@@ -354,7 +348,7 @@ class TestDeleteBuilder:
     def test_delete_with_conditions(self) -> None:
         """Test delete query with WHERE conditions."""
         builder = DeleteBuilder(SysMap)
-        query = builder.where_str(SysMap.category, "old_data").where_gt(SysMap.order, 100).build()
+        query = builder.where(SysMap.category, "old_data").where_gt(SysMap.order, 100).build()
 
         sql_str = get_sql_string(query)
         assert "DELETE FROM" in sql_str and "SYS_MAP" in sql_str
@@ -366,10 +360,6 @@ class TestDeleteBuilder:
         builder = DeleteBuilder(SysMap)
 
         # Test that all mixin methods are available
-        assert hasattr(builder, "where_str")
-        assert hasattr(builder, "where_int")
-        assert hasattr(builder, "where_bool")
-        assert hasattr(builder, "where_float")
         assert hasattr(builder, "where")
         assert hasattr(builder, "where_custom")
         assert hasattr(builder, "where_in")
@@ -395,10 +385,10 @@ class TestUpdateBuilder:
         sql_str = get_sql_string(query)
         assert "sys_map" in sql_str.lower()  # Table name should be in the query
 
-    def test_set_str(self) -> None:
-        """Test set_str method for setting string values."""
+    def test_set_string(self) -> None:
+        """Test set method for setting string values."""
         builder = UpdateBuilder(SysMap)
-        result = builder.set_str(SysMap.category, "updated_category")
+        result = builder.set(SysMap.category, "updated_category")
 
         assert result is builder
 
@@ -407,10 +397,10 @@ class TestUpdateBuilder:
         assert "UPDATE" in sql_str and "SET" in sql_str
         assert "C_CATEGORY" in sql_str and "updated_category" in sql_str
 
-    def test_set_int(self) -> None:
-        """Test set_int method for setting integer values."""
+    def test_set_integer(self) -> None:
+        """Test set method for setting integer values."""
         builder = UpdateBuilder(SysMap)
-        result = builder.set_int(SysMap.order, 999)
+        result = builder.set(SysMap.order, 999)
 
         assert result is builder
 
@@ -419,10 +409,10 @@ class TestUpdateBuilder:
         assert "UPDATE" in sql_str and "SET" in sql_str
         assert "N_ORDER" in sql_str and "999" in sql_str
 
-    def test_set_bool(self) -> None:
-        """Test set_bool method for setting boolean values."""
+    def test_set_boolean(self) -> None:
+        """Test set method for setting boolean values."""
         builder = UpdateBuilder(SysMap)
-        result = builder.set_bool(SysMap.in_used, False)
+        result = builder.set(SysMap.in_used, False)
 
         assert result is builder
 
@@ -520,9 +510,9 @@ class TestUpdateBuilder:
         """Test update query with WHERE conditions."""
         builder = UpdateBuilder(SysMap)
         query = (
-            builder.set_str(SysMap.category, "updated_category")
-            .set_int(SysMap.order, 999)
-            .where_str(SysMap.left_value, "old_value")
+            builder.set(SysMap.category, "updated_category")
+            .set(SysMap.order, 999)
+            .where(SysMap.left_value, "old_value")
             .build()
         )
 
@@ -535,7 +525,7 @@ class TestUpdateBuilder:
     def test_build_returns_update_query(self) -> None:
         """Test that build method returns an Update query."""
         builder = UpdateBuilder(SysMap)
-        _ = builder.set_str(SysMap.category, "test")
+        _ = builder.set(SysMap.category, "test")
 
         query = builder.build()
         sql_str = get_sql_string(query)
@@ -546,10 +536,6 @@ class TestUpdateBuilder:
         builder = UpdateBuilder(SysMap)
 
         # Test that all mixin methods are available
-        assert hasattr(builder, "where_str")
-        assert hasattr(builder, "where_int")
-        assert hasattr(builder, "where_bool")
-        assert hasattr(builder, "where_float")
         assert hasattr(builder, "where")
         assert hasattr(builder, "where_custom")
         assert hasattr(builder, "where_in")
@@ -570,9 +556,9 @@ class TestFactoryFunctions:
         assert isinstance(builder, QueryBuilder)
         assert builder._model is SysMap  # type: ignore[reportPrivateUsage, unused-ignore]
 
-    def test_soft_delete_query_builder_factory(self) -> None:
-        """Test soft_delete_query_builder factory function."""
-        builder = soft_delete_query_builder(SysMap)
+    def test_soft_delete_operations(self) -> None:
+        """Test soft delete methods on QueryBuilder."""
+        builder = qb(SysMap)
 
         assert isinstance(builder, QueryBuilder)
         assert builder._model is SysMap  # type: ignore[reportPrivateUsage, unused-ignore]
@@ -599,21 +585,11 @@ class TestFactoryFunctions:
 class TestConvenienceAliases:
     """Test cases for convenience aliases."""
 
-    def test_class_aliases(self) -> None:
-        """Test class aliases QB, DB, UB."""
-        # Test that aliases point to the correct classes
-        assert QB is QueryBuilder
-        assert DB is DeleteBuilder
-        assert UB is UpdateBuilder
-
     def test_function_aliases(self) -> None:
-        """Test function aliases qb, sdb, db, ub."""
+        """Test function aliases qb, db, ub."""
         # Test that function aliases work correctly
         qb_instance = qb(SysMap)
         assert isinstance(qb_instance, QueryBuilder)
-
-        sdb_instance = sdb(SysMap)
-        assert isinstance(sdb_instance, QueryBuilder)
 
         db_instance = db(SysMap)
         assert isinstance(db_instance, DeleteBuilder)
@@ -623,16 +599,16 @@ class TestConvenienceAliases:
 
     def test_alias_functionality(self) -> None:
         """Test that aliases work with actual operations."""
-        # Test QB alias
-        qb_query = QB(SysMap).where_str(SysMap.category, "test").build()
+        # Test qb alias
+        qb_query = qb(SysMap).where(SysMap.category, "test").build()
         assert str(qb_query).startswith("SELECT")
 
-        # Test DB alias
-        db_query = DB(SysMap).where_str(SysMap.category, "test").build()
+        # Test db alias
+        db_query = db(SysMap).where(SysMap.category, "test").build()
         assert "DELETE" in get_sql_string(db_query)
 
-        # Test UB alias
-        ub_query = UB(SysMap).set_str(SysMap.category, "test").build()
+        # Test ub alias
+        ub_query = ub(SysMap).set(SysMap.category, "test").build()
         assert "UPDATE" in get_sql_string(ub_query)
 
 
@@ -643,7 +619,7 @@ class TestIntegration:
         """Test a complete QueryBuilder workflow."""
         query = (
             QueryBuilder(SysMap)
-            .where_str(SysMap.category, "user")
+            .where(SysMap.category, "user")
             .where_gt(SysMap.order, 10)
             .active_only()
             .order_by(SysMap.order, desc=True)
@@ -663,7 +639,7 @@ class TestIntegration:
 
     def test_delete_builder_full_workflow(self) -> None:
         """Test a complete DeleteBuilder workflow."""
-        query = DeleteBuilder(SysMap).where_str(SysMap.category, "old_data").where_gt(SysMap.order, 100).build()
+        query = DeleteBuilder(SysMap).where(SysMap.category, "old_data").where_gt(SysMap.order, 100).build()
 
         sql_str = get_sql_string(query)
 
@@ -676,9 +652,9 @@ class TestIntegration:
         """Test a complete UpdateBuilder workflow."""
         query = (
             UpdateBuilder(SysMap)
-            .set_str(SysMap.category, "updated_category")
-            .set_int(SysMap.order, 999)
-            .where_str(SysMap.left_value, "old_value")
+            .set(SysMap.category, "updated_category")
+            .set(SysMap.order, 999)
+            .where(SysMap.left_value, "old_value")
             .where_gt(SysMap.order, 0)
             .build()
         )
@@ -694,11 +670,11 @@ class TestIntegration:
     def test_multiple_models_support(self) -> None:
         """Test that builders work with different model types."""
         # Test with SysMap
-        sys_map_query = QueryBuilder(SysMap).where_str(SysMap.category, "test").build()
+        sys_map_query = QueryBuilder(SysMap).where(SysMap.category, "test").build()
         assert "SYS_MAP" in str(sys_map_query)
 
         # Test with SysDict
-        sys_dict_query = QueryBuilder(SysDict).where_int(SysDict.key, 42).build()
+        sys_dict_query = QueryBuilder(SysDict).where(SysDict.key, 42).build()
         assert "SYS_DICT" in str(sys_dict_query)
 
     def test_builder_isolation(self) -> None:
@@ -707,8 +683,8 @@ class TestIntegration:
         builder2 = QueryBuilder(SysMap)
 
         # Modify each independently
-        _ = builder1.where_str(SysMap.category, "user1")
-        _ = builder2.where_str(SysMap.category, "user2")
+        _ = builder1.where(SysMap.category, "user1")
+        _ = builder2.where(SysMap.category, "user2")
 
         query1 = builder1.build()
         query2 = builder2.build()
@@ -727,10 +703,10 @@ class TestIntegration:
         # Both SysMap and SysDict inherit from MyBase which has in_used column
         # So they should work with soft delete methods
 
-        sys_map_builder = soft_delete_query_builder(SysMap)
+        sys_map_builder = qb(SysMap)
         sys_map_query = sys_map_builder.active_only().build()
 
-        sys_dict_builder = soft_delete_query_builder(SysDict)
+        sys_dict_builder = qb(SysDict)
         sys_dict_query = sys_dict_builder.deleted_only().build()
 
         # Both queries should compile without errors
