@@ -151,7 +151,10 @@ class UserProfile(MyBase, table=True):
     )
     created_at: datetime = Field(
         default=None,
-        sa_column_kwargs={"name": "D_CREATED_AT", "server_default": "CURRENT_TIMESTAMP"},
+        sa_column_kwargs={
+            "name": "D_CREATED_AT",
+            "server_default": "CURRENT_TIMESTAMP",
+        },
         description="Profile creation timestamp",
     )
     updated_at: datetime = Field(
@@ -159,7 +162,6 @@ class UserProfile(MyBase, table=True):
         sa_column_kwargs={
             "name": "D_UPDATED_AT",
             "server_default": "CURRENT_TIMESTAMP",
-            "onupdate": "CURRENT_TIMESTAMP",
         },
         description="Profile update timestamp",
     )

@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from sqlalchemy import Index, UniqueConstraint
-from sqlalchemy.sql import func
 from sqlmodel import Field, SQLModel
 
 ###############################################################################
@@ -51,7 +50,7 @@ class MyBase(SQLModel):
         default=None,
         sa_column_kwargs={
             "name": "D_CREATED_AT",
-            "server_default": func.now(),
+            "server_default": "CURRENT_TIMESTAMP",
         },
         description="Creation timestamp",
     )
@@ -59,8 +58,7 @@ class MyBase(SQLModel):
         default=None,
         sa_column_kwargs={
             "name": "D_UPDATED_AT",
-            "server_default": func.now(),
-            "onupdate": func.now(),
+            "server_default": "CURRENT_TIMESTAMP",
         },
         description="Last update timestamp",
     )
