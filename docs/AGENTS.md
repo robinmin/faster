@@ -28,6 +28,12 @@ This project uses 'make' tool for managing tasks and workflows. It provides the 
 - Follow established patterns in the codebase
 - Use type hints everywhere (strict typing).
 - Prefer async/await for I/O-bound operations.
+- Always be ready to satisfy linters(ruff,mypy and basedpyright). Follow the project's linting configuration, never bypass.
+- Key Principles always to be applied:
+  -  YAGNI(Occam's Razor): Removed code for non-existent requirements
+  -  DRY: Eliminated redundant session handling patterns
+  -  KISS: Simplified method signatures and implementations
+  -  Single Responsibility: Each method does one thing clearly
 
 ### Module Responsibility Structure (DRP)
 - models.py: Define non-database entities only (no business logic)
