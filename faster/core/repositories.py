@@ -1,24 +1,63 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy.engine import Result
+from sqlmodel import select
 
-from .builders import qb, ub
-from .database import DatabaseManager
+from .database import BaseRepository, DatabaseManager, DBSession
+from .exceptions import DBError
 from .logger import get_logger
 from .schemas import SysDict, SysMap
 
+###############################################################################
+# AppRepository - System Configuration Data Access
+#
+# Provides methods to manage system configuration stored in SYS_MAP and SYS_DICT
+# tables using a soft-delete pattern (in_used flag) for data consistency.
+#
+# SYS_MAP: Key-value mappings organized by category
+#   Structure: {category: {left_value: right_value}}
+#
+# SYS_DICT: Integer-keyed values organized by category
+#   Structure: {category: {key: value}}
+###############################################################################
+
 logger = get_logger(__name__)
 
-class AppRepository:
+
+class AppRepository(BaseRepository):
     """
-    Repository for accessing SYS_MAP and SYS_DICT tables.
-    Provides convenient methods to load data as two-layer dictionaries.
+    Repository for system configuration data access.
+
+    Manages SYS_MAP and SYS_DICT tables that store application configuration
+    as nested dictionaries. Uses soft-delete pattern (in_used flag) to maintain
+    data consistency during updates.
+
+    Inherits from BaseRepository for standard database operations and session management.
     """
 
-    def __init__(self) -> None:
-        self.db_mgr = DatabaseManager.get_instance()
+    def __init__(
+        self, session_factory: Callable[[], DBSession] | None = None, db_manager: DatabaseManager | None = None
+    ) -> None:
+        # Initialize base repository
+        super().__init__(db_manager)
+
+        # Override session factory if provided
+        if session_factory is not None:
+            self.configure_session_factory(session_factory)
+
+    async def find_by_criteria(self, criteria: dict[str, Any]) -> list[Any]:
+        """
+        Find system configuration items by criteria (placeholder implementation).
+
+        Args:
+            criteria: Search criteria dictionary
+
+        Returns:
+            Empty list (placeholder - implement based on specific needs)
+        """
+        async with self.session(readonly=True) as _:
+            return []
 
     async def get_sys_map(
         self,
@@ -28,80 +67,117 @@ class AppRepository:
         in_used_only: bool = True,
     ) -> dict[str, dict[str, Any]]:
         """
-        Load SYS_MAP as {category: {left: right}}.
-        Only includes 'category', 'left', 'right' in the result.
+        Load SYS_MAP as {category: {left: right}} dictionary structure.
+
+        Args:
+            category: Filter by category name (optional)
+            left: Filter by left_value (optional)
+            right: Filter by right_value (optional)
+            in_used_only: Only return active records (default: True)
+
+        Returns:
+            Nested dictionary: {category: {left_value: right_value}}
+            Empty dict if no records found
+
+        Raises:
+            DBError: If database query fails
+
+        Example:
+            >>> repo = AppRepository()
+            >>> data = await repo.get_sys_map(category="user_settings")
+            >>> print(data)  # {"user_settings": {"theme": "dark", "lang": "en"}}
         """
-        async with self.db_mgr.get_txn(readonly=True) as session:
-            # Select the entire model objects first
-            query_builder = qb(SysMap)
-
-            if category is not None:
-                query_builder = query_builder.where(SysMap.category, category)
-            if left is not None:
-                query_builder = query_builder.where(SysMap.left_value, left)
-            if right is not None:
-                query_builder = query_builder.where(SysMap.right_value, right)
-            if in_used_only:
-                query_builder = query_builder.where(SysMap.in_used, 1)
-
-            query_builder = query_builder.order_by(SysMap.order)
-            query = query_builder.build()
-
-            # Execute and fetch as list of model objects using scalars
-            result: Result[Any] = await session.execute(query)  # pyright: ignore[reportDeprecated]
-            rows: Sequence[SysMap] = result.scalars().all()
-
-            # Build dictionary from model objects (within session context)
-            data: dict[str, dict[str, Any]] = {}
-            for sys_map in rows:
-                if sys_map.category not in data:
-                    data[sys_map.category] = {}
-                data[sys_map.category][sys_map.left_value] = sys_map.right_value
-
-        return data
-
-    async def set_sys_map(
-        self,
-        category: str,
-        values: dict[str, str],
-    ) -> bool:
-        """
-        Save SYS_MAP into database.
-        """
-        if not values:
-            return False
-
         try:
-            async with self.db_mgr.get_txn(readonly=False) as txn:
-                update_builder = ub(SysMap).where(SysMap.category, category).set(SysMap.in_used, 0)
-                stmt = update_builder.build()
-                _ = await txn.execute(stmt)  # pyright: ignore[reportDeprecated]
+            async with self.session(readonly=True) as session:
+                # Build query with optional filters using SQLModel select
+                query = select(SysMap)
 
-                for left, right in values.items():
-                    # Update existing record or create new one
-                    sys_map = await txn.get(SysMap, (category, left))
-                    if sys_map:
-                        sys_map.right_value = right
-                        sys_map.in_used = True
-                        sys_map.updated_at = datetime.now()
+                if category is not None:
+                    query = query.where(SysMap.category == category)
+                if left is not None:
+                    query = query.where(SysMap.left_value == left)
+                if right is not None:
+                    query = query.where(SysMap.right_value == right)
+                if in_used_only:
+                    query = query.where(SysMap.in_used == 1)
+
+                # Order by the N_ORDER column
+                query = query.order_by(SysMap.order)  # type: ignore[arg-type]
+
+                # Execute query using SQLModel exec() method
+                result = await session.exec(query)
+                rows: Sequence[SysMap] = result.all()
+
+                data: dict[str, dict[str, Any]] = {}
+                for sys_map in rows:
+                    if sys_map.category not in data:
+                        data[sys_map.category] = {}
+                    data[sys_map.category][sys_map.left_value] = sys_map.right_value
+
+                return data
+        except Exception as e:
+            logger.error(f"Failed to get sys_map: {e}", extra={"category": category, "left": left, "right": right})
+            raise DBError(f"Failed to retrieve system map data: {e}") from e
+
+    async def set_sys_map(self, category: str, values: dict[str, str]) -> bool:
+        """
+        Save/update SYS_MAP entries for a category using soft-delete pattern.
+
+        First marks all existing entries as inactive (in_used=0), then creates/updates
+        the provided entries as active (in_used=1).
+
+        Args:
+            category: Category name (required, non-empty string)
+            values: Dictionary of {left_value: right_value} pairs (required, non-empty)
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            ValueError: If category is empty or values is empty/None
+            DBError: If database operation fails
+
+        Example:
+            >>> repo = AppRepository()
+            >>> success = await repo.set_sys_map("user_settings", {"theme": "dark", "lang": "en"})
+            >>> print(success)  # True
+        """
+        # Input validation
+        if not category or not category.strip():
+            raise ValueError("Category cannot be empty")
+        if not values:
+            raise ValueError("Values dictionary cannot be empty")
+
+        async with self.transaction() as session:
+            try:
+                # Soft-delete: mark all existing entries as inactive using BaseRepository method
+                _ = await self.soft_delete(self.table_name(SysMap), {"C_CATEGORY": category}, session)
+
+                # Create/update entries with new values
+                for left_value, right_value in values.items():
+                    existing_map = await session.get(SysMap, (category, left_value))
+                    if existing_map:
+                        # Update existing record
+                        existing_map.right_value = right_value
+                        existing_map.in_used = True
+                        existing_map.updated_at = datetime.now()
                     else:
-                        sys_map = SysMap(
+                        # Create new record
+                        new_map = SysMap(
                             category=category,
-                            left_value=left,
-                            right_value=right,
+                            left_value=left_value,
+                            right_value=right_value,
                             order=0,
                             in_used=True,
                         )
-                        txn.add(sys_map)
+                        session.add(new_map)
 
-                # Commit the transaction
-                await txn.flush()
-
-                # Return True if successful
+                await session.flush()
                 return True
-        except Exception as e:
-            logger.error(f"Failed to update sys_map in set_sys_map: {e}")
-            return False
+
+            except Exception as e:
+                logger.error(f"Failed to update sys_map for category '{category}': {e}")
+                return False
 
     async def get_sys_dict(
         self,
@@ -111,91 +187,147 @@ class AppRepository:
         in_used_only: bool = True,
     ) -> dict[str, dict[int, Any]]:
         """
-        Load SYS_DICT as {category: {key: row_dict}}.
-        Only includes 'category', 'key', 'value' in row_dict.
+        Load SYS_DICT as {category: {key: value}} dictionary structure.
+
+        Args:
+            category: Filter by category name (optional)
+            key: Filter by integer key (optional)
+            value: Filter by string value (optional)
+            in_used_only: Only return active records (default: True)
+
+        Returns:
+            Nested dictionary: {category: {key: value}}
+            Empty dict if no records found
+
+        Raises:
+            DBError: If database query fails
+
+        Example:
+            >>> repo = AppRepository()
+            >>> data = await repo.get_sys_dict(category="user_prefs")
+            >>> print(data)  # {"user_prefs": {1: "enabled", 2: "disabled"}}
         """
-        async with self.db_mgr.get_txn(readonly=True) as session:
-            # Select the entire model objects first
-            query_builder = qb(SysDict)
-
-            if category is not None:
-                query_builder = query_builder.where(SysDict.category, category)
-            if key is not None:
-                query_builder = query_builder.where(SysDict.key, key)
-            if value is not None:
-                query_builder = query_builder.where(SysDict.value, value)
-            if in_used_only:
-                query_builder = query_builder.where(SysDict.in_used, 1)
-
-            query_builder = query_builder.order_by(SysDict.order)
-            query = query_builder.build()
-
-            # Execute and fetch as list of model objects using scalars
-            result: Result[Any] = await session.execute(query)  # pyright: ignore[reportDeprecated]
-            rows: Sequence[SysDict] = result.scalars().all()
-
-            # Build dictionary from model objects (within session context)
-            data: dict[str, dict[int, str]] = {}
-            for sys_dict in rows:
-                if sys_dict.category not in data:
-                    data[sys_dict.category] = {}
-                data[sys_dict.category][sys_dict.key] = sys_dict.value
-
-        return data
-
-    async def set_sys_dict(
-        self,
-        category: str,
-        values: dict[int, str],
-    ) -> bool:
-        """
-        Set the values for a category in SYS_DICT.
-        Returns True if successful.
-        """
-        if not values:
-            return False
-
         try:
-            async with self.db_mgr.get_txn(readonly=False) as txn:
-                update_builder = ub(SysDict).where(SysDict.category, category).set(SysDict.in_used, 0)
-                stmt = update_builder.build()
-                _ = await txn.execute(stmt)  # pyright: ignore[reportDeprecated]
+            async with self.session(readonly=True) as session:
+                # Build query with optional filters using SQLModel select
+                query = select(SysDict)
 
-                for key, val in values.items():
-                    # Update existing record or create new one
-                    sys_dict = await txn.get(SysDict, (category, key))
-                    if sys_dict:
-                        sys_dict.right_value = val
-                        sys_dict.in_used = True
-                        sys_dict.updated_at = datetime.now()
+                if category is not None:
+                    query = query.where(SysDict.category == category)
+                if key is not None:
+                    query = query.where(SysDict.key == key)
+                if value is not None:
+                    query = query.where(SysDict.value == value)
+                if in_used_only:
+                    query = query.where(SysDict.in_used == 1)
+
+                # Order by the N_ORDER column
+                query = query.order_by(SysDict.order)  # type: ignore[arg-type]
+
+                # Execute query using SQLModel exec() method
+                result = await session.exec(query)
+                rows: Sequence[SysDict] = result.all()
+
+                data: dict[str, dict[int, str]] = {}
+                for sys_dict in rows:
+                    if sys_dict.category not in data:
+                        data[sys_dict.category] = {}
+                    data[sys_dict.category][sys_dict.key] = sys_dict.value
+
+                return data
+        except Exception as e:
+            logger.error(f"Failed to get sys_dict: {e}", extra={"category": category, "key": key, "value": value})
+            raise DBError(f"Failed to retrieve system dict data: {e}") from e
+
+    async def set_sys_dict(self, category: str, values: dict[int, str]) -> bool:
+        """
+        Save/update SYS_DICT entries for a category using soft-delete pattern.
+
+        First marks all existing entries as inactive (in_used=0), then creates/updates
+        the provided entries as active (in_used=1).
+
+        Args:
+            category: Category name (required, non-empty string)
+            values: Dictionary of {key: value} pairs where key is int, value is str
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            ValueError: If category is empty or values is empty/None
+            DBError: If database operation fails
+
+        Example:
+            >>> repo = AppRepository()
+            >>> success = await repo.set_sys_dict("user_prefs", {1: "enabled", 2: "disabled"})
+            >>> print(success)  # True
+        """
+        # Input validation
+        if not category or not category.strip():
+            raise ValueError("Category cannot be empty")
+        if not values:
+            raise ValueError("Values dictionary cannot be empty")
+
+        async with self.transaction() as session:
+            try:
+                # Soft-delete: mark all existing entries as inactive using BaseRepository method
+                _ = await self.soft_delete(self.table_name(SysDict), {"C_CATEGORY": category}, session)
+
+                # Create/update entries with new values
+                for dict_key, dict_value in values.items():
+                    existing_dict = await session.get(SysDict, (category, dict_key))
+                    if existing_dict:
+                        # Update existing record
+                        existing_dict.value = dict_value
+                        existing_dict.in_used = True
+                        existing_dict.updated_at = datetime.now()
                     else:
-                        sys_dict = SysDict(
+                        # Create new record
+                        new_dict = SysDict(
                             category=category,
-                            key=key,
-                            value=val,
+                            key=dict_key,
+                            value=dict_value,
                             in_used=True,
                             updated_at=datetime.now(),
                         )
-                        txn.add(sys_dict)
+                        session.add(new_dict)
 
-                # Commit the transaction
-                await txn.commit()
-
-                # Return True if successful
+                await session.flush()
                 return True
-        except Exception as e:
-            logger.error(f"Failed to update sys_dict in set_sys_dict:  {e}")
-            return False
+
+            except Exception as e:
+                logger.error(f"Failed to update sys_dict for category '{category}': {e}")
+                return False
 
     async def disable_category(self, category: str) -> int:
         """
-        Set in_used=0 for all rows in SYS_MAP with the given category.
-        Returns the number of rows updated.
-        """
-        async with self.db_mgr.get_txn(readonly=False) as txn:
-            update_builder = ub(SysMap).where(SysMap.category, category).set(SysMap.in_used, 0)
-            stmt = update_builder.build()
+        Disable all SYS_MAP entries for a category by setting in_used=0.
 
-            result = await txn.execute(stmt)  # pyright: ignore[reportDeprecated]
-            # For SQLAlchemy 1.4+, we can access rowcount directly
-            return getattr(result, "rowcount", 0)
+        Args:
+            category: Category name to disable (required, non-empty string)
+
+        Returns:
+            Number of rows affected (0 if category not found)
+
+        Raises:
+            ValueError: If category is empty
+            DBError: If database operation fails
+
+        Example:
+            >>> repo = AppRepository()
+            >>> affected = await repo.disable_category("old_settings")
+            >>> print(f"Disabled {affected} entries")  # "Disabled 3 entries"
+        """
+        # Input validation
+        if not category or not category.strip():
+            raise ValueError("Category cannot be empty")
+
+        try:
+            async with self.transaction() as session:
+                # Mark all entries in category as inactive using BaseRepository method
+                affected_rows = await self.soft_delete(self.table_name(SysMap), {"C_CATEGORY": category}, session)
+                logger.info(f"Disabled {affected_rows} entries for category '{category}'")
+                return affected_rows
+        except Exception as e:
+            logger.error(f"Failed to disable category '{category}': {e}")
+            raise DBError(f"Failed to disable category '{category}': {e}") from e
