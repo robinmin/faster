@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, Index, Text, UniqueConstraint
+from sqlalchemy import Column, Index, Text, UniqueConstraint, func
 from sqlmodel import Field
 
 from ..schemas import MyBase
@@ -153,7 +153,7 @@ class UserProfile(MyBase, table=True):
         default=None,
         sa_column_kwargs={
             "name": "D_CREATED_AT",
-            "server_default": "CURRENT_TIMESTAMP",
+            "server_default": func.now(),
         },
         description="Profile creation timestamp",
     )
@@ -161,7 +161,7 @@ class UserProfile(MyBase, table=True):
         default=None,
         sa_column_kwargs={
             "name": "D_UPDATED_AT",
-            "server_default": "CURRENT_TIMESTAMP",
+            "server_default": func.now(),
         },
         description="Profile update timestamp",
     )
