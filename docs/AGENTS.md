@@ -28,7 +28,7 @@ This project uses 'make' tool for managing tasks and workflows. It provides the 
 - Follow established patterns in the codebase
 - Use type hints everywhere (strict typing).
 - Prefer async/await for I/O-bound operations.
-- Always be ready to satisfy linters(ruff,mypy and basedpyright). Follow the project's linting configuration, never bypass.
+- Always be ready to satisfy linters(ruff,mypy and basedpyright). Follow the project's linting configuration, never add comments like '# type: ignore' to bypass the linters.
 - Key Principles always to be applied:
   -  YAGNI(Occam's Razor): Removed code for non-existent requirements
   -  DRY: Eliminated redundant session handling patterns
@@ -45,11 +45,11 @@ This project uses 'make' tool for managing tasks and workflows. It provides the 
 - utilities.py: Utility functions only
 
 ### Database Access Patterns  (majorly for repositories.py)
-- Use QueryBuilder/DeleteBuilder/UpdateBuilder (qb, db, ub) exclusively
-- Never use raw SQLAlchemy/SQLModel queries
-- Always try to use `get_txn()` for database sessions to write data, simple queries can also use `get_session()` for non-transactional operations.
-- No hard deletes - only soft deletes (in_used=0)
-- Follow existing query patterns in the codebase
+- Priority to use SQLModel style for database access, any fallback to SQLAlchemy MUST be used only when SQLModel is not supported.
+- Use `get_transaction()` for database access with transaction control automatically, use `get_session()` for non-transactional operations or self controlled transactions.
+- Priority to use DatabaseManager's method execute_raw_query to execute raw SQL queries.
+- No hard deletes - only soft deletes (in_used=0 with updated deleted_at), always update `updated_at` timestamp when updating records.
+
 
 ### Data Schema definition (for schemas.py)
 - Use 'SQLModel' as the first priority, then can fallback to SQLAlchemy.
