@@ -135,6 +135,7 @@ mccabe = { max-complexity = 10 }
 [tool.ruff.lint.isort]
 # Configure import sorting
 known-first-party = ["faster"]    # Replace with your actual package name
+known-third-party = ["sqlmodel", "sqlalchemy", "pydantic", "fastapi"]
 force-sort-within-sections = true
 split-on-trailing-comma = true
 
@@ -211,7 +212,10 @@ reportArgumentType = false
 reportUnnecessaryIsInstance = false
 
 [tool.pytest.ini_options]
-filterwarnings = []
+filterwarnings = [
+    # Suppress SQLAlchemy deprecation warnings about session.execute()
+    "ignore::DeprecationWarning",
+]
 pythonpath = "."    # If your package is in a 'src' directory
 
 [dependency-groups]
