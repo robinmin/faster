@@ -470,3 +470,24 @@ As we lready had some enhancement on @faster/core/database.py, @faster/core/buil
 - Enhance @tests/core/test_builders.py due to above all amendments;
 - Enhance @tests/core/test_repositories.py due to above all amendments;
 - Enhance @tests/core/test_auth_repositories.py due to above all amendments;
+
+
+## New Database access layer
+#### Backgroud
+Based on our previous conversation, it looks like there is some design issue in my application. By designing, I create two files to enpower client user to have a simple and concistance way to access database. The original designs are:
+- @faster/core/database.py: Class DatabaseManager managge all database connecttion, sesion and transaction related things. Class BaseRepository provide a base class for all repository classes.
+- @faster/core/builders.py: Provide 3 classes QueryBuilder/DeleteBuilder/UpdateBuilder to help deeveloper to build up database access.
+
+#### Current Issue
+It looks like current solution combinding so may sqlalchemy things with another sqlmodel related things together. It implement so may place in old-sqlalchemy style and occur so many issues by linters(ruff, mypy and basedpyright).
+
+#### Core Goal
+- Your need to review @faster/core/database.py carefully, and find enhancement points and plan if any.
+
+- create another abstract database access layer in SQLModel way into file @faster/core/builders2.py. Of course, you can refer to @faster/core/builders.py for reference, but just reference. No need to replicate it.
+
+- That's the first step, after my comfirrmation, then we will try to use this new database access layer to refactory current soruce code.
+
+- In case you want to enhance @faster/core/database.py, you need to disscuss with me.
+
+- All generated code must pass linters check(including ruff, muypy and basedpyright).
