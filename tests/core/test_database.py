@@ -212,7 +212,7 @@ class TestDatabaseManagerSessionHandling:
         """
         db_manager = DatabaseManager()  # Fresh instance
         with pytest.raises(DBError, match="Database not initialized"):
-            async with db_manager.get_raw_session() as session:
+            async with db_manager.get_session() as session:
                 _ = session  # pragma: no cover
 
     @pytest.mark.parametrize(
@@ -245,7 +245,7 @@ class TestDatabaseManagerSessionHandling:
         mock_session_factory = mocker.MagicMock(return_value=mock_session)
         mocker.patch.object(db_manager, expected_session_attr, mock_session_factory)
 
-        async with db_manager.get_raw_session(readonly=readonly) as session:
+        async with db_manager.get_session(readonly=readonly) as session:
             assert session is mock_session
 
         mock_session_factory.assert_called_once()
@@ -265,7 +265,7 @@ class TestDatabaseManagerSessionHandling:
         mock_session_factory = mocker.MagicMock(return_value=mock_session)
         mocker.patch.object(db_manager, "master_session", mock_session_factory)
 
-        async with db_manager.get_txn() as session:
+        async with db_manager.get_transaction() as session:
             assert session is mock_session
 
         mock_session.begin.assert_called_once()
@@ -292,7 +292,7 @@ class TestDatabaseManagerSessionHandling:
         mocker.patch.object(db_manager, "master_session", mock_session_factory)
 
         with pytest.raises(DBError, match="Transaction failed: Constraint violation"):
-            async with db_manager.get_txn():
+            async with db_manager.get_transaction():
                 pass  # This code is not reached
 
         # The `async with session.begin()` context manager handles the rollback automatically.
