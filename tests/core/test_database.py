@@ -204,7 +204,7 @@ class TestDatabaseManagerSessionHandling:
         _ = asyncio.run(db_manager.setup(settings))
 
     @pytest.mark.asyncio
-    async def test_get_raw_session_raises_dberror_if_not_initialized(self) -> None:
+    async def test_get_session_raises_dberror_if_not_initialized(self) -> None:
         """
         Arrange: A non-initialized DatabaseManager.
         Act: Attempt to get a DB session.
@@ -224,7 +224,7 @@ class TestDatabaseManagerSessionHandling:
         ],
     )
     @pytest.mark.asyncio
-    async def test_get_raw_session_session_selection(
+    async def test_get_session_session_selection(
         self,
         db_manager: DatabaseManager,
         mocker: Any,
@@ -252,7 +252,7 @@ class TestDatabaseManagerSessionHandling:
         mock_session.close.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_get_txn_success_commits_and_closes(self, db_manager: DatabaseManager, mocker: Any) -> None:
+    async def test_get_transaction_success_commits_and_closes(self, db_manager: DatabaseManager, mocker: Any) -> None:
         """
         Arrange: A mocked session that successfully completes a transaction.
         Act: Use the async transaction context manager.
@@ -274,7 +274,7 @@ class TestDatabaseManagerSessionHandling:
 
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
-    async def test_get_txn_failure_rolls_back_and_raises(
+    async def test_get_transaction_failure_rolls_back_and_raises(
         self, mock_logger: MagicMock, db_manager: DatabaseManager, mocker: Any
     ) -> None:
         """
