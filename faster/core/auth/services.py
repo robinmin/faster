@@ -1,4 +1,4 @@
-from ..database import get_txn
+from ..database import get_transaction
 from ..logger import get_logger
 from ..redisex import blacklist_delete, tag2role_get, user2role_get
 from .auth_proxy import AuthProxy
@@ -132,12 +132,12 @@ class AuthService:
 
     async def get_user_by_auth_id(self, auth_id: str) -> User | None:
         """Get user from database by Supabase auth ID."""
-        async with await get_txn(readonly=True) as session:
+        async with await get_transaction(readonly=True) as session:
             return await self._repository.get_user_by_auth_id(session, auth_id)
 
     async def _save_user_profile_to_database(self, user_profile: UserProfileData) -> User:
         """Save complete user profile to database."""
-        async with await get_txn() as session:
+        async with await get_transaction() as session:
             # Create or update user
             user_data = {
                 "id": user_profile.id,
