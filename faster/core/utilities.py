@@ -169,16 +169,6 @@ async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     app.state.latest_status_info = {"db": db_health, "redis": redis_health, "sentry": sentry_health}
 
 
-###############################################################################
-# Query Builders
-#
-# Query builders have been moved to a separate module for better organization.
-# Import them from the builders module:
-#
-#     from .builders import QueryBuilder, query_builder, soft_delete_query_builder
-#
-# For backward compatibility, we re-export the main classes here.
-###############################################################################
 
 
 ###############################################################################
