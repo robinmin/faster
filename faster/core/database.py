@@ -1,14 +1,15 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Callable
 from contextlib import _AsyncGeneratorContextManager, asynccontextmanager  # pyright: ignore[reportPrivateUsage]
-from typing import Any, TypeAlias, TypedDict, TypeVar
+from datetime import datetime
+from typing import Any, TypedDict, TypeVar, cast
 
 from sqlalchemy import text
-from sqlalchemy.engine import Result
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateIndex, CreateTable
 from sqlmodel import SQLModel, create_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel.sql.expression import Select
 from typing_extensions import Self
 
 from .config import Settings
@@ -20,14 +21,9 @@ from .plugins import BasePlugin
 
 logger = get_logger(__name__)
 
-# Type definitions
-ModelType = TypeVar("ModelType")
-
-DBSession: TypeAlias = AsyncSession # for Python 3.10+
-# type DBSession = AsyncSession     # for Python 3.12+
-
-DBResult: TypeAlias = Result[Any] # for Python 3.10+
-# type DBResult = Result[Any] # for Python 3.12+
+# Type definitions - Simplified using SQLModel's native types
+ModelType = TypeVar("ModelType", bound=SQLModel)
+DBSession = AsyncSession
 
 class EngineKwargs(TypedDict, total=False):
     echo: bool
@@ -82,27 +78,28 @@ class DatabaseManager(BasePlugin):
         session_factory = self.get_session_factory(readonly=readonly)
         return session_factory()
 
-    async def execute_raw_query(self, query: str, readonly: bool = True) -> Any:
+    async def execute_raw_query(self, query: str, params: dict[str, Any] | None = None, readonly: bool = True) -> Any:
         """
         Execute raw SQL query with abstraction.
         Returns results in a database-agnostic way.
         """
-        async with self.get_raw_session(readonly=readonly) as session:
-            result = await session.execute(text(query))  # pyright: ignore[reportDeprecated]
+        async with self.get_session(readonly=readonly) as session:
+            # Use execute() for raw SQL text as exec() doesn't support TextClause
+            result = await session.execute(text(query), params or {}) # pyright: ignore[reportDeprecated]
             return result
 
     # -----------------------------
-    # FastAPI dependency
+    # Session management - Simplified and consistent
     # -----------------------------
     @asynccontextmanager
-    async def get_raw_session(self, readonly: bool = False) -> AsyncGenerator[DBSession, None]:
+    async def get_session(self, readonly: bool = False) -> AsyncGenerator[DBSession, None]:
         """
-        Get a FastAPI dependency session. Please note that this session is not managed by the database engine. That means you need to close it manually. Carefully handle exceptions and errors.
+        Get a managed database session with automatic cleanup.
+
         Example:
-        @app.get("/users")
-            async def get_users(db: DBSession = Depends(get_raw_session)):
-                query = select(User)
-                return await db.execute(query).scalars().all()
+            async with db_manager.get_session() as session:
+                result = await session.exec(select(User))
+                users = result.all()
         """
         session = self.create_session(readonly)
         try:
@@ -110,32 +107,36 @@ class DatabaseManager(BasePlugin):
         finally:
             await session.close()
 
-    # -----------------------------
-    # Transaction manager
-    # -----------------------------
     @asynccontextmanager
-    async def get_txn(self, readonly: bool = False) -> AsyncGenerator[DBSession, None]:
+    async def get_transaction(self, readonly: bool = False) -> AsyncGenerator[DBSession, None]:
         """
-        FastAPI dependency transaction.
+        Get a transactional database session with automatic commit/rollback.
+
         Example:
-            async def get_users(txn: DBSession = Depends(get_txn)):
-                # Check if user already exists
-                existing_user = await txn.exec(select(User).where(User.email == user_data.email))
-                if existing_user.first():
-                    # If you raise an exception here, the transaction will be automatically rolled back.
-                    raise HTTPException(status_code=400, detail="Email already registered")
+            async with db_manager.get_transaction() as session:
+                user = User(name="John")
+                session.add(user)
+                # Auto-commits on success, auto-rollbacks on exception
         """
         session = self.create_session(readonly)
         try:
             async with session.begin():
                 yield session
         except Exception as exp:
-            # We just log the exception and re-raise it as a DBError.
             msg = f"Transaction failed: {exp}"
             logger.error(msg)
             raise DBError(msg) from exp
         finally:
             await session.close()
+
+    # Backward compatibility aliases
+    async def get_raw_session(self, readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
+        """Deprecated: Use get_session() instead."""
+        return self.get_session(readonly=readonly)
+
+    async def get_txn(self, readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
+        """Deprecated: Use get_transaction() instead."""
+        return self.get_transaction(readonly=readonly)
 
     # -----------------------------
     # Init models
@@ -245,12 +246,25 @@ class DatabaseManager(BasePlugin):
 ################################################################################
 # Utility functions
 ################################################################################
+async def get_session(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
+    """Get a managed database session."""
+    return DatabaseManager.get_instance().get_session(readonly=readonly)
+
+
+async def get_transaction(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
+    """Get a transactional database session."""
+    return DatabaseManager.get_instance().get_transaction(readonly=readonly)
+
+
+# Backward compatibility
 async def get_raw_session(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
-    return DatabaseManager.get_instance().get_raw_session(readonly=readonly)
+    """Deprecated: Use get_session() instead."""
+    return DatabaseManager.get_instance().get_session(readonly=readonly)
 
 
 async def get_txn(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
-    return DatabaseManager.get_instance().get_txn(readonly=readonly)
+    """Deprecated: Use get_transaction() instead."""
+    return DatabaseManager.get_instance().get_transaction(readonly=readonly)
 
 
 def generate_ddl(url: str = "sqlite:///:memory:") -> str:
@@ -307,7 +321,7 @@ class BaseRepository(ABC):
         Get a managed database session.
         Automatically handles session lifecycle and cleanup.
         """
-        async with self.db_manager.get_raw_session(readonly=readonly) as session:
+        async with self.db_manager.get_session(readonly=readonly) as session:
             yield session
 
     @asynccontextmanager
@@ -316,7 +330,7 @@ class BaseRepository(ABC):
         Get a transactional database session.
         Automatically handles transaction commit/rollback.
         """
-        async with self.db_manager.get_txn(readonly=readonly) as session:
+        async with self.db_manager.get_transaction(readonly=readonly) as session:
             yield session
 
     # Common Repository Operations
@@ -375,13 +389,66 @@ class BaseRepository(ABC):
             logger.error(f"Error deleting entity: {e}")
             return False
 
-    async def execute_query(self, query: Any, readonly: bool = True) -> Any:
+    async def soft_delete(self, table_name: str, where_conditions: dict[str, Any], session: DBSession | None = None) -> int:
         """
-        Execute a custom query.
-        Provides abstraction over query execution.
+        Perform soft delete on records by setting N_IN_USED=0 and D_UPDATED_AT=now().
+
+        Args:
+            table_name: Name of the table to soft delete from
+            where_conditions: Dictionary of column-value pairs for WHERE clause
+            session: Optional session to use, if None will create a new transaction
+
+        Returns:
+            Number of rows affected
+
+        Raises:
+            DBError: If database operation fails
+
+        Example:
+            >>> await repo.soft_delete("SYS_MAP", {"C_CATEGORY": "old_category"})
+            >>> await repo.soft_delete("SYS_DICT", {"C_CATEGORY": "test", "N_KEY": 123})
+        """
+        if not table_name:
+            raise ValueError("Table name cannot be empty")
+        if not where_conditions:
+            raise ValueError("Where conditions cannot be empty")
+
+        # Build WHERE clause from conditions
+        where_parts = []
+        params = {}
+
+        for param_counter, (column, value) in enumerate(where_conditions.items()):
+            param_name = f"param_{param_counter}"
+            where_parts.append(f"{column} = :{param_name}")
+            params[param_name] = value
+
+        where_clause = " AND ".join(where_parts)
+        params["updated_at"] = datetime.now()
+
+        query = f"UPDATE {table_name} SET N_IN_USED = 0, D_UPDATED_AT = :updated_at WHERE {where_clause}"
+
+        try:
+            if session:
+                # Use provided session (within existing transaction)
+                result = await session.execute(text(query), params) # pyright: ignore[reportDeprecated]
+            else:
+                # Use execute_raw_query (creates its own transaction)
+                result = await self.db_manager.execute_raw_query(query, params, readonly=False)
+
+            affected_rows = getattr(result, "rowcount", 0)
+            return affected_rows
+        except Exception as e:
+            logger.error(f"Failed to soft delete from {table_name}: {e}")
+            raise DBError(f"Failed to soft delete from {table_name}: {e}") from e
+
+    async def execute_query(self, query: Select[Any] | Any, readonly: bool = True) -> Any:
+        """
+        Execute a custom SQLModel query.
+        Uses SQLModel's exec() method for proper type handling.
         """
         async with self.session(readonly=readonly) as session:
-            return await session.execute(query)  # pyright: ignore[reportDeprecated]
+            result = await session.exec(query)
+            return result
 
     async def execute_raw_sql(self, sql: str, readonly: bool = True) -> Any:
         """
@@ -412,3 +479,23 @@ class BaseRepository(ABC):
         self._session_factory = factory
 
     # Utility Methods
+    def table_name(self, model_class: type[SQLModel]) -> str:
+        """
+        Get the table name from a SQLModel class.
+
+        Args:
+            model_class: The SQLModel class to get table name from
+
+        Returns:
+            The table name as defined in the model's __tablename__ attribute
+
+        Raises:
+            ValueError: If model doesn't have a __tablename__ attribute
+
+        Example:
+            >>> table_name = repo.table_name(SysMap)
+            >>> print(table_name)  # "SYS_MAP"
+        """
+        if not hasattr(model_class, '__tablename__'):
+            raise ValueError(f"Model {model_class.__name__} does not have a __tablename__ attribute")
+        return cast(str, model_class.__tablename__)
