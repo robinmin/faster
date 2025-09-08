@@ -129,15 +129,6 @@ class DatabaseManager(BasePlugin):
         finally:
             await session.close()
 
-    # Backward compatibility aliases
-    async def get_raw_session(self, readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
-        """Deprecated: Use get_session() instead."""
-        return self.get_session(readonly=readonly)
-
-    async def get_txn(self, readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
-        """Deprecated: Use get_transaction() instead."""
-        return self.get_transaction(readonly=readonly)
-
     # -----------------------------
     # Init models
     # -----------------------------
@@ -253,17 +244,6 @@ async def get_session(readonly: bool = False) -> _AsyncGeneratorContextManager[D
 
 async def get_transaction(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
     """Get a transactional database session."""
-    return DatabaseManager.get_instance().get_transaction(readonly=readonly)
-
-
-# Backward compatibility
-async def get_raw_session(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
-    """Deprecated: Use get_session() instead."""
-    return DatabaseManager.get_instance().get_session(readonly=readonly)
-
-
-async def get_txn(readonly: bool = False) -> _AsyncGeneratorContextManager[DBSession, None]:
-    """Deprecated: Use get_transaction() instead."""
     return DatabaseManager.get_instance().get_transaction(readonly=readonly)
 
 
