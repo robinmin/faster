@@ -16,7 +16,14 @@
       "Bash(mypy:*)",
       "Bash(ls:*)",
       "Bash(ruff check:*)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "Bash(PYTHONPATH=. uv run pytest:*)",
+      "Bash(PYTHONPATH=. uv run ruff:*)",
+      "Bash(PYTHONPATH=. uv run mypy:*)",
+      "mcp__ultra-mcp__search-vectors",
+      "WebSearch",
+      "WebFetch(domain:docs.sqlalchemy.org)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": ["Read(.env)", "Bash(git:*)"],
     "ask": ["Bash(python:*)"]
