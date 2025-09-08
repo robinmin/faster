@@ -3,8 +3,8 @@ import json
 import logging
 from typing import Any
 
-# from sqlmodel.ext.asyncio.session import DBSession
-from ..builders import qb, ub
+from sqlmodel import select
+
 from ..database import BaseRepository, DatabaseManager, DBSession
 from ..exceptions import DBError
 from .models import AppMetadata, UserIdentityData, UserInfo
@@ -98,8 +98,9 @@ class AuthRepository(BaseRepository):
         """
         try:
             # Check for the existence of a user profile in the profiles table
-            query = qb(UserProfile).where(UserProfile.user_auth_id, user_id).build()
-            profile = await session.scalar(query)
+            query = select(UserProfile).where(UserProfile.user_auth_id == user_id)
+            result = await session.exec(query)
+            profile = result.first()
             return profile is not None
         except Exception as e:
             logger.error(f"Database error checking user profile: {e}", extra={"user_id": user_id})
@@ -124,9 +125,9 @@ class AuthRepository(BaseRepository):
             raise ValueError("Authentication ID cannot be empty")
 
         try:
-            query = qb(User).where(User.auth_id, auth_id).build()
-            result = await session.scalar(query)
-            return result if isinstance(result, User) else None
+            query = select(User).where(User.auth_id == auth_id)
+            result = await session.exec(query)
+            return result.first()
         except Exception as e:
             logger.error(f"Error fetching user by auth_id {auth_id}: {e}")
             raise DBError(f"Failed to fetch user by auth_id {auth_id}: {e}") from e
@@ -156,8 +157,9 @@ class AuthRepository(BaseRepository):
             raise ValueError("User data must contain a valid 'id' field")
 
         try:
-            query = qb(User).where(User.auth_id, user_data["id"]).build()
-            existing_user = await session.scalar(query)
+            query = select(User).where(User.auth_id == user_data["id"])
+            result = await session.exec(query)
+            existing_user = result.first()
 
             user: User
             if existing_user:
@@ -231,14 +233,11 @@ class AuthRepository(BaseRepository):
 
         try:
             # Soft delete existing metadata records by setting in_used=0
-            update_builder = (
-                ub(UserMetadata)
-                .where(UserMetadata.user_auth_id, user_auth_id)
-                .where(UserMetadata.metadata_type, metadata_type)
-                .set(UserMetadata.in_used, 0)
+            _ = await self.soft_delete(
+                self.table_name(UserMetadata),
+                {"C_USER_AUTH_ID": user_auth_id, "C_METADATA_TYPE": metadata_type},
+                session
             )
-            update_query = update_builder.build()
-            _ = await session.execute(update_query)  # pyright: ignore[reportDeprecated]
 
             # Insert new metadata records
             metadata_records = [
@@ -287,11 +286,11 @@ class AuthRepository(BaseRepository):
 
         try:
             # Soft delete existing identity records by setting in_used=0
-            update_builder = (
-                ub(UserIdentity).where(UserIdentity.user_auth_id, user_auth_id).set(UserIdentity.in_used, 0)
+            _ = await self.soft_delete(
+                self.table_name(UserIdentity),
+                {"C_USER_AUTH_ID": user_auth_id},
+                session
             )
-            update_query = update_builder.build()
-            _ = await session.execute(update_query)  # pyright: ignore[reportDeprecated]
 
             # Soft delete existing identity data records by setting in_used=0
             # Note: In a production environment, we would query for existing identities to get their IDs
@@ -300,8 +299,12 @@ class AuthRepository(BaseRepository):
 
             # Insert new identity records
             new_identities = []
-            new_identity_data: list[str] = []
             for identity_obj in identities:
+                # Serialize identity_data to JSON if present
+                identity_data_json = None
+                if hasattr(identity_obj, "identity_data") and identity_obj.identity_data:
+                    identity_data_json = json.dumps(identity_obj.identity_data)
+
                 new_identities.append(
                     UserIdentity(
                         identity_id=identity_obj.identity_id,
@@ -312,17 +315,11 @@ class AuthRepository(BaseRepository):
                         last_sign_in_at=identity_obj.last_sign_in_at,
                         identity_created_at=identity_obj.created_at,
                         identity_updated_at=identity_obj.updated_at,
+                        identity_data=identity_data_json,
                     )
                 )
-
-                # Store identity data as JSON in the consolidated table
-                if hasattr(identity_obj, "identity_data") and identity_obj.identity_data:
-                    # Identity data is now stored as JSON in the UserIdentity table
-                    pass
             if new_identities:
                 session.add_all(new_identities)
-            if new_identity_data:
-                session.add_all(new_identity_data)
         except Exception as e:
             logger.error(f"Error creating or updating identities for user {user_auth_id}: {e}")
             raise DBError(f"Failed to create or update identities for user {user_auth_id}: {e}") from e
@@ -410,16 +407,19 @@ class AuthRepository(BaseRepository):
 
     async def _get_base_user(self, session: DBSession, user_id: str) -> User | None:
         """Get base user information from the users table."""
-        user_query = qb(User).where(User.auth_id, user_id).build()
-        result = await session.scalar(user_query)
-        return result if isinstance(result, User) else None
+        user_query = select(User).where(User.auth_id == user_id)
+        result = await session.exec(user_query)
+        return result.first()
 
     async def _get_user_metadata(self, session: DBSession, user_id: str) -> tuple[AppMetadata, UserMetadataModel]:
         """Get and process user metadata, returning structured metadata objects."""
         metadata_query = (
-            qb(UserMetadata).where(UserMetadata.user_auth_id, user_id).where(UserMetadata.in_used, 1).build()
+            select(UserMetadata)
+            .where(UserMetadata.user_auth_id == user_id)
+            .where(UserMetadata.in_used == 1)
         )
-        metadata_rows = await session.scalars(metadata_query)
+        result = await session.exec(metadata_query)
+        metadata_rows = result.all()
 
         app_metadata_dict: dict[str, Any] = {}
         user_metadata_dict: dict[str, Any] = {}
@@ -459,9 +459,12 @@ class AuthRepository(BaseRepository):
     async def _get_user_identities(self, session: DBSession, user_id: str) -> list[UserIdentityData]:
         """Get user identities and convert to UserIdentityData objects."""
         identities_query = (
-            qb(UserIdentity).where(UserIdentity.user_auth_id, user_id).where(UserIdentity.in_used, 1).build()
+            select(UserIdentity)
+            .where(UserIdentity.user_auth_id == user_id)
+            .where(UserIdentity.in_used == 1)
         )
-        identity_rows = await session.scalars(identities_query)
+        result = await session.exec(identities_query)
+        identity_rows = result.all()
 
         identities: list[UserIdentityData] = []
         for identity_row in identity_rows:
@@ -489,8 +492,13 @@ class AuthRepository(BaseRepository):
 
     async def _get_user_profile(self, session: DBSession, user_id: str) -> dict[str, Any] | None:
         """Get user profile data if it exists."""
-        profile_query = qb(UserProfile).where(UserProfile.user_auth_id, user_id).where(UserProfile.in_used, 1).build()
-        profile_row = await session.scalar(profile_query)
+        profile_query = (
+            select(UserProfile)
+            .where(UserProfile.user_auth_id == user_id)
+            .where(UserProfile.in_used == 1)
+        )
+        result = await session.exec(profile_query)
+        profile_row = result.first()
 
         if not profile_row:
             return None
@@ -580,8 +588,9 @@ class AuthRepository(BaseRepository):
 
     async def _create_or_update_base_user(self, session: DBSession, user_info: UserInfo) -> None:
         """Create or update base user information."""
-        user_query = qb(User).where(User.auth_id, user_info.id).build()
-        existing_user = await session.scalar(user_query)
+        user_query = select(User).where(User.auth_id == user_info.id)
+        result = await session.exec(user_query)
+        existing_user = result.first()
 
         if existing_user:
             # Update existing user
@@ -648,8 +657,9 @@ class AuthRepository(BaseRepository):
 
     async def _store_user_profile(self, session: DBSession, user_info: UserInfo) -> None:
         """Store user profile information."""
-        profile_query = qb(UserProfile).where(UserProfile.user_auth_id, user_info.id).build()
-        existing_profile = await session.scalar(profile_query)
+        profile_query = select(UserProfile).where(UserProfile.user_auth_id == user_info.id)
+        result = await session.exec(profile_query)
+        existing_profile = result.first()
 
         # Get profile data safely
         profile_data = user_info.profile or {}
