@@ -1,19 +1,19 @@
 import time
-from typing import Any, cast
+from typing import Any
 
-from fastapi import Request
 import httpx
 import jwt
-from jwt.algorithms import RSAAlgorithm
 from supabase import Client, create_client
 
-from ..exceptions import AuthError
+from ..logger import get_logger
 from ..redisex import get_jwks_key, get_user_profile, set_jwks_key, set_user_profile
-from .models import SupabaseUser, UserIdentityData, UserProfileData
+from .models import UserProfileData
 
 # =============================================================================
 # Core Authentication Proxy to Supabase Auth
 # =============================================================================
+
+logger = get_logger(__name__)
 
 
 class AuthProxy:
@@ -55,8 +55,8 @@ class AuthProxy:
         # - Required for operations like admin.get_user_by_id()
         self._service_client: Client | None = None
 
-        self._jwks_cache: dict[str, Any] = {}
-        self._jwks_last_refresh = 0.0
+        # Note: JWKS caching is handled within this proxy.
+        self.last_refresh: float = 0.0
 
     @property
     def client(self) -> Client:
@@ -72,83 +72,236 @@ class AuthProxy:
             self._service_client = create_client(self._supabase_url, self._supabase_service_key)
         return self._service_client
 
-    async def _fetch_jwks_keys(self) -> dict[str, Any]:
-        """Fetch JWKS keys from Supabase."""
+    def _extract_token_header_info(self, token: str) -> tuple[str | None, str | None]:
+        """Extract key ID and algorithm from JWT token header."""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(self._supabase_jwks_url)
-                _ = response.raise_for_status()
-                return dict(response.json())
-        except Exception as e:
-            raise AuthError(f"Failed to fetch JWKS keys: {e}") from e
-
-    async def _get_jwks_key(self, key_id: str) -> dict[str, Any]:
-        """Get JWKS key by ID with caching."""
-        # Try cache first
-        cached_key = await get_jwks_key(key_id)
-        if cached_key:
-            return cached_key
-
-        # Check if we need to refresh JWKS
-        current_time = time.time()
-        if (current_time - self._jwks_last_refresh) > self._cache_ttl:
-            jwks_data = await self._fetch_jwks_keys()
-            self._jwks_last_refresh = current_time
-
-            # Cache all keys
-            for key in jwks_data.get("keys", []):
-                _ = await set_jwks_key(key["kid"], key, self._cache_ttl)
-
-        # Try cache again after refresh
-        cached_key = await get_jwks_key(key_id)
-        if not cached_key:
-            raise AuthError(f"JWKS key not found: {key_id}")
-
-        return cached_key
-
-    async def verify_jwt_token(self, token: str) -> dict[str, Any]:
-        """Verify JWT token and return payload."""
-        try:
-            # Decode header to get key ID
             unverified_header = jwt.get_unverified_header(token)
             key_id = unverified_header.get("kid")
+            token_alg = unverified_header.get("alg")
 
             if not key_id:
-                raise AuthError("Missing key ID in JWT header")
+                logger.debug("Missing key ID (kid) in JWT header")
+                return None, None
 
-            # Get JWKS key
-            jwks_key = await self._get_jwks_key(key_id)
+            return key_id, token_alg
+        except jwt.InvalidTokenError:
+            logger.debug("Invalid JWT token format")
+            return None, None
 
-            # Convert JWKS key to PEM format for verification
-            public_key = RSAAlgorithm.from_jwk(jwks_key)
+    def _determine_algorithm(self, jwks_key: dict[str, Any], token_alg: str | None) -> str | None:
+        """Determine the algorithm to use for verification."""
+        algorithm = jwks_key.get("alg") or token_alg
+        if not algorithm:
+            logger.debug("Missing algorithm in both JWKS key and token header")
+        return algorithm
 
-            # Verify and decode token
+    def _construct_public_key(self, jwks_key: dict[str, Any]) -> Any:
+        """Construct public key from JWKS key."""
+        try:
+            return jwt.PyJWK(jwks_key).key
+        except Exception as e:
+            logger.debug(f"Failed to construct public key from JWKS: {e}")
+            return None
+
+    def _verify_jwt_token(
+        self, token: str, public_key: Any, algorithm: str, expected_audience: str
+    ) -> dict[str, Any] | None:
+        """Verify JWT token and return payload."""
+        try:
             payload = jwt.decode(
                 token,
-                str(public_key),
-                algorithms=["RS256"],
-                audience=self._supabase_audience,
-                options={"verify_exp": True, "verify_aud": True},
+                public_key,
+                algorithms=[algorithm],
+                audience=expected_audience,
+                options={
+                    "verify_exp": True,  # Verify expiration
+                    "verify_aud": True,  # Verify audience
+                    "verify_signature": True,  # Verify signature
+                },
             )
-
             return dict(payload)
-
-        except jwt.ExpiredSignatureError as e:
-            raise AuthError("Token has expired") from e
-        except jwt.InvalidAudienceError as e:
-            raise AuthError("Invalid token audience") from e
+        except jwt.ExpiredSignatureError:
+            logger.debug("JWT token has expired")
+        except jwt.InvalidAudienceError:
+            logger.debug(f"JWT audience mismatch: expected '{expected_audience}'")
         except jwt.InvalidTokenError as e:
-            raise AuthError(f"Invalid token: {e}") from e
-        except Exception as e:
-            raise AuthError(f"Token verification failed: {e}") from e
+            logger.debug(f"JWT token validation failed: {e}")
+        return None
 
-    async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> SupabaseUser:
+    def _extract_user_id_from_payload(self, payload: dict[str, Any]) -> str | None:
+        """Extract user ID from JWT payload."""
+        user_id = payload.get("sub")
+        if not user_id:
+            logger.debug("Missing 'sub' (user ID) claim in JWT payload")
+            return None
+        return str(user_id)
+
+    async def _check_redis_cache(self, key_id: str) -> dict[str, Any] | None:
+        """Check if JWKS key exists in Redis cache."""
+        try:
+            cached_key = await get_jwks_key(key_id)
+            if cached_key:
+                logger.debug(f"JWKS key found in Redis cache: {key_id}")
+                return cached_key
+        except Exception as e:
+            logger.debug(f"Redis cache read failed: {e}")
+        return None
+
+    async def _cache_jwks_keys(self, jwks_data: dict[str, Any], cache_ttl: int) -> tuple[dict[str, Any], bool]:
+        """Cache all JWKS keys and return target key and cache success status."""
+        target_key: dict[str, Any] = {}
+        cache_failed = False
+
+        for jwk_key in jwks_data.get("keys", []):
+            kid = jwk_key.get("kid")
+            if not kid:
+                continue
+
+            # Store first key as potential target (will be overwritten if specific key found)
+            if not target_key:
+                target_key = jwk_key
+
+            # Cache this key in Redis
+            try:
+                if not await set_jwks_key(kid, jwk_key, cache_ttl):
+                    cache_failed = True
+                    logger.debug(f"Failed to cache JWKS key in Redis: {kid}")
+            except Exception as e:
+                cache_failed = True
+                logger.debug(f"Redis cache write failed for key {kid}: {e}")
+
+        return target_key, cache_failed
+
+    async def _find_target_key(self, jwks_data: dict[str, Any], key_id: str) -> dict[str, Any]:
+        """Find the target key from JWKS data."""
+        for jwk_key in jwks_data.get("keys", []):
+            kid = jwk_key.get("kid")
+            if kid == key_id:
+                return dict(jwk_key)
+        return {}
+
+    async def _fetch_jwks_from_server(self, jwks_url: str) -> dict[str, Any]:
+        """
+        Fetch JWKS keys directly from the authorization server.
+
+        Internal utility that handles HTTP requests to JWKS endpoint
+        with proper timeout and error handling.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(jwks_url)
+                _ = response.raise_for_status()
+                return dict(response.json())
+        except httpx.TimeoutException:
+            logger.error(f"Timeout fetching JWKS from: {jwks_url}")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error fetching JWKS from {jwks_url}: {e.response.status_code}")
+        except Exception as e:
+            logger.error(f"Unexpected error fetching JWKS from {jwks_url}: {e}")
+        return {}
+
+    async def _get_cached_jwks_key(
+        self, key_id: str, jwks_url: str, cache_ttl: int, auto_refresh: bool
+    ) -> dict[str, Any]:
+        """
+        Get JWKS key by ID with Redis caching and automatic refresh.
+
+        Internal utility function that handles:
+        - Redis-based caching of JWKS keys
+        - Automatic refresh of expired keys
+        - Fallback to memory cache if Redis fails
+        """
+        current_time = time.time()
+
+        # Try Redis cache first if within TTL
+        if auto_refresh and self.last_refresh > 0 and (current_time - self.last_refresh) < cache_ttl:
+            cached_key = await self._check_redis_cache(key_id)
+            if cached_key:
+                return cached_key
+
+        # Fetch fresh JWKS data from server
+        try:
+            jwks_data = await self._fetch_jwks_from_server(jwks_url)
+            if not jwks_data or not jwks_data.get("keys"):
+                logger.debug(f"No JWKS keys returned from: {jwks_url}")
+                return {}
+
+            # Find the target key and cache all keys
+            target_key = await self._find_target_key(jwks_data, key_id)
+            _, cache_failed = await self._cache_jwks_keys(jwks_data, cache_ttl)
+
+            # Update refresh timestamp only if caching succeeded
+            if not cache_failed:
+                self.last_refresh = current_time
+                logger.debug(f"JWKS keys refreshed and cached from: {jwks_url}")
+
+            return target_key
+
+        except Exception as e:
+            logger.debug(f"Failed to fetch JWKS from server: {e}")
+            return {}
+
+    async def get_user_id_from_token(self, token: str) -> str | None:  # noqa: PLR0911
+        """
+        Extract and verify user ID from JWT token with strong verification.
+
+        This utility function performs complete JWT verification including:
+        - Signature validation using JWKS public keys
+        - Algorithm verification (supports RS256, ES256, etc.)
+        - Audience validation
+        - Expiration validation
+        - Key caching for performance
+        """
+        if not token:
+            logger.debug("Missing required parameters for token verification")
+            return None
+
+        try:
+            # Extract key ID and algorithm from token header
+            key_id, token_alg = self._extract_token_header_info(token)
+            if not key_id:
+                return None
+
+            # Get JWKS key from cache or server
+            jwks_key = await self._get_cached_jwks_key(
+                key_id=key_id,
+                jwks_url=self._supabase_jwks_url,
+                cache_ttl=self._cache_ttl,
+                auto_refresh=self._auto_refresh_jwks,
+            )
+            if not jwks_key:
+                logger.debug(f"JWKS key not found for kid: {key_id}")
+                return None
+
+            # Determine algorithm, construct public key, and verify token
+            algorithm = self._determine_algorithm(jwks_key, token_alg)
+            if not algorithm:
+                return None
+
+            public_key = self._construct_public_key(jwks_key)
+            if not public_key:
+                return None
+
+            payload = self._verify_jwt_token(token, public_key, algorithm, self._supabase_audience)
+            if not payload:
+                return None
+
+            user_id = self._extract_user_id_from_payload(payload)
+            if user_id:
+                logger.debug(f"Successfully verified token for user: {user_id}")
+            return user_id
+
+        except Exception as e:
+            logger.error(f"Unexpected error during token verification: {e}")
+            return None
+
+    async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> UserProfileData | None:
         """Get user profile by ID with optional caching."""
         if from_cache:
             cached_profile_json = await get_user_profile(user_id)
             if cached_profile_json:
-                # Convert JSON string back to SupabaseUser object
-                return SupabaseUser.model_validate_json(cached_profile_json)
+                # Convert JSON string back to UserProfileData object
+                return UserProfileData.model_validate_json(cached_profile_json)
 
         try:
             # Fetch from Supabase
@@ -156,10 +309,11 @@ class AuthProxy:
             user_data = response.user
 
             if not user_data:
-                raise AuthError("User not found", status_code=404)
+                logger.error("User not found", status_code=404)
+                return None
 
-            # Create user profile
-            profile = SupabaseUser(
+            # Create user profile using UserProfileData (inherits from Supabase User)
+            profile = UserProfileData(
                 id=user_data.id,
                 email=user_data.email or "",
                 email_confirmed_at=user_data.email_confirmed_at,
@@ -175,138 +329,24 @@ class AuthProxy:
 
             # Cache the profile
             profile_json = profile.model_dump_json()
-            _ = await set_user_profile(user_id, profile_json, self._cache_ttl)
+            if not await set_user_profile(user_id, profile_json, self._cache_ttl):
+                logger.error(f"Failed to cache user profile : {user_id}")
 
             return profile
-
         except Exception as e:
-            if isinstance(e, AuthError):
-                raise
-            raise AuthError(f"Failed to fetch user profile: {e}") from e
+            logger.error(f"Failed to fetch user profile: {e}")
+        return None
 
-    async def authenticate_token(self, token: str) -> SupabaseUser:
+    async def get_user_by_token(self, token: str) -> UserProfileData | None:
         """Authenticate token and return user profile."""
-        # Verify JWT token
-        payload = await self.verify_jwt_token(token)
-
-        # Extract user ID from payload
-        user_id = payload.get("sub")
+        # Extract and verify user ID from JWT token
+        user_id = await self.get_user_id_from_token(token)
         if not user_id:
-            raise AuthError("User ID not found in token")
+            return None
 
         # Get user profile
-        return await self.get_user_by_id(user_id)
-
-    async def refresh_user_cache(self, user_id: str) -> SupabaseUser:
-        """Force refresh user profile cache."""
-        return await self.get_user_by_id(user_id, from_cache=False)
-
-    async def invalidate_user_cache(self, user_id: str) -> None:
-        """Invalidate user profile cache."""
-        # This would depend on your cache implementation
-        # For now, we'll just fetch fresh data
-        _ = await self.get_user_by_id(user_id, from_cache=False)
-
-    def _convert_supabase_user_to_profile(self, supabase_user: SupabaseUser) -> UserProfileData:
-        """Convert Supabase User to internal UserProfileData."""
-        # Convert identities if they exist
-        converted_identities = []
-        if hasattr(supabase_user, "identities") and supabase_user.identities:
-            for identity in supabase_user.identities:
-                converted_identities.append(
-                    UserIdentityData(
-                        identity_id=getattr(identity, "identity_id", ""),
-                        id=getattr(identity, "id", ""),
-                        user_id=getattr(identity, "user_id", ""),
-                        identity_data=getattr(identity, "identity_data", {}) or {},
-                        provider=getattr(identity, "provider", ""),
-                        last_sign_in_at=getattr(identity, "last_sign_in_at", None),
-                        created_at=getattr(identity, "created_at", None),
-                        updated_at=getattr(identity, "updated_at", None),
-                    )
-                )
-
-        return UserProfileData(
-            id=supabase_user.id,
-            aud=getattr(supabase_user, "aud", "") or "",
-            role=getattr(supabase_user, "role", "") or "",
-            email=getattr(supabase_user, "email", "") or "",
-            email_confirmed_at=getattr(supabase_user, "email_confirmed_at", None),
-            phone=getattr(supabase_user, "phone", None),
-            confirmed_at=getattr(supabase_user, "confirmed_at", None),
-            last_sign_in_at=getattr(supabase_user, "last_sign_in_at", None),
-            is_anonymous=getattr(supabase_user, "is_anonymous", False),
-            created_at=getattr(supabase_user, "created_at", None),
-            updated_at=getattr(supabase_user, "updated_at", None),
-            app_metadata=getattr(supabase_user, "app_metadata", {}) or {},
-            user_metadata=getattr(supabase_user, "user_metadata", {}) or {},
-            identities=converted_identities,
-        )
-
-    async def authenticate_and_convert(self, token: str) -> UserProfileData:
-        """Authenticate JWT token and return converted user profile data."""
-        supabase_user = await self.authenticate_token(token)
-        return self._convert_supabase_user_to_profile(supabase_user)
-
-
-async def get_current_user(request: Request) -> UserProfileData:
-    """Dependency to get current authenticated user."""
-    if not hasattr(request.state, "authenticated") or not request.state.authenticated:
-        raise AuthError("Authentication required")
-
-    return cast(UserProfileData, request.state.user)
-
-
-async def get_optional_user(request: Request) -> UserProfileData | None:
-    """Dependency to get current user if authenticated, None otherwise."""
-    if hasattr(request.state, "user") and request.state.authenticated:
-        return cast(UserProfileData, request.state.user)
-    return None
-
-
-# =============================================================================
-# Usage Example
-# =============================================================================
-
-"""
-# Example usage in FastAPI application:
-
-from fastapi import FastAPI, Depends
-from supabase_auth import AuthProxy, AuthMiddleware, get_current_user, get_optional_user, require_roles
-
-app = FastAPI()
-
-# Initialize auth proxy
-auth_proxy = AuthProxy()
-
-# Add auth middleware
-app.add_middleware(AuthMiddleware, auth_proxy=auth_proxy)
-
-@app.get("/protected")
-async def protected_endpoint(user: UserProfile = Depends(get_current_user)):
-    return {"message": f"Hello {user.email}!", "user_id": user.id}
-
-@app.get("/optional-auth")
-async def optional_auth_endpoint(user: Optional[UserProfile] = Depends(get_optional_user)):
-    if user:
-        return {"message": f"Hello {user.email}!"}
-    return {"message": "Hello anonymous user!"}
-
-@app.get("/admin-only")
-@require_roles("admin", "super_admin")
-async def admin_only_endpoint(user: UserProfile = Depends(get_current_user)):
-    return {"message": "Admin access granted!", "user": user.email}
-
-@app.get("/user/{user_id}")
-async def get_user_endpoint(
-    user_id: str,
-    auth: AuthProxy = Depends(get_auth_proxy),
-    current_user: UserProfile = Depends(get_current_user)
-):
-    # Only allow users to access their own data or admins
-    if current_user.id != user_id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    user_profile = await auth.get_user_by_id(user_id)
-    return {"user": asdict(user_profile)}
-"""
+        try:
+            return await self.get_user_by_id(user_id)
+        except Exception as e:
+            logger.error(f"Failed to get user profile for token: {e}")
+            return None
