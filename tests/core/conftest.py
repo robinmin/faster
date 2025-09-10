@@ -6,11 +6,21 @@ from unittest.mock import patch
 import pytest
 from pytest import Config, FixtureRequest
 import pytest_asyncio
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field
 
+from faster.core.auth.schemas import (  # noqa: F401  # type: ignore[unused-ignore]
+    User,  # type: ignore[unused-ignore]
+    UserIdentity,  # type: ignore[unused-ignore]
+    UserMetadata,  # type: ignore[unused-ignore]
+    UserProfile,  # type: ignore[unused-ignore]
+    UserRole,  # type: ignore[unused-ignore]
+)
 from faster.core.config import Settings
 from faster.core.database import DatabaseManager, DBSession
 from faster.core.redis import RedisManager
+
+# Import ALL models to ensure they are registered with SQLModel metadata
+from faster.core.schemas import SysDict, SysMap  # noqa: F401  # type: ignore[unused-ignore]
 
 
 class TestMyBaseMixin:
@@ -123,23 +133,21 @@ def disable_sentry_for_non_sentry_tests(request: FixtureRequest) -> Generator[No
         yield
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def test_settings() -> Settings:
     """Create test settings with in-memory SQLite database."""
     return Settings(database_url="sqlite+aiosqlite:///:memory:", redis_provider="fake")
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def db_manager(test_settings: Settings) -> DatabaseManager:
-    """Initialize database manager with test settings."""
-
-    manager = DatabaseManager.get_instance()
+    """Initialize database manager with test settings for each test."""
+    # Create a new instance for each test to avoid singleton issues
+    manager = DatabaseManager()
     _ = await manager.setup(test_settings)
 
-    # Create all tables for testing
-    if manager.master_engine is not None:
-        async with manager.master_engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
+    # Initialize database models explicitly
+    await manager.init_db_models()
 
     return manager
 
