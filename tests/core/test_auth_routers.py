@@ -5,7 +5,7 @@ from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 import pytest
 
-from faster.core.auth.models import SupabaseUser
+from faster.core.auth.models import UserProfileData
 from faster.core.auth.routers import router
 
 
@@ -22,11 +22,11 @@ class TestAuthRouters:
     @pytest.fixture
     def client(self, app: FastAPI) -> TestClient:
         """Create a test client."""
-        return TestClient(app)
+        return TestClient(app, follow_redirects=False)
 
-    def create_mock_user(self) -> SupabaseUser:
+    def create_mock_user(self) -> UserProfileData:
         """Create a mock user profile."""
-        return SupabaseUser(
+        return UserProfileData(
             id="user-123",
             email="test@example.com",
             email_confirmed_at=None,
@@ -43,10 +43,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_login_endpoint_authenticated_user_with_profile(self, client: TestClient) -> None:
         """Test login endpoint for authenticated user with completed profile."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.process_user_login to avoid database initialization issues
@@ -82,10 +82,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_login_endpoint_authenticated_user_without_profile(self, client: TestClient) -> None:
         """Test login endpoint for authenticated user without completed profile."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.process_user_login to avoid database initialization issues
@@ -100,8 +100,10 @@ class TestAuthRouters:
                 ) as mock_check_onboarding:
                     mock_check_onboarding.return_value = False
 
-                    # Make a request to the endpoint
-                    response = client.get("/auth/login")
+                    # Mock is_api_call to return True to get JSON response
+                    with patch("faster.core.auth.routers.is_api_call", return_value=True):
+                        # Make a request to the endpoint
+                        response = client.get("/auth/login")
 
                     # Check that it's a JSON response with onboarding message
                     assert response.status_code == status.HTTP_200_OK
@@ -117,13 +119,14 @@ class TestAuthRouters:
                 assert "Welcome! Please complete your profile setup." in data["message"]
                 assert "data" in data
                 assert isinstance(data["data"], dict)
-                assert data["data"]["user_id"] == "user-123"
-                assert data["data"]["email"] == "test@example.com"
+                # For users without profile, data contains redirect info
+                assert "url" in data["data"]
+                assert "status_code" in data["data"]
 
     @pytest.mark.asyncio
     async def test_login_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test login endpoint for non-authenticated user."""
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
             # Mock is_api_call to return False
@@ -151,10 +154,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_login_endpoint_with_code_parameter(self, client: TestClient) -> None:
         """Test login endpoint with Supabase code parameter."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.process_user_login to avoid database initialization issues
@@ -169,8 +172,10 @@ class TestAuthRouters:
                 ) as mock_check_onboarding:
                     mock_check_onboarding.return_value = True
 
-                    # Make a request to the endpoint with code parameter
-                    response = client.get("/auth/login?code=abc123")
+                    # Mock is_api_call to return True to get JSON response
+                    with patch("faster.core.auth.routers.is_api_call", return_value=True):
+                        # Make a request to the endpoint with code parameter
+                        response = client.get("/auth/login?code=abc123")
 
                     # Check that it's a JSON response with dashboard message
                     assert response.status_code == status.HTTP_200_OK
@@ -183,19 +188,20 @@ class TestAuthRouters:
                     assert "status" in data
                     assert data["status"] == "success"
                     assert "message" in data
-                    assert "Welcome to your dashboard" in data["message"]
+                    assert "Welcome back, my friend!" in data["message"]
                 assert "data" in data
                 assert isinstance(data["data"], dict)
-                assert data["data"]["user_id"] == "user-123"
-                assert data["data"]["email"] == "test@example.com"
+                # For users with profile, data contains redirect info
+                assert "url" in data["data"]
+                assert "status_code" in data["data"]
 
     @pytest.mark.asyncio
     async def test_login_endpoint_api_call(self, client: TestClient) -> None:
         """Test login endpoint for API calls."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.process_user_login to avoid database initialization issues
@@ -234,10 +240,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_logout_endpoint_authenticated_user(self, client: TestClient) -> None:
         """Test logout endpoint for authenticated user."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Make a request to the endpoint
@@ -267,7 +273,7 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_logout_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test logout endpoint for non-authenticated user."""
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
             # Make a request to the endpoint
@@ -297,10 +303,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_logout_endpoint_api_call(self, client: TestClient) -> None:
         """Test logout endpoint for API calls."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock is_api_call to return True
@@ -327,10 +333,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_onboarding_endpoint_authenticated_user_with_profile(self, client: TestClient) -> None:
         """Test onboarding endpoint for authenticated user with completed profile."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.check_user_onboarding_complete to return True
@@ -364,10 +370,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_onboarding_endpoint_authenticated_user_without_profile(self, client: TestClient) -> None:
         """Test onboarding endpoint for authenticated user without completed profile."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.check_user_onboarding_complete to return False
@@ -398,7 +404,7 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_onboarding_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test onboarding endpoint for non-authenticated user."""
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
             # Mock is_api_call to return True to get JSON response
@@ -426,7 +432,7 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_onboarding_endpoint_api_call_non_authenticated(self, client: TestClient) -> None:
         """Test onboarding endpoint for API calls from non-authenticated users."""
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
             # Mock is_api_call to return True
@@ -453,10 +459,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_dashboard_endpoint_authenticated_user_with_profile(self, client: TestClient) -> None:
         """Test dashboard endpoint for authenticated user with completed profile."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.check_user_onboarding_complete to return True
@@ -487,10 +493,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_dashboard_endpoint_authenticated_user_without_profile(self, client: TestClient) -> None:
         """Test dashboard endpoint for authenticated user without completed profile."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.check_user_onboarding_complete to return False
@@ -519,33 +525,24 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_dashboard_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test dashboard endpoint for non-authenticated user."""
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
             # Make a request to the endpoint
             response = client.get("/auth/dashboard")
 
-            # Check that it's either a redirect response or a JSON response
-            if response.status_code == status.HTTP_303_SEE_OTHER:
-                # Redirect response
-                assert response.headers["location"] == "/auth/login"
-            else:
-                # JSON response
-                assert response.status_code == status.HTTP_200_OK
-                assert response.headers["content-type"] == "application/json"
-                data = response.json()
-                assert "status" in data
-                assert "message" in data
-                # Should contain login-related content
-                assert "login" in data["message"].lower() or "authenticate" in data["message"].lower()
+            # Check that it's a redirect response
+            assert response.status_code == status.HTTP_303_SEE_OTHER
+            # Redirect response
+            assert response.headers["location"] == "/"
 
     @pytest.mark.asyncio
     async def test_profile_endpoint_authenticated_user_with_profile(self, client: TestClient) -> None:
         """Test profile endpoint for authenticated user with completed profile."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.check_user_onboarding_complete to return True
@@ -580,10 +577,10 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_profile_endpoint_authenticated_user_without_profile(self, client: TestClient) -> None:
         """Test profile endpoint for authenticated user without completed profile."""
-        # Mock the get_optional_user dependency to return a user
+        # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
             # Mock the auth_service.check_user_onboarding_complete to return False
@@ -612,7 +609,7 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_profile_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test profile endpoint for non-authenticated user."""
-        with patch("faster.core.auth.routers.get_optional_user", new_callable=AsyncMock) as mock_get_user:
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
             # Make a request to the endpoint
