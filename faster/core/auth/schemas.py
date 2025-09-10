@@ -165,3 +165,21 @@ class UserProfile(MyBase, table=True):
         },
         description="Profile update timestamp",
     )
+
+
+class UserRole(MyBase, table=True):
+    """
+    User role table to store user-role relationships.
+    One user can have many roles.
+    """
+
+    __tablename__ = "AUTH_USER_ROLE"
+    __table_args__ = (
+        UniqueConstraint("C_USER_AUTH_ID", "C_ROLE", name="uk_user_role_user_role"),
+        Index("idx_user_role_user_auth_id", "C_USER_AUTH_ID"),
+        Index("idx_user_role_role", "C_ROLE"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_auth_id: str = Field(max_length=64, sa_column_kwargs={"name": "C_USER_AUTH_ID"}, description="User auth ID")
+    role: str = Field(max_length=32, sa_column_kwargs={"name": "C_ROLE"}, description="User role")
