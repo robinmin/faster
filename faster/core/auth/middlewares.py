@@ -57,7 +57,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Only check prefixes if needed - O(n) but typically small n
         return any(path.startswith(prefix) for prefix in self._prefix_allowed_paths)
 
-
     def _handle_allowed_path(self, request: Request, current_path: str) -> bool:
         """Handle allowed paths in debug mode."""
         if self._is_allowed_path(current_path):
@@ -87,16 +86,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if user_id:
             # Successfully authenticated - get full user profile
             try:
-                user_profile = await self._auth_service.get_user_by_id(user_id)
+                user_profile = await self._auth_service.get_user_by_id(user_id, from_cache=True)
                 if user_profile:
                     # User profile is already UserProfileData, no conversion needed
                     request.state.user = user_profile
                     request.state.authenticated = True
                     # TODO: for test purpose to assign role, should be fix after debugging
-                    # request.state.roles = await self._auth_service.get_roles_by_user_id(user_id)
-                    request.state.roles = ['developer']
-                    logger.debug(f"[auth] Successfully authenticated user: {user_id}")
+                    # request.state.roles = set(await self._auth_service.get_roles(user_id))
+                    request.state.roles = set("developer")
+
+                    # logger.debug(f"[auth] Successfully authenticated user: {user_id}")
                     return
+
                 # Token valid but user not found - treat as authentication failure
                 logger.warning(f"[auth] Valid token but user profile not found: {user_id}")
             except Exception as e:
@@ -109,7 +110,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.authenticated = False
         logger.info(f"[auth] Authentication failed for endpoint: {current_path}")
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponseDict: # noqa: PLR0911
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponseDict:  # noqa: PLR0911
         """
         The core of the authentication middleware,to process authentication for incoming requests. The basic logic is
         to extract token from request, authenticate it and set user profile in request state.
@@ -140,7 +141,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
 
             # 4. Authenticate request and get user profile
-            # user_id = await self._authenticate_user(request)
             token = extract_bearer_token_from_request(request)
             if not token or await blacklist_exists(token):
                 return AppResponseDict(
@@ -178,6 +178,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
 
 async def get_current_user(request: Request) -> UserProfileData | None:
     """Dependency to get current authenticated user."""
