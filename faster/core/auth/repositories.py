@@ -9,7 +9,7 @@ from sqlmodel import select
 from ..database import BaseRepository, DatabaseManager, DBSession
 from ..exceptions import DBError
 from .models import UserProfileData
-from .schemas import User, UserMetadata, UserProfile
+from .schemas import User, UserMetadata, UserProfile, UserRole
 
 ###############################################################################
 
@@ -482,3 +482,90 @@ class AuthRepository(BaseRepository):
                 auth_updated_at=user_profile.updated_at,
             )
             session.add(new_user)
+
+    async def get_roles(self, user_id: str) -> list[str]:
+        """
+        Get all roles assigned to a user.
+
+        Args:
+            user_id: User's authentication ID
+
+        Returns:
+            List of role strings assigned to the user
+
+        Raises:
+            ValueError: If user_id is empty
+            DBError: If database query fails
+
+        Example:
+            >>> repo = AuthRepository()
+            >>> roles = await repo.get_roles("user123")
+            >>> print(roles)  # ['admin', 'user']
+        """
+        if not user_id or not user_id.strip():
+            raise ValueError("User ID cannot be empty")
+
+        try:
+            async with self.session(readonly=True) as session:
+                query = select(UserRole.role).where(UserRole.user_auth_id == user_id, UserRole.in_used == 1)
+                result = await session.exec(query)
+                roles = result.all()
+
+                return list(roles) if roles else []
+        except Exception as e:
+            logger.error(f"Failed to get roles for user {user_id}: {e}")
+            raise DBError(f"Failed to get roles for user {user_id}: {e}") from e
+
+    async def set_roles(self, user_id: str, roles: list[str]) -> bool:
+        """
+        Set roles for a user using soft delete pattern.
+
+        First marks all existing role assignments as inactive (in_used=0),
+        then creates new role assignments with the provided roles.
+
+        Args:
+            user_id: User's authentication ID
+            roles: List of role strings to assign to the user
+
+        Returns:
+            True if successful
+
+        Raises:
+            ValueError: If user_id is empty or roles is None
+            DBError: If database operation fails
+
+        Example:
+            >>> repo = AuthRepository()
+            >>> success = await repo.set_roles("user123", ["admin", "user"])
+            >>> print(success)  # True
+        """
+        if not user_id or not user_id.strip() or len(roles) <= 0:
+            logger.error("User ID cannot be empty")
+            return False
+
+        try:
+            async with self.transaction() as session:
+                # Soft delete existing role assignments
+                _ = await self.soft_delete(
+                    self.table_name(UserRole),
+                    {"C_USER_AUTH_ID": user_id},
+                    session,
+                )
+
+                # Create new role assignments
+                if roles:
+                    role_records = [
+                        UserRole(
+                            user_auth_id=user_id,
+                            role=role,
+                        )
+                        for role in roles
+                    ]
+                    session.add_all(role_records)
+
+                await session.flush()
+                logger.info(f"Successfully set roles for user {user_id}: {roles}")
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set roles for user {user_id}: {e}")
+            raise DBError(f"Failed to set roles for user {user_id}: {e}") from e
