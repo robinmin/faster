@@ -1,10 +1,12 @@
 from datetime import datetime
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Request, status
 from fastapi.testclient import TestClient
 import pytest
 
+from faster.core.auth.middlewares import get_current_user
 from faster.core.auth.models import UserProfileData
 from faster.core.auth.routers import router
 
@@ -22,7 +24,10 @@ class TestAuthRouters:
     @pytest.fixture
     def client(self, app: FastAPI) -> TestClient:
         """Create a test client."""
-        return TestClient(app, follow_redirects=False)
+        client = TestClient(app, follow_redirects=False)
+        # Ensure mypy knows client.app is the FastAPI app
+        assert isinstance(client.app, FastAPI)
+        return client
 
     def create_mock_user(self) -> UserProfileData:
         """Create a mock user profile."""
@@ -45,6 +50,12 @@ class TestAuthRouters:
         """Test login endpoint for authenticated user with completed profile."""
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
@@ -84,6 +95,12 @@ class TestAuthRouters:
         """Test login endpoint for authenticated user without completed profile."""
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
@@ -126,6 +143,13 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_login_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test login endpoint for non-authenticated user."""
+
+        # Override the app's dependency to return None (no authenticated user)
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return None
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
@@ -156,6 +180,12 @@ class TestAuthRouters:
         """Test login endpoint with Supabase code parameter."""
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
@@ -201,6 +231,12 @@ class TestAuthRouters:
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
@@ -243,6 +279,12 @@ class TestAuthRouters:
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
@@ -273,6 +315,13 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_logout_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test logout endpoint for non-authenticated user."""
+
+        # Override the app's dependency to return None (no authenticated user)
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return None
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
@@ -306,6 +355,12 @@ class TestAuthRouters:
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
@@ -335,6 +390,12 @@ class TestAuthRouters:
         """Test onboarding endpoint for authenticated user with completed profile."""
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
@@ -373,6 +434,12 @@ class TestAuthRouters:
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
@@ -404,6 +471,13 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_onboarding_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test onboarding endpoint for non-authenticated user."""
+
+        # Override the app's dependency to return None (no authenticated user)
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return None
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
@@ -432,6 +506,13 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_onboarding_endpoint_api_call_non_authenticated(self, client: TestClient) -> None:
         """Test onboarding endpoint for API calls from non-authenticated users."""
+
+        # Override the app's dependency to return None (no authenticated user)
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return None
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
@@ -461,6 +542,12 @@ class TestAuthRouters:
         """Test dashboard endpoint for authenticated user with completed profile."""
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
@@ -496,6 +583,12 @@ class TestAuthRouters:
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
@@ -525,6 +618,13 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_dashboard_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test dashboard endpoint for non-authenticated user."""
+
+        # Override the app's dependency to return None (no authenticated user)
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return None
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
@@ -541,6 +641,12 @@ class TestAuthRouters:
         """Test profile endpoint for authenticated user with completed profile."""
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
@@ -580,6 +686,12 @@ class TestAuthRouters:
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
@@ -609,6 +721,13 @@ class TestAuthRouters:
     @pytest.mark.asyncio
     async def test_profile_endpoint_non_authenticated_user(self, client: TestClient) -> None:
         """Test profile endpoint for non-authenticated user."""
+
+        # Override the app's dependency to return None (no authenticated user)
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return None
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
