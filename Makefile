@@ -30,6 +30,7 @@ ifndef m
 	$(error m is not set, e.g. make db-migrate m="create users table")
 endif
 	uv run alembic revision --autogenerate -m "$(m)"
+	@find migrations/versions -type f -name "*.py" -exec sed -i '' -e 's/sqlmodel\.sql\.sqltypes\.AutoString/sa.String/g' {} +
 
 db-upgrade: ## Apply all database migrations
 	uv run alembic upgrade head
