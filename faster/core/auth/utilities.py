@@ -39,7 +39,7 @@ def _validate_bearer_scheme(authorization: str) -> str | None:
     return token
 
 
-def _validate_jwt_structure(token: str | None) -> bool: # type: ignore[reportUnusedFunction, unused-ignore]
+def _validate_jwt_structure(token: str | None) -> bool:  # type: ignore[reportUnusedFunction, unused-ignore]
     """Validate JWT token structure and format."""
     if not token:
         return False
@@ -155,7 +155,7 @@ def extract_token_from_multiple_sources(request: Request | None) -> str | None:
     return None
 
 
-def _is_valid_jwt_format(token: str) -> bool: # type: ignore[reportUnusedFunction, unused-ignore]
+def _is_valid_jwt_format(token: str) -> bool:  # type: ignore[reportUnusedFunction, unused-ignore]
     """
     Quick JWT format validation without cryptographic verification.
 
