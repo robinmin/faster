@@ -14,12 +14,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
 
     <!-- Alpine.js -->
     <script
-      defer
       src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"
+      defer
     ></script>
 
     <!-- Supabase JS -->
@@ -56,7 +56,14 @@
     </style>
   </head>
 
-  <body class="bg-base-100 min-h-screen" x-data="devAdmin" x-init="init()">
+  <body class="bg-base-100 min-h-screen" x-data="devAdmin">
+    <!--
+       DEBUGGING: If the app is stuck on loading, check:
+       1. Browser console for detailed logs
+       2. Network tab for /dev/settings request
+       3. Server logs for backend errors
+       4. Try: curl http://localhost:8000/dev/settings (adjust port as needed)
+     -->
     <!-- Toast Container -->
     <div class="toast toast-end z-50" x-show="toast.show" x-transition>
       <div class="alert" :class="toast.class">
@@ -273,14 +280,7 @@
 
       <!-- Main Content Area -->
       <div class="container mx-auto p-4">
-        <div
-          id="main-content"
-          class="fade-in"
-          hx-get="/auth/dashboard"
-          hx-trigger="load once"
-          hx-target="this"
-          hx-swap="innerHTML"
-        >
+        <div id="main-content" class="fade-in">
           <!-- Default Dashboard Content -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <!-- Welcome Card -->
@@ -427,13 +427,11 @@
     <script>
       document.addEventListener("alpine:init", () => {
         Alpine.data("devAdmin", () => ({
-          // 状态管理
           currentView: "loading",
           loadingMessage: "Initializing...",
           configLoaded: false,
           authLoading: false,
 
-          // 配置信息
           config: {
             supabaseUrl: "",
             supabaseKey: "",
@@ -443,7 +441,6 @@
             sentryEnabled: true
           },
 
-          // 认证状态
           auth: {
             email: "",
             password: "",
@@ -451,11 +448,9 @@
             errors: {}
           },
 
-          // 用户信息
           user: null,
           supabase: null,
 
-          // UI 状态
           darkMode: false,
           toast: {
             show: false,
@@ -464,19 +459,23 @@
             icon: "info"
           },
 
-          // 初始化
           async init() {
             console.log("Initializing Dev Admin Dashboard...");
+            console.log("Page URL:", window.location.href);
+            console.log("User Agent:", navigator.userAgent);
 
             try {
               this.initTheme();
               await this.$nextTick();
-              lucide.createIcons();
 
-              // 开始配置加载循环
-              this.startConfigLoading();
+              if (typeof lucide !== "undefined" && lucide.createIcons) {
+                lucide.createIcons();
+              }
+
+              await this.loadInitialData();
             } catch (error) {
               console.error("Failed to initialize:", error);
+              console.error("Error stack:", error.stack);
               this.showToast(
                 "Initialization failed: " + error.message,
                 "error"
@@ -485,33 +484,51 @@
             }
           },
 
-          // 配置加载循环 - 唯一的定时器
-          startConfigLoading() {
-            this.loadingMessage = "Loading configuration...";
+          async loadInitialData() {
+            try {
+              await this.loadConfig();
 
-            const configInterval = setInterval(async () => {
-              try {
-                console.log("Attempting to load configuration...");
-                await this.loadConfig();
-
-                if (this.configLoaded) {
-                  console.log("Configuration loaded successfully");
-                  clearInterval(configInterval);
-                  await this.initializeApp();
-                }
-              } catch (error) {
-                console.log(
-                  "Config loading failed, retrying...",
-                  error.message
-                );
-                // 继续重试，不中断循环
+              if (this.configLoaded) {
+                await this.initializeApp();
+              } else {
+                throw new Error("Configuration not loaded");
               }
-            }, 2000);
+            } catch (error) {
+              console.error("Config loading failed:", error.message);
+
+              // Fallback: Continue with default config
+              console.log("Using fallback configuration...");
+              this.configLoaded = true;
+              this.config = {
+                supabaseUrl: null,
+                supabaseKey: null,
+                backendUrl: "",
+                sentryDsn: "",
+                sentryEnvironment: "development",
+                sentryEnabled: false
+              };
+
+              this.showToast("Using default configuration", "warning");
+              await this.initializeApp();
+            }
           },
 
-          // 加载配置
           async loadConfig() {
             try {
+              console.log("Attempting to load config from /dev/settings...");
+              console.log("Current URL:", window.location.href);
+
+              // Test basic server connectivity first
+              try {
+                const testResponse = await fetch("/", { method: "HEAD" });
+                console.log("Server connectivity test:", testResponse.status);
+              } catch (connectError) {
+                console.warn(
+                  "Server connectivity test failed:",
+                  connectError.message
+                );
+              }
+
               const response = await fetch("/dev/settings", {
                 method: "GET",
                 headers: {
@@ -520,53 +537,72 @@
                 }
               });
 
+              console.log("Response status:", response.status);
+              console.log("Response ok:", response.ok);
+
               if (!response.ok) {
+                console.error(
+                  "Bad response:",
+                  response.status,
+                  response.statusText
+                );
                 throw new Error(
                   `HTTP ${response.status}: ${response.statusText}`
                 );
               }
 
               const data = await response.json();
+              console.log("Raw response data:", data);
 
               if (data && data.data) {
                 this.config = { ...this.config, ...data.data };
                 this.configLoaded = true;
-                console.log("Configuration loaded:", this.config);
+                console.log("Configuration loaded successfully:", this.config);
               } else {
+                console.error("Invalid response format - missing data field");
                 throw new Error("Invalid configuration response format");
               }
             } catch (error) {
               console.error("Failed to load configuration:", error);
+              console.error("Error type:", error.constructor.name);
+              console.error("Error message:", error.message);
+              this.configLoaded = false;
               throw error;
             }
           },
 
-          // 初始化应用
           async initializeApp() {
-            console.log("Initializing application with loaded config...");
+            if (!this.configLoaded) {
+              throw new Error("Cannot initialize app without configuration");
+            }
+
             this.loadingMessage = "Setting up services...";
 
             try {
-              // 初始化 Sentry
+              // Initialize Sentry
               if (this.config.sentryEnabled && this.config.sentryDsn) {
                 this.initSentry();
               }
 
-              // 初始化 Supabase
+              // Initialize Supabase
               if (this.config.supabaseUrl && this.config.supabaseKey) {
-                this.initSupabase();
-                await this.checkSession();
+                const supabaseInitialized = this.initSupabase();
+                if (supabaseInitialized) {
+                  await this.checkSession();
+                } else {
+                  this.currentView = "auth";
+                  return;
+                }
               } else {
-                console.warn("Supabase credentials not available");
-                this.showToast(
-                  "Supabase credentials not configured",
-                  "warning"
-                );
+                this.showToast("Supabase not configured", "warning");
                 this.currentView = "auth";
+                return;
               }
 
-              // 设置 HTMX 配置
+              // Setup HTMX
               this.setupHTMX();
+
+              console.log("Application initialization completed");
             } catch (error) {
               console.error("App initialization failed:", error);
               this.showToast(
@@ -577,7 +613,6 @@
             }
           },
 
-          // 初始化 Supabase
           initSupabase() {
             try {
               this.supabase = supabase.createClient(
@@ -585,20 +620,13 @@
                 this.config.supabaseKey
               );
 
-              // 设置认证状态监听
               this.supabase.auth.onAuthStateChange((event, session) => {
-                console.log("Auth state changed:", event);
                 this.handleAuthStateChange(event, session);
               });
 
-              console.log("Supabase initialized successfully");
               return true;
             } catch (error) {
-              console.error("Supabase initialization failed:", error);
-              this.showToast(
-                "Supabase setup failed: " + error.message,
-                "error"
-              );
+              console.error("Supabase initialization failed:", error.message);
               return false;
             }
           },
@@ -625,10 +653,8 @@
 
           // 设置 HTMX
           setupHTMX() {
-            // 配置 HTMX 默认行为
-            htmx.config.defaultSwapStyle = "innerHTML";
-            htmx.config.requestClass = "loading";
-            htmx.config.timeout = 10000;
+            // HTMX configuration is now handled globally in DOMContentLoaded
+            // Only set up request headers here
 
             // 设置默认请求头
             document.body.addEventListener("htmx:configRequest", evt => {
@@ -649,17 +675,9 @@
               }
             });
 
-            // 请求完成后重新创建图标
-            document.body.addEventListener("htmx:afterRequest", () => {
-              this.$nextTick(() => {
-                lucide.createIcons();
-              });
-            });
-
-            console.log("HTMX configured");
+            console.log("HTMX request headers configured");
           },
 
-          // 检查会话
           async checkSession() {
             if (!this.supabase) {
               this.currentView = "auth";
@@ -667,7 +685,6 @@
             }
 
             try {
-              console.log("Checking existing session...");
               const {
                 data: { session },
                 error
@@ -676,18 +693,15 @@
               if (error) throw error;
 
               if (session && session.user) {
-                console.log("Active session found:", session.user.email);
                 this.user = session.user;
                 this.currentView = "app";
-
-                // 通知后端用户登录
                 this.notifyBackendLogin();
+                this.loadDashboard();
               } else {
-                console.log("No active session found");
                 this.currentView = "auth";
               }
             } catch (error) {
-              console.error("Session check failed:", error);
+              console.error("Session check failed:", error.message);
               this.showToast("Session check failed: " + error.message, "error");
               this.currentView = "auth";
             }
@@ -704,6 +718,7 @@
               this.currentView = "app";
               this.showToast("Login successful!", "success");
               this.notifyBackendLogin();
+              this.loadDashboard();
             } else if (event === "SIGNED_OUT") {
               console.log("User signed out via auth state change");
               this.user = null;
@@ -799,6 +814,7 @@
               this.showToast("Login successful!", "success");
               this.clearAuthForm();
               this.notifyBackendLogin();
+              this.loadDashboard();
             } catch (error) {
               console.error("Email login failed:", error);
               this.showToast("Login failed: " + error.message, "error");
@@ -849,6 +865,29 @@
             }
           },
 
+          // 加载仪表板内容
+          loadDashboard() {
+            console.log("Loading dashboard content...");
+            // 使用 HTMX 加载仪表板内容
+            htmx
+              .ajax("GET", "/auth/dashboard", {
+                target: "#main-content",
+                swap: "innerHTML"
+              })
+              .then(() => {
+                console.log("Dashboard loaded successfully");
+                this.$nextTick(() => {
+                  if (typeof lucide !== "undefined" && lucide.createIcons) {
+                    lucide.createIcons();
+                  }
+                });
+              })
+              .catch(error => {
+                console.error("Failed to load dashboard:", error);
+                this.showToast("Failed to load dashboard", "error");
+              });
+          },
+
           // 页面加载
           loadPage(page) {
             console.log("Loading page:", page);
@@ -873,7 +912,9 @@
               .then(() => {
                 console.log("Page loaded successfully:", page);
                 this.$nextTick(() => {
-                  lucide.createIcons();
+                  if (typeof lucide !== "undefined" && lucide.createIcons) {
+                    lucide.createIcons();
+                  }
                 });
               })
               .catch(error => {
@@ -882,12 +923,17 @@
               });
           },
 
-          // 后端通知
+          // 后端通知 - only called after config is loaded
           async notifyBackendLogin() {
-            if (!this.config.backendUrl) return;
+            if (!this.configLoaded || !this.config.backendUrl) {
+              console.log(
+                "Backend URL not configured or config not loaded, skipping login notification"
+              );
+              return;
+            }
 
             try {
-              await this.apiCall("/auth/login", "POST");
+              await this.apiCall("/auth/login", "GET");
               console.log("Backend notified of login");
             } catch (error) {
               console.warn("Failed to notify backend of login:", error);
@@ -895,18 +941,29 @@
           },
 
           async notifyBackendLogout() {
-            if (!this.config.backendUrl) return;
+            if (!this.configLoaded || !this.config.backendUrl) {
+              console.log(
+                "Backend URL not configured or config not loaded, skipping logout notification"
+              );
+              return;
+            }
 
             try {
-              await this.apiCall("/auth/logout", "POST");
+              await this.apiCall("/auth/logout", "GET");
               console.log("Backend notified of logout");
             } catch (error) {
               console.warn("Failed to notify backend of logout:", error);
             }
           },
 
-          // API 调用辅助方法
+          // API 调用辅助方法 - only works after config is loaded
           async apiCall(endpoint, method = "GET", body = null) {
+            if (!this.configLoaded) {
+              throw new Error(
+                "Configuration not loaded - cannot make API calls"
+              );
+            }
+
             if (!this.config.backendUrl) {
               throw new Error("Backend URL not configured");
             }
@@ -939,6 +996,9 @@
               options.body = JSON.stringify(body);
             }
 
+            console.log(
+              `Making API call: ${method} ${this.config.backendUrl}${endpoint}`
+            );
             const response = await fetch(
               `${this.config.backendUrl}${endpoint}`,
               options
@@ -972,7 +1032,9 @@
             };
 
             this.$nextTick(() => {
-              lucide.createIcons();
+              if (typeof lucide !== "undefined" && lucide.createIcons) {
+                lucide.createIcons();
+              }
             });
 
             // 自动隐藏
@@ -985,7 +1047,9 @@
             this.auth.isSignUp = !this.auth.isSignUp;
             this.clearAuthErrors();
             this.$nextTick(() => {
-              lucide.createIcons();
+              if (typeof lucide !== "undefined" && lucide.createIcons) {
+                lucide.createIcons();
+              }
             });
           },
 
@@ -1034,41 +1098,25 @@
         }));
       });
 
-      // HTMX 事件监听
+      console.log("Alpine initialized with devAdmin component");
+
+      // HTMX Configuration
       document.addEventListener("DOMContentLoaded", () => {
-        // HTMX 全局配置
         htmx.config.defaultSwapStyle = "innerHTML";
         htmx.config.requestClass = "loading";
         htmx.config.timeout = 10000;
 
-        // HTMX 错误处理
+        // Simple HTMX error handling
         document.body.addEventListener("htmx:responseError", evt => {
           console.error("HTMX response error:", evt.detail);
-          const alpineData = Alpine.$data(document.body);
-          if (alpineData && alpineData.showToast) {
-            alpineData.showToast(
-              "Request failed: " + evt.detail.xhr.statusText,
-              "error"
-            );
-          }
         });
 
-        document.body.addEventListener("htmx:timeout", evt => {
-          console.error("HTMX timeout:", evt.detail);
-          const alpineData = Alpine.$data(document.body);
-          if (alpineData && alpineData.showToast) {
-            alpineData.showToast("Request timeout", "error");
-          }
-        });
-
-        // 请求完成后重新创建图标
+        // Re-create icons after HTMX requests
         document.body.addEventListener("htmx:afterRequest", () => {
-          setTimeout(() => {
+          if (typeof lucide !== "undefined" && lucide.createIcons) {
             lucide.createIcons();
-          }, 50);
+          }
         });
-
-        console.log("HTMX event listeners configured");
       });
 
       // 全局错误处理
