@@ -1,17 +1,20 @@
+import contextlib
 from datetime import datetime
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 import uuid
 
 import pytest
+import pytest_asyncio
+from sqlalchemy import delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
 from faster.core.auth.models import UserProfileData
 from faster.core.auth.repositories import AuthRepository
-from faster.core.auth.schemas import User, UserIdentity, UserProfile
+from faster.core.auth.schemas import User, UserIdentity, UserProfile, UserRole
 from faster.core.auth.schemas import UserMetadata as UserMetadataSchema
-from faster.core.database import DBSession
+from faster.core.database import DatabaseManager, DBSession
 from faster.core.exceptions import DBError
 
 logger = logging.getLogger(__name__)
@@ -20,10 +23,29 @@ logger = logging.getLogger(__name__)
 class TestAuthRepository:
     """Test AuthRepository class."""
 
+    @pytest_asyncio.fixture(autouse=True)
+    async def cleanup_tables(self, db_manager: DatabaseManager) -> None:
+        """Clean up all test data before each test to ensure test isolation."""
+        # Clean up data before each test
+
+        async with db_manager.get_transaction() as session:
+            # Delete all test data from auth tables
+            with contextlib.suppress(Exception):
+                _ = await session.execute(delete(User))  # type: ignore[unused-ignore]
+            with contextlib.suppress(Exception):
+                _ = await session.execute(delete(UserMetadataSchema))  # type: ignore[unused-ignore]
+            with contextlib.suppress(Exception):
+                _ = await session.execute(delete(UserIdentity))  # type: ignore[unused-ignore]
+            with contextlib.suppress(Exception):
+                _ = await session.execute(delete(UserProfile))  # type: ignore[unused-ignore]
+            with contextlib.suppress(Exception):
+                _ = await session.execute(delete(UserRole))  # type: ignore[unused-ignore]
+            await session.commit()
+
     @pytest.fixture
-    def auth_repository(self) -> AuthRepository:
-        """Create AuthRepository instance."""
-        return AuthRepository()
+    def auth_repository(self, db_manager: DatabaseManager) -> AuthRepository:
+        """Create AuthRepository instance with real database manager."""
+        return AuthRepository(db_manager=db_manager)
 
     @pytest.fixture
     def mock_session(self) -> MagicMock:
