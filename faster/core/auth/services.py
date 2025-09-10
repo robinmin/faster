@@ -1,6 +1,6 @@
 from ..database import get_transaction
 from ..logger import get_logger
-from ..redisex import blacklist_add, blacklist_delete, tag2role_get, user2role_get
+from ..redisex import blacklist_add, blacklist_delete, tag2role_get, user2role_get, user2role_set
 from .auth_proxy import AuthProxy
 from .models import UserProfileData
 from .repositories import AuthRepository
@@ -91,15 +91,6 @@ class AuthService:
             logger.error(f"Failed to logout user {user_id}: {e}")
             raise
 
-    async def get_roles_by_user_id(self, user_id: str) -> set[str]:
-        """
-        Return set of roles for a given user.
-        """
-        if not user_id:
-            return set()
-        roles = await user2role_get(user_id)
-        return set(roles or [])
-
     async def get_roles_by_tags(self, tags: list[str]) -> set[str]:
         """
         Return set of roles for a given list of tags.
@@ -115,7 +106,7 @@ class AuthService:
 
     async def check_access(self, user_id: str, tags: list[str]) -> bool:
         """Check if user has access to a given list of tags."""
-        user_roles = await self.get_roles_by_user_id(user_id)
+        user_roles = set(await self.get_roles(user_id))
         required_roles = await self.get_roles_by_tags(tags)
 
         # If endpoint has required roles, ensure intersection exists
@@ -184,3 +175,70 @@ class AuthService:
         """Get user from database by Supabase auth ID."""
         async with await get_transaction(readonly=True) as session:
             return await self._repository.get_user_by_auth_id(session, auth_id)
+
+    async def get_roles(self, user_id: str, from_cache: bool = True) -> list[str]:
+        """
+        Get user roles from cache or database.
+
+        Args:
+            user_id: User's authentication ID
+            from_cache: Whether to check cache first (default: True)
+
+        Returns:
+            List of role strings assigned to the user
+        """
+        # Try to get from cache first if requested
+        if from_cache:
+            cached_roles = await user2role_get(user_id)
+            if cached_roles:
+                # logger.debug(f"Retrieved roles from cache for user {user_id}: {cached_roles}")
+                return cached_roles
+
+        # Get from database if cache miss or cache disabled
+        try:
+            db_roles = await self._repository.get_roles(user_id)
+            # logger.debug(f"Retrieved roles from database for user {user_id}: {db_roles}")
+
+            # Update cache with database results for future requests
+            if from_cache and db_roles:
+                _ = await user2role_set(user_id, db_roles)
+                # logger.debug(f"Updated cache with database roles for user {user_id}")
+
+            return db_roles
+        except Exception as e:
+            logger.error(f"Failed to get roles for user {user_id}: {e}")
+        return []
+
+    async def set_roles(self, user_id: str, roles: list[str], to_cache: bool = True) -> bool:
+        """
+        Set user roles in database and optionally update cache.
+
+        Args:
+            user_id: User's authentication ID
+            roles: List of role strings to assign to the user
+            to_cache: Whether to update cache after database update (default: True)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not user_id or not user_id.strip() or len(roles) <= 0:
+            logger.error("Cannot set roles: user_id is empty")
+            return False
+
+        try:
+            # Set roles in database
+            db_success = await self._repository.set_roles(user_id, roles)
+            if not db_success:
+                logger.error(f"Failed to set roles in database for user {user_id}")
+                return False
+
+            # Update cache if requested
+            if to_cache:
+                cache_success = await user2role_set(user_id, roles)
+                if not cache_success:
+                    logger.warning(f"Failed to update cache for user {user_id}")
+
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set roles for user {user_id}: {e}")
+        return False
