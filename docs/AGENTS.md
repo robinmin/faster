@@ -15,7 +15,19 @@ Faster is a comprehensive web framework that provides a solid foundation for bui
 - **Deployment Ready**: Production-ready server configuration
 
 ## Core Tasks
-This project uses 'make' tool for managing tasks and workflows. It provides the task list via command `make help`.
+This project uses 'make' tool for managing tasks and workflows. Prefer to use the following command first:
+```bash
+make autofix                        # Automatically fix linting errors
+make clean                          # Clean up build artifacts and cached files
+make db-downgrade                   # Downgrade database by one revision
+make db-migrate                     # Create a new database migration (e.g., make db-migrate m="create users table")
+make db-upgrade                     # Apply all database migrations
+make db-version                     # Show the current database revision
+make lint                           # Lint the code
+make lock                           # Update the lock file
+make run                            # Run the FastAPI application
+make test                           # Run tests
+```
 
 ## Project Coding Rules & Principles
 
