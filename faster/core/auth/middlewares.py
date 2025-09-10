@@ -1,18 +1,18 @@
 from typing import cast
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request, status
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
-from ..exceptions import AuthError
 from ..logger import get_logger
 from ..models import AppResponseDict
 from ..redisex import blacklist_exists
 from ..utilities import get_current_endpoint
-from .models import AuthUser, UserProfileData
+from .models import UserProfileData
 from .services import AuthService
+from .utilities import extract_bearer_token_from_request
 
 logger = get_logger(__name__)
 
@@ -57,30 +57,59 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Only check prefixes if needed - O(n) but typically small n
         return any(path.startswith(prefix) for prefix in self._prefix_allowed_paths)
 
-    async def _extract_token_from_request(self, request: Request) -> str | None:
-        """Extract Bearer token from request headers."""
-        authorization = request.headers.get("Authorization", "")
 
-        if authorization.startswith("Bearer "):
-            return authorization.split(" ", 1)[1]
+    def _handle_allowed_path(self, request: Request, current_path: str) -> bool:
+        """Handle allowed paths in debug mode."""
+        if self._is_allowed_path(current_path):
+            request.state.user = None
+            request.state.authenticated = False
+            logger.debug(f"[auth] Allowed path: {current_path}")
+            return True
+        return False
 
-        return None
-
-    async def _authenticate_request(self, request: Request) -> UserProfileData | None:
-        """Authenticate the request and return user profile if valid."""
-        token = await self._extract_token_from_request(request)
-
-        if not token:
+    def _get_endpoint_tags(self, request: Request, current_path: str) -> list[str] | None:
+        """Get endpoint tags or return None if endpoint not found."""
+        current_endpoint = get_current_endpoint(request, request.app.state.endpoints)
+        if not current_endpoint or "tags" not in current_endpoint:
+            logger.error(f"[auth] Not Found - 404: [{request.method.upper()}] {current_path}")
             return None
+        return list(current_endpoint["tags"])
 
-        try:
-            user_profile = await self._auth_service.authenticate_token(token)
-            return user_profile
-        except AuthError:
-            logger.warning("Authentication failed for token")
-            return None
+    def _is_public_endpoint(self, tags: list[str], current_path: str) -> bool:
+        """Check if endpoint is public."""
+        if "public" in tags:
+            logger.debug(f"[auth] Skipping public endpoint : {current_path}")
+            return True
+        return False
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponseDict:  # noqa: PLR0911
+    async def _set_request_state(self, request: Request, user_id: str | None, current_path: str) -> None:
+        """Set request state based on authentication result."""
+        if user_id:
+            # Successfully authenticated - get full user profile
+            try:
+                user_profile = await self._auth_service.get_user_by_id(user_id)
+                if user_profile:
+                    # User profile is already UserProfileData, no conversion needed
+                    request.state.user = user_profile
+                    request.state.authenticated = True
+                    # TODO: for test purpose to assign role, should be fix after debugging
+                    # request.state.roles = await self._auth_service.get_roles_by_user_id(user_id)
+                    request.state.roles = ['developer']
+                    logger.debug(f"[auth] Successfully authenticated user: {user_id}")
+                    return
+                # Token valid but user not found - treat as authentication failure
+                logger.warning(f"[auth] Valid token but user profile not found: {user_id}")
+            except Exception as e:
+                # Error fetching user profile - treat as authentication failure
+                logger.error(f"[auth] Error fetching user profile: {e}")
+
+        # Authentication failed or no token provided
+        request.state.user = None
+        request.state.roles = set()
+        request.state.authenticated = False
+        logger.info(f"[auth] Authentication failed for endpoint: {current_path}")
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponseDict: # noqa: PLR0911
         """
         The core of the authentication middleware,to process authentication for incoming requests. The basic logic is
         to extract token from request, authenticate it and set user profile in request state.
@@ -93,74 +122,52 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         current_path = request.url.path
         try:
-            # 1, Allow default paths in debug mode
-            if self._is_allowed_path(current_path):
-                request.state.user = None
-                request.state.authenticated = False
-                logger.debug(f"[auth] Allowed path: {current_path}")
+            # 1. Handle allowed paths in debug mode
+            if self._handle_allowed_path(request, current_path):
                 return await call_next(request)
 
-            # 2, Find endpoints and tags
-            current_endpoint = get_current_endpoint(request, request.app.state.endpoints)
-            if not current_endpoint or "tags" not in current_endpoint:
-                logger.error(f"[auth] Not Found - 404: {current_path}")
+            # 2. Get endpoint tags
+            tags = self._get_endpoint_tags(request, current_path)
+            if tags is None:
                 return AppResponseDict(
                     status="http error",
                     message="Not Found",
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
-            tags = current_endpoint["tags"]
 
-            # 3, Skip public endpoints
-            if "public" in tags:
-                logger.debug(f"[auth] Skipping public endpoint : {current_path}")
+            # 3. Skip public endpoints
+            if self._is_public_endpoint(tags, current_path):
                 return await call_next(request)
 
-            # 4, Check current token is in black list or not.
-            # When user login, token will be removed from blacklist, and when user logout, token will be added to blacklist
-            # This will avoid to validate token on every request to accelerate the response time
-            token = await self._extract_token_from_request(request)
-            if token and await blacklist_exists(token):
-                logger.error(f"[auth] Blacklisted token: {current_path}")
+            # 4. Authenticate request and get user profile
+            # user_id = await self._authenticate_user(request)
+            token = extract_bearer_token_from_request(request)
+            if not token or await blacklist_exists(token):
                 return AppResponseDict(
                     status="http error",
-                    message="already logged out",
+                    message="Invalid token or already logged out",
                     status_code=status.HTTP_401_UNAUTHORIZED,
                 )
 
-            # 5, Attempt to authenticate the request
-            user_id = ""
-            user_profile = await self._authenticate_request(request)
-            if user_profile:
-                # Successfully authenticated
-                user_id = user_profile.id
-                request.state.user = user_profile
-                request.state.roles = await self._auth_service.get_roles_by_user_id(user_id)
-                request.state.authenticated = True
-            else:
-                # Authentication failed
-                request.state.user = None
-                request.state.roles = set()
-                request.state.authenticated = False
-                logger.info(f"[auth] Authentication failed for endpoint : {current_path}")
+            user_id = await self._auth_service.get_user_id_from_token(token)
+            await self._set_request_state(request, user_id, current_path)
 
-                # If authentication is required and failed, return 401
-                if self._require_auth:
-                    return AppResponseDict(
-                        status="http error",
-                        message="Authentication required",
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                    )
-
-            # 6, check if current user has the permission to access the endpoint or not
-            if not await self._auth_service.check_access(user_id, tags):
+            # 5. Check authentication and authorization
+            if not user_id and self._require_auth:
+                return AppResponseDict(
+                    status="http error",
+                    message="Authentication required",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                )
+            # 6. RBAC check
+            if user_id and not await self._auth_service.check_access(user_id, tags):
                 return AppResponseDict(
                     status="http error",
                     message="Permission denied",
                     status_code=status.HTTP_403_FORBIDDEN,
                 )
 
-            # 7, Continue to the next middleware/endpoint
+            # 7. Continue to the next middleware/endpoint
             response = await call_next(request)
             return response
         except Exception as exp:
@@ -172,9 +179,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+async def get_current_user(request: Request) -> UserProfileData | None:
+    """Dependency to get current authenticated user."""
+    if not hasattr(request.state, "authenticated") or not request.state.authenticated:
+        logger.error("Authentication required")
+        return None
 
-def get_auth_user(request: Request) -> AuthUser:
-    user = cast(AuthUser | None, getattr(request.state, "auth_user", None))
-    if not user:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
-    return user
+    return cast(UserProfileData, request.state.user)
