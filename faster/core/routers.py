@@ -42,7 +42,7 @@ async def settings(request: Request) -> AppResponseDict:
         data={
             "supabaseUrl": request.app.state.settings.supabase_url,
             "supabaseKey": request.app.state.settings.supabase_anon_key,
-            "backendUrl": f"http://{request.app.state.settings.host}:{request.app.state.settings.port}",
+            "backendUrl": request.url.scheme + '://' + request.url.netloc,
             "isSignUp": False,
             "sentryDsn": request.app.state.settings.sentry_client_dsn,
             "sentryEnvironment": request.app.state.settings.environment,
