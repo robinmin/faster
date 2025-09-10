@@ -44,24 +44,36 @@ async def blacklist_add(item: str, expire: int = CACHE_DURATION) -> bool:
     """
     Add an item to the blacklist.
     """
-    key = str(KeyPrefix.BLACKLIST_TOKEN)
-    if not await get_redis().sadd(key, item):
-        return False
-    return await get_redis().expire(key, expire)
+    try:
+        key = str(KeyPrefix.BLACKLIST_TOKEN)
+        if not await get_redis().sadd(key, item):
+            return False
+        return await get_redis().expire(key, expire)
+    except Exception as e:
+        logger.error(f"Failed to add item to blacklist: {e}")
+    return False
 
 
 async def blacklist_exists(item: str) -> bool:
     """
     Check if an item is blacklisted.
     """
-    return await get_redis().sismember(str(KeyPrefix.BLACKLIST_TOKEN), item)
+    try:
+        return await get_redis().sismember(str(KeyPrefix.BLACKLIST_TOKEN), item)
+    except Exception as e:
+        logger.error(f"Failed to check item in blacklist: {e}")
+    return False
 
 
 async def blacklist_delete(item: str) -> bool:
     """
     Remove an item from the blacklist.
     """
-    return await get_redis().srem(str(KeyPrefix.BLACKLIST_TOKEN), item) > 0
+    try:
+        return await get_redis().srem(str(KeyPrefix.BLACKLIST_TOKEN), item) > 0
+    except Exception as e:
+        logger.error(f"Failed to remove item from blacklist: {e}")
+    return False
 
 
 ###############################################################################
@@ -84,24 +96,35 @@ async def userinfo_set(user_id: str, user_data: str, expire: int = 300) -> bool:
 ###############################################################################
 
 
-async def user2role_get(user_id: str) -> list[str]:
+async def user2role_get(user_id: str, default: list[str] | None = None) -> list[str]:
     """
     Get user role from the database.
     """
-    roles = await get_redis().smembers(KeyPrefix.USER_ROLES.get_key(user_id))
-    return list(roles)
+    if default is None:
+        default = []
+    try:
+        roles = await get_redis().smembers(KeyPrefix.USER_ROLES.get_key(user_id))
+        return list(roles)
+    except Exception as e:
+        logger.error(f"Failed to get user role: {e}")
+    return default
 
 
 async def user2role_set(user_id: str, roles: list[str] | None = None) -> bool:
     """
     Set user role in the database.
     """
-    if roles is None:
-        result = await get_redis().delete(KeyPrefix.USER_ROLES.get_key(user_id))
-        return result > 0
+    try:
+        key = KeyPrefix.USER_ROLES.get_key(user_id)
+        result = await get_redis().delete(key)
 
-    result = await get_redis().sadd(KeyPrefix.USER_ROLES.get_key(user_id), *roles)
-    return result == len(roles)
+        if roles:
+            result = await get_redis().sadd(key, *roles)
+            return result == len(roles)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to set user role: {e}")
+    return False
 
 
 ###############################################################################
@@ -183,16 +206,23 @@ async def sysmap_set(category: str, mapping: dict[str, Any]) -> bool:
 async def set_user_profile(user_id: str, profile_json: str, ttl: int = 3600) -> bool:
     """Cache user profile data as JSON string."""
     # TODO: store user profile data in JSON format is not a good way to do it, use a more efficient data structure
-
-    return bool(await get_redis().set(KeyPrefix.USER_PROFILE.get_key(user_id), profile_json, ttl))
+    try:
+        return bool(await get_redis().set(KeyPrefix.USER_PROFILE.get_key(user_id), profile_json, ttl))
+    except Exception as e:
+        logger.error(f"Error when set user profile to [{user_id}] : {e}")
+    return False
 
 
 async def get_user_profile(user_id: str) -> str | None:
     """Retrieve cached user profile data as JSON string."""
     # TODO: store user profile data in JSON format is not a good way to do it, use a more efficient data structure
 
-    result = await get_redis().get(KeyPrefix.USER_PROFILE.get_key(user_id))
-    return cast(str | None, result)
+    try:
+        result = await get_redis().get(KeyPrefix.USER_PROFILE.get_key(user_id))
+        return cast(str | None, result)
+    except Exception as e:
+        logger.error(f"Error when get user profile from [{user_id}] : {e}")
+    return None
 
 
 ###############################################################################
@@ -200,12 +230,19 @@ async def get_user_profile(user_id: str) -> str | None:
 
 async def set_jwks_key(key_id: str, key_data: dict[str, Any], ttl: int = 3600) -> bool:
     """Cache JWKS key data."""
-    return bool(await get_redis().set(KeyPrefix.JWKS_KEY.get_key(key_id), json.dumps(key_data), ttl))
+    try:
+        return bool(await get_redis().set(KeyPrefix.JWKS_KEY.get_key(key_id), json.dumps(key_data), ttl))
+    except Exception as e:
+        logger.error(f"Error when setting JWKS key [{key_id}] : {e}")
+    return False
 
 
-async def get_jwks_key(key_id: str) -> dict[str, Any] | None:
+async def get_jwks_key(key_id: str, default: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Retrieve cached JWKS key data."""
-    data = await get_redis().get(KeyPrefix.JWKS_KEY.get_key(key_id))
-    if data:
-        return dict(json.loads(data))
-    return None
+    try:
+        data = await get_redis().get(KeyPrefix.JWKS_KEY.get_key(key_id))
+        if data:
+            return dict(json.loads(data))
+    except Exception as e:
+        logger.error(f"Error when getting JWKS key [{key_id}] : {e}")
+    return default
