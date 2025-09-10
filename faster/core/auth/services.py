@@ -1,6 +1,6 @@
 from ..database import get_transaction
 from ..logger import get_logger
-from ..redisex import blacklist_delete, tag2role_get, user2role_get
+from ..redisex import blacklist_add, blacklist_delete, tag2role_get, user2role_get
 from .auth_proxy import AuthProxy
 from .models import UserProfileData
 from .repositories import AuthRepository
@@ -48,14 +48,10 @@ class AuthService:
 
         self._repository = AuthRepository()
 
-    async def authenticate_token(self, token: str) -> UserProfileData:
-        """Authenticate JWT token and return user profile data."""
-        return await self._auth_client.authenticate_and_convert(token)
-
-    async def process_user_login(self, user_profile: UserProfileData) -> User:
+    async def process_user_login(self, token: str | None, user_profile: UserProfileData) -> User:
         """
         Process user login by:
-        1. Validating JWT token (already done in authenticate_token)
+        1. Validating JWT token
         2. Removing token from blacklist if it exists
         3. Saving/updating user profile in database
         4. Returning database user record
@@ -63,11 +59,8 @@ class AuthService:
         logger.info(f"Processing login for user: {user_profile.id}")
 
         # Remove token from blacklist (if it exists)
-        try:
-            _ = await blacklist_delete(user_profile.id)
-            logger.debug(f"Removed user {user_profile.id} from blacklist")
-        except Exception as e:
-            logger.warning(f"Failed to remove user {user_profile.id} from blacklist: {e}")
+        if token and not await blacklist_delete(token):
+            logger.warning(f"Failed to remove token {token} from blacklist")
 
         # Save user profile to database
         try:
@@ -78,12 +71,18 @@ class AuthService:
             logger.error(f"Failed to save user profile to database: {e}")
             raise
 
-    async def logout_user(self, user_id: str) -> None:
+    async def process_user_logout(self, token: str | None, user_profile: UserProfileData) -> None:
         """
         Logout user by adding their token to blacklist.
         Note: This would require the actual JWT token to blacklist it properly.
         For now, we'll implement basic logout logic.
         """
+
+        # Add token into blacklist
+        if token and not await blacklist_add(token):
+            logger.warning(f"Failed to add token {token} into blacklist")
+
+        user_id = user_profile.id
         try:
             # TODO: Implement proper token blacklisting
             # This would require accessing the actual JWT token
@@ -124,17 +123,6 @@ class AuthService:
             return not user_roles.isdisjoint(required_roles)
         return False  # no required roles → deny access
 
-    async def check_user_onboarding_complete(self, user_id: str) -> bool:
-        """
-        Check if a user has completed onboarding by checking if they have a profile.
-        """
-        return await self._repository.check_user_profile_exists(user_id)
-
-    async def get_user_by_auth_id(self, auth_id: str) -> User | None:
-        """Get user from database by Supabase auth ID."""
-        async with await get_transaction(readonly=True) as session:
-            return await self._repository.get_user_by_auth_id(session, auth_id)
-
     async def _save_user_profile_to_database(self, user_profile: UserProfileData) -> User:
         """Save complete user profile to database."""
         async with await get_transaction() as session:
@@ -164,18 +152,35 @@ class AuthService:
                     session, user_profile.id, "user", user_profile.user_metadata
                 )
 
-            # Save identities
-            if user_profile.identities:
-                await self._repository.create_or_update_user_identities(
-                    session, user_profile.id, user_profile.identities
-                )
+            # Identities are now handled as part of simplified UserProfileData model
 
             return user
 
-    async def _remove_token_from_blacklist(self, user_id: str) -> None:
-        """Remove user from blacklist."""
-        try:
-            _ = await blacklist_delete(user_id)
-            logger.debug(f"Removed user {user_id} from blacklist")
-        except Exception as e:
-            logger.warning(f"Failed to remove user {user_id} from blacklist: {e}")
+    ###########################################################################
+    # Proxy to enable external can call some methods defined in _auth_client
+    ###########################################################################
+    async def get_user_id_from_token(self, token: str) -> str | None:
+        """Get user ID from JWT token."""
+        return await self._auth_client.get_user_id_from_token(token)
+
+    async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> UserProfileData | None:
+        """Get user profile data by user ID."""
+        return await self._auth_client.get_user_by_id(user_id, from_cache)
+
+    async def get_user_by_token(self, token: str) -> UserProfileData | None:
+        """Authenticate JWT token and return user profile data."""
+        return await self._auth_client.get_user_by_token(token)
+
+    ###########################################################################
+    # Proxy to enable external can call some methods defined in _repository
+    ###########################################################################
+    async def check_user_onboarding_complete(self, user_id: str) -> bool:
+        """
+        Check if a user has completed onboarding by checking if they have a profile.
+        """
+        return await self._repository.check_user_profile_exists(user_id)
+
+    async def get_user_by_auth_id(self, auth_id: str) -> User | None:
+        """Get user from database by Supabase auth ID."""
+        async with await get_transaction(readonly=True) as session:
+            return await self._repository.get_user_by_auth_id(session, auth_id)
