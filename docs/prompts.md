@@ -491,3 +491,26 @@ It looks like current solution combinding so may sqlalchemy things with another 
 - In case you want to enhance @faster/core/database.py, you need to disscuss with me.
 
 - All generated code must pass linters check(including ruff, muypy and basedpyright).
+
+
+## Refactory auth_proxy
+
+#### Background
+As we already, refined these utilities(authenticate_request_and_get_user_id, extract_bearer_token_from_request, extract_token_from_multiple_sources, fetch_user_id_from_token), other parts will not bothered with JWT token and user id and etc. It time to review and enhance @faster/core/auth/auth_proxy.py.
+
+The orginal design purpose for this file is to provide a simple and consistent way for client users to access Supabase Auth as a proxy.
+
+#### Current issue
+- Still remining some unnecessary token related things here.
+- Chaotic and redeundent model defined in @faster/core/auth/models.py. We should go this way:
+- Chaotic and redeundent methods related to above models.
+#### Goal
+- Redefine models in @faster/core/auth/models.py:
+  - keep SupabaseUser but rename it as UserProfileData(which inhireted from supabase_auth.types.User) as the representative model for the full information of the user.
+  - remove current model definitions: UserProfileData, UserIdentityData, AppMetadata, UserMetadata, UserInfo
+- Redeine methods related to above models:
+  - get_user_by_id in @faster/core/auth/auth_proxy.py: load user profile information from Supabase Auth with new UserProfileData model.
+  - get_user_info in @faster/core/auth/repositories.py: load user profile information from local database with new UserProfileData model.
+  - set_user_info in @faster/core/auth/repositories.py: save user profile information to local database with new UserProfileData model.
+- All refined code must pass linters(ruff,mypy and basedpyright)
+- One code ready, we need to adjust unit test code, all pass with certain coverage rate
