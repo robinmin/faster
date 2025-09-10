@@ -1,6 +1,6 @@
 from enum import Enum
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import RedirectResponse
 
 from ..logger import get_logger
@@ -37,7 +37,9 @@ auth_service = AuthService(
 
 
 @router.get("/login", include_in_schema=False, response_model=None)
-async def login(request: Request) -> RedirectResponse | AppResponseDict:
+async def login(
+    request: Request, user: UserProfileData | None = Depends(get_current_user)
+) -> RedirectResponse | AppResponseDict:
     """
     Callback function after client user finished authentication.
 
@@ -52,8 +54,6 @@ async def login(request: Request) -> RedirectResponse | AppResponseDict:
     # Supabase will redirect with a 'code' in the query parameters
     code = request.query_params.get("code")
     logger.info(f"Received Supabase code: {code}")
-
-    user: UserProfileData | None = await get_current_user(request)
 
     resp_url = AuthURL.LOGIN.value
     reesp_msg = ""
@@ -100,11 +100,12 @@ async def login(request: Request) -> RedirectResponse | AppResponseDict:
 
 
 @router.get("/logout", include_in_schema=False, response_model=None)
-async def logout(request: Request) -> RedirectResponse | AppResponseDict:
+async def logout(
+    request: Request, user: UserProfileData | None = Depends(get_current_user)
+) -> RedirectResponse | AppResponseDict:
     """
     Default page for user logout
     """
-    user: UserProfileData | None = await get_current_user(request)
 
     resp_url = AuthURL.LOGIN.value
     reesp_msg = ""
@@ -179,7 +180,7 @@ async def dashboard(request: Request) -> RedirectResponse | AppResponseDict:
 
     if not user:
         # If user is not authenticated, redirect to login
-        return RedirectResponse(url='/', status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
     # Check if user has completed onboarding
     has_profile = await auth_service.check_user_onboarding_complete(user.id)
