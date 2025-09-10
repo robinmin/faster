@@ -79,23 +79,6 @@ async def blacklist_delete(item: str) -> bool:
 ###############################################################################
 
 
-async def userinfo_get(user_id: str) -> str | None:
-    """
-    Get user information from the database.
-    """
-    return str(await get_redis().get(KeyPrefix.USER_INFO.get_key(user_id)))
-
-
-async def userinfo_set(user_id: str, user_data: str, expire: int = 300) -> bool:
-    """
-    Set user information in the database.
-    """
-    return bool(await get_redis().set(KeyPrefix.USER_INFO.get_key(user_id), user_data, expire))
-
-
-###############################################################################
-
-
 async def user2role_get(user_id: str, default: list[str] | None = None) -> list[str]:
     """
     Get user role from the database.
