@@ -1,3 +1,5 @@
+import contextlib
+
 import pytest
 import pytest_asyncio
 from sqlmodel import delete
@@ -12,20 +14,22 @@ class TestAppRepository:
     """Test cases for AppRepository functionality."""
 
     @pytest_asyncio.fixture(autouse=True)
-    async def cleanup_tables(self, db_session: DBSession) -> None:  # type: ignore[reportPrivateUsage, unused-ignore]
+    async def cleanup_tables(self, db_manager: DatabaseManager) -> None:
         """Clean up all test data before each test to ensure test isolation."""
         # Clean up data before each test
-        manager = DatabaseManager.get_instance()
-        async with manager.get_transaction() as session:
+        async with db_manager.get_transaction() as session:
             # Delete all test data from the tables using SQLAlchemy delete statements
-            _ = await session.execute(delete(SysMap))  # mypy: ignore # pyright: ignore[reportDeprecated]
-            _ = await session.execute(delete(SysDict))  # mypy: ignore # pyright: ignore[reportDeprecated]
+            # Only delete if tables exist to avoid errors during initial setup
+            with contextlib.suppress(Exception):
+                _ = await session.execute(delete(SysMap))  # type: ignore[unused-ignore]
+            with contextlib.suppress(Exception):
+                _ = await session.execute(delete(SysDict))  # type: ignore[unused-ignore]
             await session.commit()
 
     @pytest.fixture
-    def app_repository(self, db_session: DBSession) -> AppRepository:  # type: ignore[reportPrivateUsage, unused-ignore]
+    def app_repository(self, db_manager: DatabaseManager) -> AppRepository:
         """Create AppRepository instance with real database manager."""
-        return AppRepository(db_manager=DatabaseManager.get_instance())
+        return AppRepository(db_manager=db_manager)
 
     async def test_get_sys_map_no_filters(self, app_repository: AppRepository, db_session: DBSession) -> None:
         """Test get_sys_map with no filters using real database."""
