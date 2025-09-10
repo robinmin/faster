@@ -79,7 +79,7 @@ class TestDevRouter:
         settings_data = data["data"]
         assert settings_data["supabaseUrl"] == "https://test.supabase.co"
         assert settings_data["supabaseKey"] == "test-anon-key"
-        assert settings_data["backendUrl"] == "http://127.0.0.1:8000"
+        assert settings_data["backendUrl"] == "http://testserver"
         assert settings_data["isSignUp"] is False
         assert settings_data["sentryDsn"] == "test-dsn"
         assert settings_data["sentryEnvironment"] == "test"
