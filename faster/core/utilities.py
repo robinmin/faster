@@ -169,8 +169,6 @@ async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     app.state.latest_status_info = {"db": db_health, "redis": redis_health, "sentry": sentry_health}
 
 
-
-
 ###############################################################################
 ##  Define all exception  handlers
 ###############################################################################
