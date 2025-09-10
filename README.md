@@ -263,3 +263,4 @@ make test
 ## Reference
 
 - [FastAPI with Async SQLAlchemy, SQLModel, and Alembic](https://testdriven.io/blog/fastapi-sqlmodel/)
+- [Migrating from Static JWT Secrets to JWKS in Supabase](https://objectgraph.com/blog/migrating-supabase-jwt-jwks/#:~:text=Migrating%20from%20Static%20JWT%20Secrets%20to%20JWKS,and%20performance%20benefits%2C%20but%20requires%20updating%20your)
