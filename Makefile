@@ -47,17 +47,10 @@ db-version: ## Show the current database revision
 # 	supabase stop
 
 clean: ## Clean up build artifacts and cached files
-	@rm -rf __pycache__ \
-		$(find . -depth -name "__pycache__") \
-		$(find . -depth -name "*.pyc") \
-		$(find . -depth -name "*.pyo") \
-		build \
-		logs/app.log \
-		.mypy_cache \
-		.mypy_cache \
-		.pytest_cache \
-		.ruff_cache \
-		.coverage
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -name "*.pyc" -delete 2>/dev/null || true
+	@find . -name "*.pyo" -delete 2>/dev/null || true
+	@rm -rf build logs .mypy_cache .pytest_cache .ruff_cache .coverage
 
 lock: ## Update the lock file
 	uv lock --upgrade
