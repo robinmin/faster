@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     supabase_anon_key: str | None = Field(default=None, description="Supabase anonymous key")
     supabase_service_key: str | None = Field(default=None, description="Supabase service key")
     supabase_jwks_url: str | None = Field(default=None, description="Supabase JWKs URL")
-    supabase_audience: str | None = Field(default=None, description="Supabase audience")
+    supabase_audience: str | None = Field(default="authenticated", description="Supabase audience")
     auto_refresh_jwks: bool = Field(default=True, description="Auto refresh JWKs from Supabase")
 
     # Stripe settings
