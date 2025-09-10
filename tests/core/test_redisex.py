@@ -16,8 +16,6 @@ from faster.core.redisex import (
     tag2role_set,
     user2role_get,
     user2role_set,
-    userinfo_get,
-    userinfo_set,
 )
 
 
@@ -92,49 +90,6 @@ class TestBlacklistFunctions:
 
             assert result is True
             mock_redis.srem.assert_called_once_with("blacklist:token", "test-item")
-
-
-class TestUserInfoFunctions:
-    """Test user info utility functions."""
-
-    @pytest.mark.asyncio
-    async def test_userinfo_get(self) -> None:
-        """Test getting user information."""
-        with patch("faster.core.redisex.get_redis") as mock_get_redis:
-            mock_redis = AsyncMock()
-            mock_get_redis.return_value = mock_redis
-            mock_redis.get.return_value = "user-data"
-
-            result = await userinfo_get("user-123")
-
-            assert result == "user-data"
-            mock_redis.get.assert_called_once_with("user:info:user-123")
-
-    @pytest.mark.asyncio
-    async def test_userinfo_get_none(self) -> None:
-        """Test getting non-existent user information."""
-        with patch("faster.core.redisex.get_redis") as mock_get_redis:
-            mock_redis = AsyncMock()
-            mock_get_redis.return_value = mock_redis
-            mock_redis.get.return_value = None
-
-            result = await userinfo_get("user-123")
-
-            assert result == "None"  # The function converts None to string "None"
-            mock_redis.get.assert_called_once_with("user:info:user-123")
-
-    @pytest.mark.asyncio
-    async def test_userinfo_set(self) -> None:
-        """Test setting user information."""
-        with patch("faster.core.redisex.get_redis") as mock_get_redis:
-            mock_redis = AsyncMock()
-            mock_get_redis.return_value = mock_redis
-            mock_redis.set.return_value = True
-
-            result = await userinfo_set("user-123", "user-data", 300)
-
-            assert result is True
-            mock_redis.set.assert_called_once_with("user:info:user-123", "user-data", 300)
 
 
 class TestUserRoleFunctions:
