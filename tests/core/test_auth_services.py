@@ -20,9 +20,9 @@ def auth_service() -> AuthService:
 class TestAuthServiceRoles:
     """Tests for role and access control logic in AuthService."""
 
-    async def test_get_roles_by_user_id_returns_correct_roles(self, auth_service: AuthService, mocker: Any) -> None:
+    async def test_get_roles_returns_correct_roles(self, auth_service: AuthService, mocker: Any) -> None:
         """
-        Tests that get_roles_by_user_id correctly fetches and returns a set of roles.
+        Tests that get_roles correctly fetches and returns a set of roles.
         """
         # Arrange
         mock_user2role_get = mocker.patch(
@@ -31,33 +31,31 @@ class TestAuthServiceRoles:
         )
 
         # Act
-        roles = await auth_service.get_roles_by_user_id(TEST_USER_ID)
+        roles = set(await auth_service.get_roles(TEST_USER_ID))
 
         # Assert
         mock_user2role_get.assert_awaited_once_with(TEST_USER_ID)
         assert roles == {"admin", "editor"}
 
-    async def test_get_roles_by_user_id_returns_empty_set_for_no_roles(
-        self, auth_service: AuthService, mocker: Any
-    ) -> None:
+    async def test_get_roles_returns_empty_set_for_no_roles(self, auth_service: AuthService, mocker: Any) -> None:
         """
-        Tests that get_roles_by_user_id returns an empty set if the user has no roles.
+        Tests that get_roles returns an empty set if the user has no roles.
         """
         # Arrange
         mocker.patch("faster.core.auth.services.user2role_get", return_value=None)
 
         # Act
-        roles = await auth_service.get_roles_by_user_id(TEST_USER_ID)
+        roles = set(await auth_service.get_roles(TEST_USER_ID))
 
         # Assert
         assert roles == set()
 
-    async def test_get_roles_by_user_id_returns_empty_set_for_empty_user_id(self, auth_service: AuthService) -> None:
+    async def test_get_roles_returns_empty_set_for_empty_user_id(self, auth_service: AuthService) -> None:
         """
-        Tests that get_roles_by_user_id returns an empty set if user_id is empty.
+        Tests that get_roles returns an empty set if user_id is empty.
         """
         # Act
-        roles = await auth_service.get_roles_by_user_id("")
+        roles = set(await auth_service.get_roles(""))
 
         # Assert
         assert roles == set()
@@ -125,7 +123,7 @@ class TestAuthServiceAccessCheck:
         Tests the access logic with various combinations of user and required roles.
         """
         # Arrange
-        mocker.patch.object(auth_service, "get_roles_by_user_id", return_value=user_roles)
+        mocker.patch.object(auth_service, "get_roles", return_value=user_roles)
         mocker.patch.object(auth_service, "get_roles_by_tags", return_value=required_roles)
 
         # Act
@@ -140,7 +138,7 @@ class TestAuthServiceAccessCheck:
         regardless of user roles.
         """
         # Arrange
-        mocker.patch.object(auth_service, "get_roles_by_user_id", return_value={"viewer"})
+        mocker.patch.object(auth_service, "get_roles", return_value={"viewer"})
         mocker.patch.object(auth_service, "get_roles_by_tags", return_value=set())
 
         # Act
