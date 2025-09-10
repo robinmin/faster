@@ -86,7 +86,7 @@ class TestAuthMiddleware:
         # Assert
         mock_extract_token.assert_called_once_with(mock_request)
         mock_auth_service.get_user_id_from_token.assert_awaited_once_with(TEST_TOKEN)
-        mock_auth_service.get_user_by_id.assert_awaited_once_with(TEST_USER_ID)
+        mock_auth_service.get_user_by_id.assert_awaited_once_with(TEST_USER_ID, from_cache=True)
         assert hasattr(mock_request.state, "user")
         assert mock_request.state.user.id == TEST_USER_ID
         assert mock_request.state.authenticated is True
