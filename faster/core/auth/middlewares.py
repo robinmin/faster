@@ -122,9 +122,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             - request.state.authenticated: Set authenticated flag in request state.
         """
         current_path = request.url.path
+        current_method = request.method
         try:
             # 1. Handle allowed paths in debug mode
-            if self._handle_allowed_path(request, current_path):
+            if current_method in ["HEAD", "OPTIONS"] or self._handle_allowed_path(request, current_path):
                 return await call_next(request)
 
             # 2. Get endpoint tags
