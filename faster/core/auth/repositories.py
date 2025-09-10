@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime
 import json
 import logging
 from typing import Any
@@ -7,9 +8,8 @@ from sqlmodel import select
 
 from ..database import BaseRepository, DatabaseManager, DBSession
 from ..exceptions import DBError
-from .models import AppMetadata, UserIdentityData, UserInfo
-from .models import UserMetadata as UserMetadataModel
-from .schemas import User, UserIdentity, UserMetadata, UserProfile
+from .models import UserProfileData
+from .schemas import User, UserMetadata, UserProfile
 
 ###############################################################################
 
@@ -236,7 +236,7 @@ class AuthRepository(BaseRepository):
             _ = await self.soft_delete(
                 self.table_name(UserMetadata),
                 {"C_USER_AUTH_ID": user_auth_id, "C_METADATA_TYPE": metadata_type},
-                session
+                session,
             )
 
             # Insert new metadata records
@@ -245,7 +245,7 @@ class AuthRepository(BaseRepository):
                     user_auth_id=user_auth_id,
                     metadata_type=metadata_type,
                     key=key,
-                    value=str(value) if value is not None else None,
+                    value=json.dumps(value) if value is not None else None,
                 )
                 for key, value in metadata.items()
             ]
@@ -257,82 +257,15 @@ class AuthRepository(BaseRepository):
                 f"Failed to create or update metadata for user {user_auth_id}, type {metadata_type}: {e}"
             ) from e
 
-    async def create_or_update_user_identities(
-        self, session: DBSession, user_auth_id: str, identities: list[UserIdentityData]
-    ) -> None:
+    async def get_user_info(self, user_id: str) -> UserProfileData | None:
         """
-        Create or update user identities using soft delete pattern.
-
-        First marks all existing identity entries as inactive (in_used=0), then creates
-        new identity entries with the provided data as active (in_used=1).
-
-        Args:
-            session: Database session
-            user_auth_id: User's authentication ID (required, non-empty string)
-            identities: List of UserIdentityData objects
-
-        Raises:
-            ValueError: If parameters are invalid
-            DBError: If database operation fails
-
-        Example:
-            >>> identities = [UserIdentityData(identity_id="123", provider="google", ...)]
-            >>> await repo.create_or_update_user_identities(session, "user123", identities)
-        """
-        if not user_auth_id or not user_auth_id.strip():
-            raise ValueError("User auth ID cannot be empty")
-        if not identities:
-            raise ValueError("Identities list cannot be empty")
-
-        try:
-            # Soft delete existing identity records by setting in_used=0
-            _ = await self.soft_delete(
-                self.table_name(UserIdentity),
-                {"C_USER_AUTH_ID": user_auth_id},
-                session
-            )
-
-            # Soft delete existing identity data records by setting in_used=0
-            # Note: In a production environment, we would query for existing identities to get their IDs
-            # and then soft delete the related identity data. For simplicity in this implementation,
-            # we're focusing on the core functionality of soft deleting identities and inserting new ones.
-
-            # Insert new identity records
-            new_identities = []
-            for identity_obj in identities:
-                # Serialize identity_data to JSON if present
-                identity_data_json = None
-                if hasattr(identity_obj, "identity_data") and identity_obj.identity_data:
-                    identity_data_json = json.dumps(identity_obj.identity_data)
-
-                new_identities.append(
-                    UserIdentity(
-                        identity_id=identity_obj.identity_id,
-                        user_auth_id=user_auth_id,
-                        provider_user_id=identity_obj.id,
-                        provider=identity_obj.provider,
-                        email=getattr(identity_obj, "email", None),
-                        last_sign_in_at=identity_obj.last_sign_in_at,
-                        identity_created_at=identity_obj.created_at,
-                        identity_updated_at=identity_obj.updated_at,
-                        identity_data=identity_data_json,
-                    )
-                )
-            if new_identities:
-                session.add_all(new_identities)
-        except Exception as e:
-            logger.error(f"Error creating or updating identities for user {user_auth_id}: {e}")
-            raise DBError(f"Failed to create or update identities for user {user_auth_id}: {e}") from e
-
-    async def get_user_info(self, user_id: str) -> UserInfo | None:
-        """
-        Get comprehensive user information including metadata, identities, and profile.
+        Get user profile information from database.
 
         Args:
             user_id: User's authentication ID
 
         Returns:
-            UserInfo object if user exists, None otherwise
+            UserProfileData object if user exists, None otherwise
 
         Raises:
             ValueError: If user_id is empty
@@ -340,8 +273,8 @@ class AuthRepository(BaseRepository):
 
         Example:
             >>> repo = AuthRepository()
-            >>> user_info = await repo.get_user_info("user123")
-            >>> print(user_info.email)  # user@example.com
+            >>> user_profile = await repo.get_user_info("user123")
+            >>> print(user_profile.email)  # user@example.com
         """
         if not user_id or not user_id.strip():
             raise ValueError("User ID cannot be empty")
@@ -353,19 +286,18 @@ class AuthRepository(BaseRepository):
             logger.error(f"Failed to get user info: {e}", extra={"user_id": user_id})
             raise DBError(f"Failed to get user info for user {user_id}: {e}") from e
 
-    async def _get_user_info_impl(self, session: DBSession, user_id: str) -> UserInfo | None:
+    async def _get_user_info_impl(self, session: DBSession, user_id: str) -> UserProfileData | None:
         """
-        Internal implementation for getting comprehensive user information.
+        Internal implementation for getting user profile information.
 
-        Retrieves user data, metadata (app and user), identities, and profile data
-        from multiple tables and constructs a complete UserInfo object.
+        Retrieves user data from the database and constructs a UserProfileData object.
 
         Args:
             session: Database session
             user_id: User's authentication ID
 
         Returns:
-            UserInfo object if user exists, None otherwise
+            UserProfileData object if user exists, None otherwise
         """
         try:
             # Get base user information
@@ -373,32 +305,25 @@ class AuthRepository(BaseRepository):
             if not user:
                 return None
 
-            # Get and process metadata
-            app_metadata, user_metadata = await self._get_user_metadata(session, user_id)
+            # Get and process metadata (simplified for compatibility)
+            app_metadata, user_metadata = await self._get_user_metadata_simple(session, user_id)
 
-            # Get user identities
-            identities = await self._get_user_identities(session, user_id)
-
-            # Get user profile
-            profile_data = await self._get_user_profile(session, user_id)
-
-            # Compose UserInfo
-            return UserInfo(
+            # Create UserProfileData object
+            return UserProfileData(
                 id=user.auth_id,
-                aud=user.aud,
-                role=user.role,
-                email=user.email,
+                aud=user.aud or "",
+                role=user.role or "",
+                email=user.email or "",
                 email_confirmed_at=user.email_confirmed_at,
                 phone=user.phone,
                 confirmed_at=user.confirmed_at,
                 last_sign_in_at=user.last_sign_in_at,
                 is_anonymous=user.is_anonymous,
-                created_at=user.auth_created_at,
+                created_at=user.auth_created_at or datetime.now(),
                 updated_at=user.auth_updated_at,
                 app_metadata=app_metadata,
                 user_metadata=user_metadata,
-                identities=identities,
-                profile=profile_data,
+                identities=[],  # Simplified - can be extended if needed
             )
 
         except Exception as e:
@@ -411,12 +336,12 @@ class AuthRepository(BaseRepository):
         result = await session.exec(user_query)
         return result.first()
 
-    async def _get_user_metadata(self, session: DBSession, user_id: str) -> tuple[AppMetadata, UserMetadataModel]:
-        """Get and process user metadata, returning structured metadata objects."""
+    async def _get_user_metadata_simple(
+        self, session: DBSession, user_id: str
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Get and process user metadata, returning simple dictionaries."""
         metadata_query = (
-            select(UserMetadata)
-            .where(UserMetadata.user_auth_id == user_id)
-            .where(UserMetadata.in_used == 1)
+            select(UserMetadata).where(UserMetadata.user_auth_id == user_id).where(UserMetadata.in_used == 1)
         )
         result = await session.exec(metadata_query)
         metadata_rows = result.all()
@@ -436,67 +361,11 @@ class AuthRepository(BaseRepository):
             elif metadata_row.metadata_type == "user":
                 user_metadata_dict[metadata_row.key] = value
 
-        # Create structured metadata objects
-        app_metadata = AppMetadata(
-            provider=app_metadata_dict.get("provider", ""), providers=app_metadata_dict.get("providers", [])
-        )
-
-        user_metadata = UserMetadataModel(
-            avatar_url=user_metadata_dict.get("avatar_url"),
-            email=user_metadata_dict.get("email"),
-            email_verified=user_metadata_dict.get("email_verified"),
-            full_name=user_metadata_dict.get("full_name"),
-            iss=user_metadata_dict.get("iss"),
-            name=user_metadata_dict.get("name"),
-            phone_verified=user_metadata_dict.get("phone_verified"),
-            picture=user_metadata_dict.get("picture"),
-            provider_id=user_metadata_dict.get("provider_id"),
-            sub=user_metadata_dict.get("sub"),
-        )
-
-        return app_metadata, user_metadata
-
-    async def _get_user_identities(self, session: DBSession, user_id: str) -> list[UserIdentityData]:
-        """Get user identities and convert to UserIdentityData objects."""
-        identities_query = (
-            select(UserIdentity)
-            .where(UserIdentity.user_auth_id == user_id)
-            .where(UserIdentity.in_used == 1)
-        )
-        result = await session.exec(identities_query)
-        identity_rows = result.all()
-
-        identities: list[UserIdentityData] = []
-        for identity_row in identity_rows:
-            identity_data = {}
-            if identity_row.identity_data:
-                try:
-                    identity_data = json.loads(identity_row.identity_data)
-                except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON in identity_data for identity {identity_row.identity_id}")
-
-            identities.append(
-                UserIdentityData(
-                    identity_id=identity_row.identity_id,
-                    id=identity_row.provider_user_id,
-                    user_id=user_id,
-                    identity_data=identity_data,
-                    provider=identity_row.provider,
-                    last_sign_in_at=identity_row.last_sign_in_at,
-                    created_at=identity_row.identity_created_at,
-                    updated_at=identity_row.identity_updated_at,
-                )
-            )
-
-        return identities
+        return app_metadata_dict, user_metadata_dict
 
     async def _get_user_profile(self, session: DBSession, user_id: str) -> dict[str, Any] | None:
         """Get user profile data if it exists."""
-        profile_query = (
-            select(UserProfile)
-            .where(UserProfile.user_auth_id == user_id)
-            .where(UserProfile.in_used == 1)
-        )
+        profile_query = select(UserProfile).where(UserProfile.user_auth_id == user_id).where(UserProfile.in_used == 1)
         result = await session.exec(profile_query)
         profile_row = result.first()
 
@@ -515,174 +384,101 @@ class AuthRepository(BaseRepository):
             "updated_at": profile_row.updated_at,
         }
 
-    async def set_user_info(self, user_info: UserInfo) -> bool:
+    async def set_user_info(self, user_profile: UserProfileData) -> bool:
         """
-        Store comprehensive user information including metadata, identities, and profile.
+        Store user profile information to database.
 
         Args:
-            user_info: UserInfo object containing all user data
+            user_profile: UserProfileData object containing user data
 
         Returns:
             True if successful, False otherwise
 
         Raises:
-            ValueError: If user_info is invalid
+            ValueError: If user_profile is invalid
             DBError: If database operation fails
 
         Example:
-            >>> user_info = UserInfo(id="user123", email="test@example.com", ...)
-            >>> success = await repo.set_user_info(user_info)
+            >>> user_profile = UserProfileData(id="user123", email="test@example.com", ...)
+            >>> success = await repo.set_user_info(user_profile)
             >>> print(success)  # True
         """
-        if not user_info:
-            raise ValueError("User info cannot be None")
-        if not user_info.id or not user_info.id.strip():
-            raise ValueError("User info must have a valid ID")
+        if not user_profile:
+            raise ValueError("User profile cannot be None")
+        if not user_profile.id or not user_profile.id.strip():
+            raise ValueError("User profile must have a valid ID")
 
         try:
             async with self.transaction() as session:
-                return await self._set_user_info_impl(session, user_info)
+                return await self._set_user_info_impl(session, user_profile)
         except Exception as e:
-            logger.error(f"Failed to set user info: {e}", extra={"user_id": user_info.id})
-            raise DBError(f"Failed to set user info for user {user_info.id}: {e}") from e
+            logger.error(f"Failed to set user info: {e}", extra={"user_id": user_profile.id})
+            raise DBError(f"Failed to set user info for user {user_profile.id}: {e}") from e
 
-    async def _set_user_info_impl(self, session: DBSession, user_info: UserInfo) -> bool:
+    async def _set_user_info_impl(self, session: DBSession, user_profile: UserProfileData) -> bool:
         """
-        Internal implementation for storing comprehensive user information.
+        Internal implementation for storing user profile information.
 
-        Handles creating or updating user base data, metadata, identities, and profile
-        data across multiple tables using appropriate patterns (soft delete for metadata/identities).
+        Handles creating or updating user base data and metadata.
 
         Args:
             session: Database session
-            user_info: UserInfo object containing all user data
+            user_profile: UserProfileData object containing user data
 
         Returns:
             True if successful, False otherwise
         """
         try:
             # Create or update base user information
-            await self._create_or_update_base_user(session, user_info)
+            await self._create_or_update_base_user_from_profile(session, user_profile)
 
             # Handle app metadata
-            await self._store_app_metadata(session, user_info)
+            if user_profile.app_metadata:
+                await self.create_or_update_user_metadata(session, user_profile.id, "app", user_profile.app_metadata)
 
             # Handle user metadata
-            await self._store_user_metadata(session, user_info)
-
-            # Handle user identities
-            if user_info.identities:
-                await self.create_or_update_user_identities(session, user_info.id, user_info.identities)
-
-            # Handle user profile
-            if user_info.profile:
-                await self._store_user_profile(session, user_info)
+            if user_profile.user_metadata:
+                await self.create_or_update_user_metadata(session, user_profile.id, "user", user_profile.user_metadata)
 
             await session.flush()
-            logger.info(f"Successfully stored user info for user_id: {user_info.id}")
+            logger.info(f"Successfully stored user profile for user_id: {user_profile.id}")
             return True
 
         except Exception as e:
-            logger.error(f"Error storing user info for user_id {user_info.id}: {e}")
+            logger.error(f"Error storing user profile for user_id {user_profile.id}: {e}")
             raise
 
-    async def _create_or_update_base_user(self, session: DBSession, user_info: UserInfo) -> None:
-        """Create or update base user information."""
-        user_query = select(User).where(User.auth_id == user_info.id)
+    async def _create_or_update_base_user_from_profile(self, session: DBSession, user_profile: UserProfileData) -> None:
+        """Create or update base user information from UserProfileData."""
+        user_query = select(User).where(User.auth_id == user_profile.id)
         result = await session.exec(user_query)
         existing_user = result.first()
 
         if existing_user:
             # Update existing user
-            existing_user.aud = user_info.aud
-            existing_user.role = user_info.role
-            existing_user.email = user_info.email
-            existing_user.email_confirmed_at = user_info.email_confirmed_at
-            existing_user.phone = user_info.phone
-            existing_user.confirmed_at = user_info.confirmed_at
-            existing_user.last_sign_in_at = user_info.last_sign_in_at
-            existing_user.is_anonymous = user_info.is_anonymous
-            existing_user.auth_created_at = user_info.created_at
-            existing_user.auth_updated_at = user_info.updated_at
+            existing_user.aud = user_profile.aud or ""
+            existing_user.role = user_profile.role or ""
+            existing_user.email = user_profile.email or ""
+            existing_user.email_confirmed_at = user_profile.email_confirmed_at
+            existing_user.phone = user_profile.phone
+            existing_user.confirmed_at = getattr(user_profile, "confirmed_at", None)
+            existing_user.last_sign_in_at = user_profile.last_sign_in_at
+            existing_user.is_anonymous = getattr(user_profile, "is_anonymous", False)
+            existing_user.auth_created_at = user_profile.created_at
+            existing_user.auth_updated_at = user_profile.updated_at
         else:
             # Create new user
             new_user = User(
-                auth_id=user_info.id,
-                aud=user_info.aud,
-                role=user_info.role,
-                email=user_info.email,
-                email_confirmed_at=user_info.email_confirmed_at,
-                phone=user_info.phone,
-                confirmed_at=user_info.confirmed_at,
-                last_sign_in_at=user_info.last_sign_in_at,
-                is_anonymous=user_info.is_anonymous,
-                auth_created_at=user_info.created_at,
-                auth_updated_at=user_info.updated_at,
+                auth_id=user_profile.id,
+                aud=user_profile.aud or "",
+                role=user_profile.role or "",
+                email=user_profile.email or "",
+                email_confirmed_at=user_profile.email_confirmed_at,
+                phone=user_profile.phone,
+                confirmed_at=getattr(user_profile, "confirmed_at", None),
+                last_sign_in_at=user_profile.last_sign_in_at,
+                is_anonymous=getattr(user_profile, "is_anonymous", False),
+                auth_created_at=user_profile.created_at,
+                auth_updated_at=user_profile.updated_at,
             )
             session.add(new_user)
-
-    async def _store_app_metadata(self, session: DBSession, user_info: UserInfo) -> None:
-        """Store app metadata."""
-        app_metadata_dict = {
-            "provider": user_info.app_metadata.provider,
-            "providers": json.dumps(user_info.app_metadata.providers),
-        }
-        await self.create_or_update_user_metadata(session, user_info.id, "app", app_metadata_dict)
-
-    async def _store_user_metadata(self, session: DBSession, user_info: UserInfo) -> None:
-        """Store user metadata with proper JSON serialization."""
-        user_metadata_dict = {}
-
-        def json_serializer(value: Any) -> str:
-            return json.dumps(value)
-
-        metadata_fields = [
-            ("avatar_url", user_info.user_metadata.avatar_url, str),
-            ("email", user_info.user_metadata.email, str),
-            ("email_verified", user_info.user_metadata.email_verified, json_serializer),
-            ("full_name", user_info.user_metadata.full_name, str),
-            ("iss", user_info.user_metadata.iss, str),
-            ("name", user_info.user_metadata.name, str),
-            ("phone_verified", user_info.user_metadata.phone_verified, json_serializer),
-            ("picture", user_info.user_metadata.picture, str),
-            ("provider_id", user_info.user_metadata.provider_id, str),
-            ("sub", user_info.user_metadata.sub, str),
-        ]
-
-        for key, value, serializer in metadata_fields:
-            if value is not None:
-                user_metadata_dict[key] = serializer(value)  # type: ignore[operator]
-
-        await self.create_or_update_user_metadata(session, user_info.id, "user", user_metadata_dict)
-
-    async def _store_user_profile(self, session: DBSession, user_info: UserInfo) -> None:
-        """Store user profile information."""
-        profile_query = select(UserProfile).where(UserProfile.user_auth_id == user_info.id)
-        result = await session.exec(profile_query)
-        existing_profile = result.first()
-
-        # Get profile data safely
-        profile_data = user_info.profile or {}
-
-        if existing_profile:
-            # Update existing profile
-            existing_profile.first_name = profile_data.get("first_name")
-            existing_profile.last_name = profile_data.get("last_name")
-            existing_profile.display_name = profile_data.get("display_name")
-            existing_profile.avatar_url = profile_data.get("avatar_url")
-            existing_profile.bio = profile_data.get("bio")
-            existing_profile.location = profile_data.get("location")
-            existing_profile.website = profile_data.get("website")
-        else:
-            # Create new profile
-            new_profile = UserProfile(
-                user_auth_id=user_info.id,
-                first_name=profile_data.get("first_name"),
-                last_name=profile_data.get("last_name"),
-                display_name=profile_data.get("display_name"),
-                avatar_url=profile_data.get("avatar_url"),
-                bio=profile_data.get("bio"),
-                location=profile_data.get("location"),
-                website=profile_data.get("website"),
-            )
-            session.add(new_profile)
