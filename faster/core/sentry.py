@@ -21,7 +21,6 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from sentry_sdk.types import Event
-from typing_extensions import Self
 
 from .config import Settings
 from .logger import get_logger
@@ -31,7 +30,7 @@ logger = get_logger(__name__)
 
 
 class SentryManager(BasePlugin):
-    _instance: Self | None = None
+    _instance: "SentryManager | None" = None
 
     def __init__(self) -> None:
         self.dsn: str | None = None
@@ -41,7 +40,7 @@ class SentryManager(BasePlugin):
         self.is_ready: bool = False
 
     @classmethod
-    def get_instance(cls) -> Self:
+    def get_instance(cls) -> "SentryManager":
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
