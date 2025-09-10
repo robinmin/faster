@@ -6,9 +6,10 @@ from fastapi.responses import RedirectResponse
 from ..logger import get_logger
 from ..models import AppResponseDict
 from ..utilities import is_api_call
-from .auth_proxy import get_optional_user
+from .middlewares import get_current_user
 from .models import UserProfileData
 from .services import AuthService
+from .utilities import extract_bearer_token_from_request
 
 logger = get_logger(__name__)
 
@@ -35,7 +36,7 @@ auth_service = AuthService(
 )
 
 
-@router.get("/login", include_in_schema=False, response_model=None, tags=["public"])
+@router.get("/login", include_in_schema=False, response_model=None)
 async def login(request: Request) -> RedirectResponse | AppResponseDict:
     """
     Callback function after client user finished authentication.
@@ -52,7 +53,7 @@ async def login(request: Request) -> RedirectResponse | AppResponseDict:
     code = request.query_params.get("code")
     logger.info(f"Received Supabase code: {code}")
 
-    user: UserProfileData | None = await get_optional_user(request)
+    user: UserProfileData | None = await get_current_user(request)
 
     resp_url = AuthURL.LOGIN.value
     reesp_msg = ""
@@ -60,8 +61,9 @@ async def login(request: Request) -> RedirectResponse | AppResponseDict:
 
     if user:
         try:
+            token = extract_bearer_token_from_request(request)
             # Process user login - save to database and handle blacklist
-            db_user = await auth_service.process_user_login(user)
+            db_user = await auth_service.process_user_login(token, user)
             logger.info(f"User login processed successfully: {db_user.auth_id}")
 
             # Check if user has completed onboarding by checking if they have a profile
@@ -97,12 +99,12 @@ async def login(request: Request) -> RedirectResponse | AppResponseDict:
     return RedirectResponse(url=resp_url, status_code=resp_code)
 
 
-@router.get("/logout", include_in_schema=False, response_model=None, tags=["public"])
+@router.get("/logout", include_in_schema=False, response_model=None)
 async def logout(request: Request) -> RedirectResponse | AppResponseDict:
     """
     Default page for user logout
     """
-    user: UserProfileData | None = await get_optional_user(request)
+    user: UserProfileData | None = await get_current_user(request)
 
     resp_url = AuthURL.LOGIN.value
     reesp_msg = ""
@@ -110,7 +112,8 @@ async def logout(request: Request) -> RedirectResponse | AppResponseDict:
     if user:
         try:
             # Implement user logout logic
-            await auth_service.logout_user(user.id)
+            token = extract_bearer_token_from_request(request)
+            await auth_service.process_user_logout(token, user)
             reesp_msg = "Hope you come back soon!"
             logger.info(f"User logged out successfully: {user.id}")
         except Exception as e:
@@ -131,7 +134,7 @@ async def onboarding(request: Request) -> RedirectResponse | AppResponseDict:
     Onboarding page for new users.
     Redirects existing users to the dashboard.
     """
-    user: UserProfileData | None = await get_optional_user(request)
+    user: UserProfileData | None = await get_current_user(request)
 
     if not user:
         # If user is not authenticated, redirect to login
@@ -172,11 +175,11 @@ async def dashboard(request: Request) -> RedirectResponse | AppResponseDict:
     Dashboard page for existing users.
     Redirects non-authenticated users to the login page.
     """
-    user: UserProfileData | None = await get_optional_user(request)
+    user: UserProfileData | None = await get_current_user(request)
 
     if not user:
         # If user is not authenticated, redirect to login
-        return RedirectResponse(url=AuthURL.LOGIN.value, status_code=status.HTTP_303_SEE_OTHER)
+        return RedirectResponse(url='/', status_code=status.HTTP_303_SEE_OTHER)
 
     # Check if user has completed onboarding
     has_profile = await auth_service.check_user_onboarding_complete(user.id)
@@ -197,7 +200,7 @@ async def profile(request: Request) -> RedirectResponse | AppResponseDict:
     User profile page.
     Only accessible to logged-in users.
     """
-    user: UserProfileData | None = await get_optional_user(request)
+    user: UserProfileData | None = await get_current_user(request)
 
     if not user:
         # If user is not authenticated, redirect to login
