@@ -115,15 +115,15 @@ class SysMap(MyBase, table=True):
 
     __tablename__ = "SYS_MAP"
     __table_args__ = (
-        UniqueConstraint("C_CATEGORY", "C_LEFT_VALUE", "C_RIGHT_VALUE", name="uk_sys_map_category_left_right"),
+        UniqueConstraint("C_CATEGORY", "C_LEFT", "C_RIGHT", name="uk_sys_map_category_left_right"),
         Index("idx_sys_map_category", "C_CATEGORY"),
     )
 
-    id: int = Field(default=None, primary_key=True)
-    category: str = Field(max_length=64, sa_column_kwargs={"name": "C_CATEGORY"})
-    left_value: str = Field(max_length=64, sa_column_kwargs={"name": "C_LEFT_VALUE"})
-    right_value: str = Field(max_length=64, sa_column_kwargs={"name": "C_RIGHT_VALUE"})
-    order: int = Field(default=0, sa_column_kwargs={"name": "N_ORDER", "server_default": "0"})
+    id: int = Field(default=None, primary_key=True, description="Primary key")
+    category: str = Field(max_length=64, sa_column_kwargs={"name": "C_CATEGORY"}, description="Category name")
+    left_value: str = Field(max_length=64, sa_column_kwargs={"name": "C_LEFT"}, description="Left side value for mapping")
+    right_value: str = Field(max_length=64, sa_column_kwargs={"name": "C_RIGHT"}, description="Right side value for mapping")
+    order: int = Field(default=0, sa_column_kwargs={"name": "N_ORDER", "server_default": "0"}, description="Display order")
 
 
 class SysDict(MyBase, table=True):
@@ -139,8 +139,8 @@ class SysDict(MyBase, table=True):
         Index("idx_sys_dict_category", "C_CATEGORY"),
     )
 
-    id: int = Field(default=None, primary_key=True)
-    category: str = Field(max_length=64, sa_column_kwargs={"name": "C_CATEGORY"})
-    key: int = Field(sa_column_kwargs={"name": "N_KEY"})
-    value: str = Field(max_length=64, sa_column_kwargs={"name": "C_VALUE"})
-    order: int = Field(default=0, sa_column_kwargs={"name": "N_ORDER", "server_default": "0"})
+    id: int = Field(default=None, primary_key=True, description="Primary key")
+    category: str = Field(max_length=64, sa_column_kwargs={"name": "C_CATEGORY"}, description="Dictionary category")
+    key: int = Field(sa_column_kwargs={"name": "N_KEY"}, description="Dictionary key")
+    value: str = Field(max_length=64, sa_column_kwargs={"name": "C_VALUE"}, description="Dictionary value")
+    order: int = Field(default=0, sa_column_kwargs={"name": "N_ORDER", "server_default": "0"}, description="Display order")
