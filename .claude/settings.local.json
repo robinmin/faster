@@ -23,7 +23,8 @@
       "mcp__ultra-mcp__search-vectors",
       "WebSearch",
       "WebFetch(domain:docs.sqlalchemy.org)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(PYTHONPATH=. uv run basedpyright:)"
     ],
     "deny": ["Read(.env)", "Bash(git:*)"],
     "ask": ["Bash(python:*)"]
