@@ -6,7 +6,6 @@ import jwt
 from supabase import Client, create_client
 
 from ..logger import get_logger
-from ..redisex import get_jwks_key, get_user_profile, set_jwks_key, set_user_profile
 from .models import UserProfileData
 
 # =============================================================================
@@ -55,8 +54,10 @@ class AuthProxy:
         # - Required for operations like admin.get_user_by_id()
         self._service_client: Client | None = None
 
-        # Note: JWKS caching is handled within this proxy.
-        self.last_refresh: float = 0.0
+        # In-memory JWKS caching
+        self._jwks_keys_cache: dict[str, dict[str, Any]] = {}
+        self._jwks_cache_timestamp: float = 0.0
+        self.last_refresh: float = 0.0  # Keep for compatibility
 
     @property
     def client(self) -> Client:
@@ -136,39 +137,53 @@ class AuthProxy:
             return None
         return str(user_id)
 
-    async def _check_redis_cache(self, key_id: str) -> dict[str, Any] | None:
-        """Check if JWKS key exists in Redis cache."""
+    def _check_memory_cache(self, key_id: str) -> dict[str, Any] | None:
+        """Check if JWKS key exists in memory cache."""
         try:
-            cached_key = await get_jwks_key(key_id)
+            current_time = time.time()
+            # Check if cache is expired
+            if (current_time - self._jwks_cache_timestamp) > self._cache_ttl:
+                logger.debug("JWKS memory cache expired, will refresh")
+                return None
+
+            cached_key = self._jwks_keys_cache.get(key_id)
             if cached_key:
-                logger.debug(f"JWKS key found in Redis cache: {key_id}")
+                logger.debug(f"JWKS key found in memory cache: {key_id}")
                 return cached_key
         except Exception as e:
-            logger.debug(f"Redis cache read failed: {e}")
+            logger.debug(f"Memory cache read failed: {e}")
         return None
 
-    async def _cache_jwks_keys(self, jwks_data: dict[str, Any], cache_ttl: int) -> tuple[dict[str, Any], bool]:
-        """Cache all JWKS keys and return target key and cache success status."""
+    def _cache_jwks_keys(self, jwks_data: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+        """Cache all JWKS keys in memory and return target key and cache success status."""
         target_key: dict[str, Any] = {}
         cache_failed = False
 
-        for jwk_key in jwks_data.get("keys", []):
-            kid = jwk_key.get("kid")
-            if not kid:
-                continue
+        try:
+            current_time = time.time()
+            # Clear existing cache and update with new data
+            self._jwks_keys_cache.clear()
 
-            # Store first key as potential target (will be overwritten if specific key found)
-            if not target_key:
-                target_key = jwk_key
+            for jwk_key in jwks_data.get("keys", []):
+                kid = jwk_key.get("kid")
+                if not kid:
+                    continue
 
-            # Cache this key in Redis
-            try:
-                if not await set_jwks_key(kid, jwk_key, cache_ttl):
-                    cache_failed = True
-                    logger.debug(f"Failed to cache JWKS key in Redis: {kid}")
-            except Exception as e:
-                cache_failed = True
-                logger.debug(f"Redis cache write failed for key {kid}: {e}")
+                # Store first key as potential target (will be overwritten if specific key found)
+                if not target_key:
+                    target_key = jwk_key
+
+                # Cache this key in memory
+                self._jwks_keys_cache[kid] = dict(jwk_key)
+                logger.debug(f"Cached JWKS key in memory: {kid}")
+
+            # Update cache timestamp
+            self._jwks_cache_timestamp = current_time
+            logger.debug(f"Updated JWKS memory cache with {len(self._jwks_keys_cache)} keys")
+
+        except Exception as e:
+            cache_failed = True
+            logger.debug(f"Memory cache write failed: {e}")
 
         return target_key, cache_failed
 
@@ -204,18 +219,16 @@ class AuthProxy:
         self, key_id: str, jwks_url: str, cache_ttl: int, auto_refresh: bool
     ) -> dict[str, Any]:
         """
-        Get JWKS key by ID with Redis caching and automatic refresh.
+        Get JWKS key by ID with in-memory caching and automatic refresh.
 
         Internal utility function that handles:
-        - Redis-based caching of JWKS keys
+        - In-memory caching of JWKS keys
         - Automatic refresh of expired keys
-        - Fallback to memory cache if Redis fails
+        - TTL-based expiration
         """
-        current_time = time.time()
-
-        # Try Redis cache first if within TTL
-        if auto_refresh and self.last_refresh > 0 and (current_time - self.last_refresh) < cache_ttl:
-            cached_key = await self._check_redis_cache(key_id)
+        # Try memory cache first if auto_refresh is enabled
+        if auto_refresh:
+            cached_key = self._check_memory_cache(key_id)
             if cached_key:
                 return cached_key
 
@@ -228,18 +241,36 @@ class AuthProxy:
 
             # Find the target key and cache all keys
             target_key = await self._find_target_key(jwks_data, key_id)
-            _, cache_failed = await self._cache_jwks_keys(jwks_data, cache_ttl)
+            _, cache_failed = self._cache_jwks_keys(jwks_data)
 
             # Update refresh timestamp only if caching succeeded
             if not cache_failed:
-                self.last_refresh = current_time
-                logger.debug(f"JWKS keys refreshed and cached from: {jwks_url}")
+                self.last_refresh = time.time()
+                logger.debug(f"JWKS keys refreshed and cached in memory from: {jwks_url}")
 
             return target_key
 
         except Exception as e:
             logger.debug(f"Failed to fetch JWKS from server: {e}")
             return {}
+
+    def clear_jwks_cache(self) -> None:
+        """Clear the in-memory JWKS cache. Useful for testing and cache invalidation."""
+        self._jwks_keys_cache.clear()
+        self._jwks_cache_timestamp = 0.0
+        self.last_refresh = 0.0
+        logger.debug("Cleared JWKS memory cache")
+
+    def get_jwks_cache_info(self) -> dict[str, Any]:
+        """Get information about the current JWKS cache state. Useful for monitoring."""
+        current_time = time.time()
+        return {
+            "cached_keys_count": len(self._jwks_keys_cache),
+            "cache_age_seconds": current_time - self._jwks_cache_timestamp,
+            "cache_ttl_seconds": self._cache_ttl,
+            "is_expired": (current_time - self._jwks_cache_timestamp) > self._cache_ttl,
+            "cached_key_ids": list(self._jwks_keys_cache.keys()),
+        }
 
     async def get_user_id_from_token(self, token: str) -> str | None:  # noqa: PLR0911
         """
@@ -270,25 +301,30 @@ class AuthProxy:
                 auto_refresh=self._auto_refresh_jwks,
             )
             if not jwks_key:
-                logger.debug(f"JWKS key not found for kid: {key_id}")
+                logger.error(f"JWKS key not found for kid: {key_id}")
                 return None
 
             # Determine algorithm, construct public key, and verify token
             algorithm = self._determine_algorithm(jwks_key, token_alg)
             if not algorithm:
+                logger.error(f"Algorithm not found for kid: {key_id}")
                 return None
 
             public_key = self._construct_public_key(jwks_key)
             if not public_key:
+                logger.error(f"Public key not found for kid: {key_id}")
                 return None
 
             payload = self._verify_jwt_token(token, public_key, algorithm, self._supabase_audience)
             if not payload:
+                logger.error(f"Token verification failed for kid: {key_id}")
                 return None
 
             user_id = self._extract_user_id_from_payload(payload)
-            if user_id:
-                logger.debug(f"Successfully verified token for user: {user_id}")
+            if not user_id:
+                logger.error(f"User ID not found in token for kid: {key_id}")
+                return None
+
             return user_id
 
         except Exception as e:
@@ -296,13 +332,7 @@ class AuthProxy:
             return None
 
     async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> UserProfileData | None:
-        """Get user profile by ID with optional caching."""
-        if from_cache:
-            cached_profile_json = await get_user_profile(user_id)
-            if cached_profile_json:
-                # Convert JSON string back to UserProfileData object
-                return UserProfileData.model_validate_json(cached_profile_json)
-
+        """Get user profile by ID directly from Supabase Auth."""
         try:
             # Fetch from Supabase
             response = self.service_client.auth.admin.get_user_by_id(user_id)
@@ -326,11 +356,6 @@ class AuthProxy:
                 aud=user_data.aud or "",
                 role=user_data.role or "",
             )
-
-            # Cache the profile
-            profile_json = profile.model_dump_json()
-            if not await set_user_profile(user_id, profile_json, self._cache_ttl):
-                logger.error(f"Failed to cache user profile : {user_id}")
 
             return profile
         except Exception as e:
