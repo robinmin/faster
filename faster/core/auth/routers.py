@@ -1,10 +1,12 @@
+from datetime import datetime, timedelta
 from enum import Enum
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from fastapi.responses import RedirectResponse
 
 from ..logger import get_logger
 from ..models import AppResponseDict
+from ..redisex import blacklist_add, blacklist_delete
 from ..utilities import is_api_call
 from .middlewares import get_current_user
 from .models import UserProfileData
@@ -36,19 +38,89 @@ auth_service = AuthService(
 )
 
 
+async def should_update_user_in_db(user: UserProfileData) -> bool:
+    """
+    Check if user information should be updated in database.
+    Returns True for new users or users not updated within 24 hours.
+    """
+    try:
+        # Check if user exists in database and get last update time
+        db_user = await auth_service.get_user_by_auth_id(user.id)
+
+        if not db_user:
+            # New user - needs to be stored
+            return True
+
+        # Check if user was last updated more than 24 hours ago
+        if db_user.updated_at:
+            time_since_update = datetime.now() - db_user.updated_at
+            return time_since_update > timedelta(hours=24)
+
+        # If no updated_at timestamp, consider it needs update
+        return True
+
+    except Exception as e:
+        logger.warning(f"Error checking user update status for {user.id}: {e}")
+        # If we can't determine, err on the side of updating
+        return True
+
+
+async def background_update_user_info(token: str | None, user: UserProfileData) -> None:
+    """
+    Background task to update user information in database.
+    """
+    try:
+        # Check if this user needs database update
+        if await should_update_user_in_db(user):
+            logger.info(f"Updating user info in background for {user.id}")
+            _ = await auth_service.process_user_login(token, user)
+            logger.info(f"Background user info update completed for {user.id}")
+        else:
+            logger.debug(f"User {user.id} doesn't need database update (updated within 24h)")
+    except Exception as e:
+        logger.error(f"Error in background user info update for {user.id}: {e}")
+
+
+async def background_process_logout(token: str | None, user: UserProfileData) -> None:
+    """
+    Background task to process user logout operations.
+    Handles both token blacklisting and business logic processing.
+    """
+    try:
+        logger.info(f"Processing logout in background for {user.id}")
+
+        # Add token to blacklist
+        if token:
+            blacklist_success = await blacklist_add(token)
+            if blacklist_success:
+                logger.debug(f"Added token to blacklist for user {user.id}")
+            else:
+                logger.warning(f"Failed to add token to blacklist for user {user.id}")
+
+        # Process additional logout business logic
+        await auth_service.process_user_logout(token, user)
+        logger.info(f"Background logout processing completed for {user.id}")
+
+    except Exception as e:
+        logger.error(f"Error in background logout processing for {user.id}: {e}")
+
+
 @router.get("/login", include_in_schema=False, response_model=None)
 async def login(
-    request: Request, user: UserProfileData | None = Depends(get_current_user)
+    request: Request, background_tasks: BackgroundTasks, user: UserProfileData | None = Depends(get_current_user)
 ) -> RedirectResponse | AppResponseDict:
     """
-    Callback function after client user finished authentication.
+    Enhanced login callback with optimized performance and immediate response.
 
-    The key functions should include:
-    - Get JWT from from request and validate it with remote Supabase Auth server. If invalid, redirect to login page or return error.
-    - If JWT token is valid, remove current JWT token from blacklist(call blacklist_delete in redisex.py).
-    - If JWT token is valid, get user profile from Supabase and store it in the session.
-    - For the first time register user, redirect to onboarding page.
-    - For the existing user, Redirecting to the appropriate page(based on the user's authentication status)
+    This endpoint handles user authentication callbacks and provides immediate feedback
+    while processing heavy operations in the background for optimal user experience.
+
+    Key Functions:
+    - Extract and validate JWT token from request (handled by middleware)
+    - Immediately remove valid token from blacklist for security
+    - Check onboarding status and return immediate response to client
+    - Process user database operations in background (24h update check)
+    - Redirect users based on onboarding completion status
     """
 
     # Supabase will redirect with a 'code' in the query parameters
@@ -59,15 +131,22 @@ async def login(
     reesp_msg = ""
     resp_code = status.HTTP_200_OK
 
+    has_profile = False  # Default value to avoid unbound variable
+
     if user:
         try:
+            # Immediately remove token from blacklist for valid user
             token = extract_bearer_token_from_request(request)
-            # Process user login - save to database and handle blacklist
-            db_user = await auth_service.process_user_login(token, user)
-            logger.info(f"User login processed successfully: {db_user.auth_id}")
+            if token:
+                _ = await blacklist_delete(token)
+                logger.debug(f"Removed token from blacklist for user {user.id}")
 
-            # Check if user has completed onboarding by checking if they have a profile
+            # Check onboarding status immediately
             has_profile = await auth_service.check_user_onboarding_complete(user.id)
+
+            # Add background task to update user info in database
+            background_tasks.add_task(background_update_user_info, token, user)
+            logger.debug(f"Added background task to update user info for {user.id}")
 
             if has_profile:
                 # Existing user with profile - redirect to dashboard
@@ -94,38 +173,71 @@ async def login(
 
     # response to API call or avoid to redirect to itself
     if is_api_call(request) or resp_url == request.url.path:
-        return AppResponseDict(status="success", message=reesp_msg, data={"url": resp_url, "status_code": resp_code})
+        response_data = {"url": resp_url, "status_code": resp_code}
+
+        # Add onboarding completion status for authenticated users
+        if user:
+            response_data["onboarding_complete"] = has_profile
+            response_data["user_id"] = user.id
+
+        return AppResponseDict(status="success", message=reesp_msg, data=response_data)
 
     return RedirectResponse(url=resp_url, status_code=resp_code)
 
 
 @router.get("/logout", include_in_schema=False, response_model=None)
 async def logout(
-    request: Request, user: UserProfileData | None = Depends(get_current_user)
+    request: Request, background_tasks: BackgroundTasks, user: UserProfileData | None = Depends(get_current_user)
 ) -> RedirectResponse | AppResponseDict:
     """
-    Default page for user logout
+    Enhanced logout endpoint with optimized performance and immediate response.
+
+    This endpoint handles user logout operations and provides immediate feedback
+    while processing security operations in the background for optimal user experience.
+
+    Key Functions:
+    - Extract JWT token from request for background processing
+    - Provide immediate logout response to user
+    - Process token blacklisting and cleanup in background
+    - Handle both authenticated and non-authenticated logout attempts
+
     """
 
     resp_url = AuthURL.LOGIN.value
     reesp_msg = ""
     resp_code = status.HTTP_200_OK
+
     if user:
         try:
-            # Implement user logout logic
+            # Extract token for background processing
             token = extract_bearer_token_from_request(request)
-            await auth_service.process_user_logout(token, user)
+
+            # Add background task to process logout operations
+            background_tasks.add_task(background_process_logout, token, user)
+            logger.debug(f"Added background task to process logout for {user.id}")
+
+            # Provide immediate response
             reesp_msg = "Hope you come back soon!"
-            logger.info(f"User logged out successfully: {user.id}")
+            logger.info(f"User logout initiated successfully: {user.id}")
+
         except Exception as e:
-            logger.error(f"Error during logout for user {user.id}: {e}")
+            logger.error(f"Error initiating logout for user {user.id}: {e}")
             reesp_msg = "Logout completed, but there was an issue processing your request."
     else:
         resp_url = AuthURL.LOGIN.value
         reesp_msg = "Hi, Please login first."
 
+    # Enhanced response for API calls
     if is_api_call(request):
-        return AppResponseDict(status="success", message=reesp_msg, data={"url": resp_url, "status_code": resp_code})
+        response_data = {"url": resp_url, "status_code": resp_code}
+
+        # Add user info for authenticated users
+        if user:
+            response_data["user_id"] = user.id
+            response_data["logout_status"] = "processing"
+
+        return AppResponseDict(status="success", message=reesp_msg, data=response_data)
+
     return RedirectResponse(url=resp_url, status_code=resp_code)
 
 
