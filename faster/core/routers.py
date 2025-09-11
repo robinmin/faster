@@ -12,9 +12,9 @@ from .utilities import check_all_resources
 
 logger = get_logger(__name__)
 
-dev_router = APIRouter(prefix="/dev", tags=["dev", "public"])
+dev_router = APIRouter(prefix="/dev", tags=["dev"])
 
-sys_router = APIRouter(tags=["public"])
+sys_router = APIRouter(tags=["public", "sys"])
 
 
 ###############################################################################
@@ -42,7 +42,7 @@ async def settings(request: Request) -> AppResponseDict:
         data={
             "supabaseUrl": request.app.state.settings.supabase_url,
             "supabaseKey": request.app.state.settings.supabase_anon_key,
-            "backendUrl": request.url.scheme + '://' + request.url.netloc,
+            "backendUrl": request.url.scheme + "://" + request.url.netloc,
             "isSignUp": False,
             "sentryDsn": request.app.state.settings.sentry_client_dsn,
             "sentryEnvironment": request.app.state.settings.environment,
@@ -51,7 +51,7 @@ async def settings(request: Request) -> AppResponseDict:
     )
 
 
-@dev_router.get("/app_state", response_model=None, tags=["public"])
+@dev_router.get("/app_state", response_model=None, tags=["dev"])
 async def app_state(request: Request) -> AppResponseDict:
     """
     Returns the app state for dev-admin.
@@ -61,7 +61,7 @@ async def app_state(request: Request) -> AppResponseDict:
     )
 
 
-@dev_router.get("/request_state", response_model=None, tags=["public"])
+@dev_router.get("/request_state", response_model=None, tags=["dev"])
 async def request_state(request: Request) -> AppResponseDict:
     """
     Returns the request state for dev-admin.
