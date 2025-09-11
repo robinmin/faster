@@ -234,25 +234,45 @@ class AuthRepository(BaseRepository):
             raise ValueError("Metadata dictionary cannot be empty")
 
         try:
-            # Soft delete existing metadata records by setting in_used=0
-            _ = await self.soft_delete(
-                self.table_name(UserMetadata),
-                {"C_USER_AUTH_ID": user_auth_id, "C_METADATA_TYPE": metadata_type},
-                session,
-            )
-
-            # Insert new metadata records
-            metadata_records = [
-                UserMetadata(
-                    user_auth_id=user_auth_id,
-                    metadata_type=metadata_type,
-                    key=key,
-                    value=json.dumps(value) if value is not None else None,
+            # Handle each metadata key individually to avoid UNIQUE constraint violations
+            for key, value in metadata.items():
+                # First, try to find existing record for this specific key
+                existing_query = select(UserMetadata).where(
+                    UserMetadata.user_auth_id == user_auth_id,
+                    UserMetadata.metadata_type == metadata_type,
+                    UserMetadata.key == key,
                 )
-                for key, value in metadata.items()
-            ]
-            if metadata_records:
-                session.add_all(metadata_records)
+                existing_result = await session.exec(existing_query)
+                existing_record = existing_result.first()
+
+                if existing_record:
+                    # Update existing record
+                    existing_record.value = json.dumps(value) if value is not None else None
+                    existing_record.in_used = 1
+                    existing_record.updated_at = datetime.now()
+                else:
+                    # Insert new record
+                    new_record = UserMetadata(
+                        user_auth_id=user_auth_id,
+                        metadata_type=metadata_type,
+                        key=key,
+                        value=json.dumps(value) if value is not None else None,
+                    )
+                    session.add(new_record)
+
+            # Soft delete any remaining records that are no longer in the metadata
+            existing_keys = set(metadata.keys())
+            all_existing_query = select(UserMetadata).where(
+                UserMetadata.user_auth_id == user_auth_id,
+                UserMetadata.metadata_type == metadata_type,
+                UserMetadata.in_used == 1,
+            )
+            all_existing_result = await session.exec(all_existing_query)
+
+            for record in all_existing_result:
+                if record.key not in existing_keys:
+                    record.in_used = 0
+                    record.updated_at = datetime.now()
         except Exception as e:
             logger.error(f"Error creating or updating metadata for user {user_auth_id}, type {metadata_type}: {e}")
             raise DBError(
@@ -498,9 +518,7 @@ class AuthRepository(BaseRepository):
         """
         try:
             # Check if user has any active roles
-            roles_query = select(UserRole).where(
-                UserRole.user_auth_id == user_id
-            ).where(UserRole.in_used == 1)
+            roles_query = select(UserRole).where(UserRole.user_auth_id == user_id).where(UserRole.in_used == 1)
 
             roles_result = await session.exec(roles_query)
             existing_roles = roles_result.all()
@@ -512,7 +530,7 @@ class AuthRepository(BaseRepository):
                     role=self.DEFAULT_ROLE,
                     in_used=1,
                     created_at=datetime.now(),
-                    updated_at=datetime.now()
+                    updated_at=datetime.now(),
                 )
                 session.add(default_role)
                 logger.info(f"Added default role for user {user_id} (no existing roles found)")
@@ -590,9 +608,9 @@ class AuthRepository(BaseRepository):
                 # Step 1: If disable_others=True, disable roles not in current roles list
                 if disable_others:
                     # Get all active roles for the user
-                    all_user_roles_query = select(UserRole).where(
-                        UserRole.user_auth_id == user_id
-                    ).where(UserRole.in_used == 1)
+                    all_user_roles_query = (
+                        select(UserRole).where(UserRole.user_auth_id == user_id).where(UserRole.in_used == 1)
+                    )
 
                     all_user_roles_result = await session.exec(all_user_roles_query)
                     all_user_roles = all_user_roles_result.all()
@@ -608,9 +626,12 @@ class AuthRepository(BaseRepository):
                 # Step 2: For each role in the roles list, reactivate or insert
                 for role in roles:
                     # Try to reactivate existing disabled role using SQLModel
-                    existing_disabled_role_query = select(UserRole).where(
-                        UserRole.user_auth_id == user_id
-                    ).where(UserRole.role == role).where(UserRole.in_used == 0)
+                    existing_disabled_role_query = (
+                        select(UserRole)
+                        .where(UserRole.user_auth_id == user_id)
+                        .where(UserRole.role == role)
+                        .where(UserRole.in_used == 0)
+                    )
 
                     existing_disabled_result = await session.exec(existing_disabled_role_query)
                     existing_disabled_role = existing_disabled_result.first()
@@ -622,9 +643,9 @@ class AuthRepository(BaseRepository):
                         session.add(existing_disabled_role)
                     else:
                         # Check if role already exists and is active
-                        check_stmt = select(UserRole).where(
-                            UserRole.user_auth_id == user_id
-                        ).where(UserRole.role == role)
+                        check_stmt = (
+                            select(UserRole).where(UserRole.user_auth_id == user_id).where(UserRole.role == role)
+                        )
                         check_result = await session.exec(check_stmt)
                         existing_role = check_result.first()
 
@@ -635,7 +656,7 @@ class AuthRepository(BaseRepository):
                                 role=role,
                                 in_used=1,
                                 created_at=datetime.now(),
-                                updated_at=datetime.now()
+                                updated_at=datetime.now(),
                             )
                             session.add(new_role)
 
