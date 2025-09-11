@@ -26,7 +26,18 @@
       "WebFetch(domain:github.com)",
       "Bash(PYTHONPATH=. uv run basedpyright:)"
     ],
-    "deny": ["Read(.env)", "Bash(git:*)"],
+    "deny": [
+      "Read(.env)",
+      "Bash(git:*)",
+      "Read(./.git/**)",
+      "Read(./logs/**)",
+      "Read(./__pycache__/**)",
+      "Read(./pytest_cache/**)",
+      "Read(./ruff_cache/**)",
+      "Read(./mypy_cache/**)",
+      "Read(./mcp/**)",
+      "Read(./venv/**)"
+    ],
     "ask": ["Bash(python:*)"]
   },
   "contextFileName": "docs/AGENTS.md"

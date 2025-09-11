@@ -19,5 +19,5 @@ wheels/
 
 .coverage
 
-# As CLAUDE.md is just a softlink to the README.md file, it should be ignored
+# As CLAUDE.md is just a softlink to the AGENTS.md file, it should be ignored
 CLAUDE.md
