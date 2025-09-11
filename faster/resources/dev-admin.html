@@ -259,6 +259,12 @@
                 </a>
               </li>
               <li>
+                <a @click.prevent="loadPage('onboarding')" href="#">
+                  <i data-lucide="user-check" class="w-4 h-4"></i>
+                  Onboarding
+                </a>
+              </li>
+              <li>
                 <a @click.prevent="loadPage('profile')" href="#">
                   <i data-lucide="user" class="w-4 h-4"></i>
                   Profile
@@ -695,8 +701,13 @@
               if (session && session.user) {
                 this.user = session.user;
                 this.currentView = "app";
-                this.notifyBackendLogin();
-                this.loadDashboard();
+                
+                // Notify backend and handle onboarding navigation
+                this.notifyBackendLogin().catch(error => {
+                  console.warn("Backend login notification failed:", error);
+                  // Fallback to loading dashboard if backend call fails
+                  this.loadDashboard();
+                });
               } else {
                 this.currentView = "auth";
               }
@@ -717,8 +728,13 @@
               this.user = session.user;
               this.currentView = "app";
               this.showToast("Login successful!", "success");
-              this.notifyBackendLogin();
-              this.loadDashboard();
+              
+              // Notify backend and handle onboarding navigation
+              this.notifyBackendLogin().catch(error => {
+                console.warn("Backend login notification failed:", error);
+                // Fallback to loading dashboard if backend call fails
+                this.loadDashboard();
+              });
             } else if (event === "SIGNED_OUT") {
               console.log("User signed out via auth state change");
               this.user = null;
@@ -813,8 +829,13 @@
               this.currentView = "app";
               this.showToast("Login successful!", "success");
               this.clearAuthForm();
-              this.notifyBackendLogin();
-              this.loadDashboard();
+              
+              // Notify backend and handle onboarding navigation
+              this.notifyBackendLogin().catch(error => {
+                console.warn("Backend login notification failed:", error);
+                // Fallback to loading dashboard if backend call fails
+                this.loadDashboard();
+              });
             } catch (error) {
               console.error("Email login failed:", error);
               this.showToast("Login failed: " + error.message, "error");
@@ -894,7 +915,8 @@
 
             const endpoints = {
               dashboard: "/auth/dashboard",
-              profile: "/auth/profile"
+              profile: "/auth/profile",
+              onboarding: "/auth/onboarding"
             };
 
             const endpoint = endpoints[page];
@@ -933,10 +955,22 @@
             }
 
             try {
-              await this.apiCall("/auth/login", "GET");
-              console.log("Backend notified of login");
+              const response = await this.apiCall("/auth/login", "GET");
+              console.log("Backend notified of login:", response);
+              
+              // Handle onboarding status from enhanced API response
+              if (response && response.data) {
+                const { onboarding_complete, user_id } = response.data;
+                console.log(`User ${user_id} onboarding status: ${onboarding_complete}`);
+                
+                // Navigate based on onboarding status
+                this.handleOnboardingNavigation(onboarding_complete);
+              }
+              
+              return response;
             } catch (error) {
               console.warn("Failed to notify backend of login:", error);
+              throw error;
             }
           },
 
@@ -949,10 +983,38 @@
             }
 
             try {
-              await this.apiCall("/auth/logout", "GET");
-              console.log("Backend notified of logout");
+              const response = await this.apiCall("/auth/logout", "GET");
+              console.log("Backend notified of logout:", response);
+              
+              // Handle logout status from enhanced API response
+              if (response && response.data) {
+                const { logout_status, user_id } = response.data;
+                console.log(`User ${user_id} logout status: ${logout_status}`);
+                
+                if (logout_status === "processing") {
+                  this.showToast("Logout processing in background", "info");
+                }
+              }
+              
+              return response;
             } catch (error) {
               console.warn("Failed to notify backend of logout:", error);
+              throw error;
+            }
+          },
+
+          // Handle navigation based on onboarding status
+          handleOnboardingNavigation(onboarding_complete) {
+            console.log("Handling onboarding navigation:", onboarding_complete);
+            
+            if (onboarding_complete) {
+              // User has completed onboarding - load dashboard
+              console.log("User has completed onboarding, loading dashboard");
+              this.loadDashboard();
+            } else {
+              // User needs to complete onboarding - load onboarding page
+              console.log("User needs to complete onboarding, loading onboarding page");
+              this.loadPage('onboarding');
             }
           },
 
