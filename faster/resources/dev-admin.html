@@ -869,21 +869,46 @@
           async signOut() {
             console.log("User signing out...");
 
+            let backendLogoutSuccess = true;
+            let supabaseLogoutSuccess = true;
+            let backendError = null;
+            let supabaseError = null;
+
+            // Notify backend but don't wait for success
             try {
               await this.notifyBackendLogout();
+            } catch (error) {
+              console.warn("Backend logout notification failed:", error);
+              backendLogoutSuccess = false;
+              backendError = error;
+            }
 
+            // Handle Supabase logout
+            try {
               if (this.supabase) {
                 const { error } = await this.supabase.auth.signOut();
                 if (error) throw error;
               }
-
-              this.user = null;
-              this.currentView = "auth";
-              this.showToast("Logged out successfully", "success");
             } catch (error) {
-              console.error("Logout failed:", error);
-              this.showToast("Logout failed: " + error.message, "error");
+              console.error("Supabase logout failed:", error);
+              supabaseLogoutSuccess = false;
+              supabaseError = error;
             }
+
+            // Show appropriate toast based on results
+            if (backendLogoutSuccess && supabaseLogoutSuccess) {
+              this.showToast("Logged out successfully", "success");
+            } else if (!backendLogoutSuccess && !supabaseLogoutSuccess) {
+              this.showToast("Logout failed: Backend and authentication errors", "error");
+            } else if (!backendLogoutSuccess) {
+              this.showToast("Partial logout: Backend notification failed", "warning");
+            } else if (!supabaseLogoutSuccess) {
+              this.showToast("Logout failed: " + supabaseError.message, "error");
+            }
+
+            // Always navigate to login page regardless of API response
+            this.user = null;
+            this.currentView = "auth";
           },
 
           // 加载仪表板内容
