@@ -1,6 +1,7 @@
 import base64
 from datetime import datetime
 import json
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
@@ -102,39 +103,39 @@ class TestAuthProxyUserManagement:
     """Test AuthProxy user management functionality."""
 
     @pytest.mark.asyncio
-    @patch("faster.core.auth.auth_proxy.get_user_profile")
-    async def test_get_user_by_id_from_cache(self, mock_get_user_profile: AsyncMock, auth_proxy: AuthProxy) -> None:
-        """Test getting user by ID from cache."""
-        # Create a complete UserProfileData with all required fields
-        cached_user_json = """{
-            "id": "user-123",
-            "email": "test@example.com",
-            "email_confirmed_at": null,
-            "phone": null,
-            "created_at": "2023-01-01T00:00:00",
-            "updated_at": "2023-01-01T00:00:00",
-            "last_sign_in_at": null,
-            "app_metadata": {},
-            "user_metadata": {},
-            "aud": "test",
-            "role": "authenticated"
-        }"""
-        mock_get_user_profile.return_value = cached_user_json
+    async def test_get_user_by_id_from_cache(self, auth_proxy: AuthProxy) -> None:
+        """Test getting user by ID from cache (future implementation)."""
+        # Note: Current implementation doesn't use cache, goes directly to Supabase
+        # This test validates the current behavior
+        user_id = "550e8400-e29b-41d4-a716-446655440000"  # Valid UUID format
+        mock_user = UserProfileData(
+            id=user_id,
+            email="test@example.com",
+            aud="test",
+            role="authenticated",
+            app_metadata={},
+            user_metadata={},
+            created_at=datetime.fromisoformat("2023-01-01T00:00:00"),
+        )
 
-        result = await auth_proxy.get_user_by_id("user-123")
+        with patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop:
+            mock_service_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.user = mock_user
+            mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
+            mock_service_client_prop.return_value = mock_service_client
 
-        assert result is not None
-        assert result.id == "user-123"
-        assert result.email == "test@example.com"
-        mock_get_user_profile.assert_called_once_with("user-123")
+            result = await auth_proxy.get_user_by_id(user_id)
+
+            assert result is not None
+            assert result.id == user_id
+            assert result.email == "test@example.com"
+            mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
 
     @pytest.mark.asyncio
     async def test_get_user_by_id_user_not_found(self, auth_proxy: AuthProxy) -> None:
         """Test getting user by ID when user is not found."""
-        with (
-            patch("faster.core.auth.auth_proxy.get_user_profile", return_value=None),
-            patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop,
-        ):
+        with patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop:
             mock_service_client = MagicMock()
             mock_response = MagicMock()
             mock_response.user = None
@@ -155,35 +156,9 @@ class TestAuthProxyUserManagement:
 
     @pytest.mark.asyncio
     async def test_get_user_by_id_with_cache_hit(self, auth_proxy: AuthProxy) -> None:
-        """Test getting user by ID when cache hit occurs."""
-        user_id = "user-123"
-        cached_user_json = """{
-            "id": "user-123",
-            "email": "test@example.com",
-            "email_confirmed_at": null,
-            "phone": null,
-            "created_at": "2023-01-01T00:00:00",
-            "updated_at": "2023-01-01T00:00:00",
-            "last_sign_in_at": null,
-            "app_metadata": {},
-            "user_metadata": {},
-            "aud": "test",
-            "role": "authenticated"
-        }"""
-
-        with patch("faster.core.auth.auth_proxy.get_user_profile", new_callable=AsyncMock) as mock_get_profile:
-            mock_get_profile.return_value = cached_user_json
-
-            result = await auth_proxy.get_user_by_id(user_id)
-            assert result is not None
-            assert result.id == user_id
-            assert result.email == "test@example.com"
-            mock_get_profile.assert_called_once_with(user_id)
-
-    @pytest.mark.asyncio
-    async def test_get_user_by_id_with_cache_miss(self, auth_proxy: AuthProxy) -> None:
-        """Test getting user by ID when cache miss occurs."""
-        user_id = "user-123"
+        """Test getting user by ID when cache hit occurs (future implementation)."""
+        # Note: Current implementation doesn't use cache, goes directly to Supabase
+        user_id = "550e8400-e29b-41d4-a716-446655440000"  # Valid UUID format
         mock_user = UserProfileData(
             id=user_id,
             email="test@example.com",
@@ -194,33 +169,51 @@ class TestAuthProxyUserManagement:
             created_at=datetime.fromisoformat("2023-01-01T00:00:00"),
         )
 
-        with (
-            patch("faster.core.auth.auth_proxy.get_user_profile", return_value=None) as mock_get_profile,
-            patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop,
-        ):
+        with patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop:
             mock_service_client = MagicMock()
             mock_response = MagicMock()
             mock_response.user = mock_user
             mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
             mock_service_client_prop.return_value = mock_service_client
 
-            with patch("faster.core.auth.auth_proxy.set_user_profile", new_callable=AsyncMock) as mock_set_profile:
-                result = await auth_proxy.get_user_by_id(user_id)
-                assert result is not None
-                assert result.id == user_id
-                mock_get_profile.assert_called_once_with(user_id)
-                mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
-                mock_set_profile.assert_called_once()
+            result = await auth_proxy.get_user_by_id(user_id)
+            assert result is not None
+            assert result.id == user_id
+            assert result.email == "test@example.com"
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_id_with_cache_miss(self, auth_proxy: AuthProxy) -> None:
+        """Test getting user by ID when cache miss occurs (future implementation)."""
+        # Note: Current implementation doesn't use cache, goes directly to Supabase
+        user_id = "550e8400-e29b-41d4-a716-446655440000"  # Valid UUID format
+        mock_user = UserProfileData(
+            id=user_id,
+            email="test@example.com",
+            aud="test",
+            role="authenticated",
+            app_metadata={},
+            user_metadata={},
+            created_at=datetime.fromisoformat("2023-01-01T00:00:00"),
+        )
+
+        with patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop:
+            mock_service_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.user = mock_user
+            mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
+            mock_service_client_prop.return_value = mock_service_client
+
+            result = await auth_proxy.get_user_by_id(user_id)
+            assert result is not None
+            assert result.id == user_id
+            mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
 
     @pytest.mark.asyncio
     async def test_get_user_by_id_service_error(self, auth_proxy: AuthProxy) -> None:
         """Test getting user by ID when service returns error."""
         user_id = "error-user"
 
-        with (
-            patch("faster.core.auth.auth_proxy.get_user_profile", return_value=None),
-            patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop,
-        ):
+        with patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop:
             mock_service_client = MagicMock()
             mock_service_client.auth.admin.get_user_by_id.side_effect = Exception("Service error")
             mock_service_client_prop.return_value = mock_service_client
@@ -229,8 +222,8 @@ class TestAuthProxyUserManagement:
             assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_user_by_id_without_cache(self, auth_proxy: AuthProxy) -> None:
-        """Test getting user by ID without using cache."""
+    async def test_get_user_by_id_with_from_cache_true(self, auth_proxy: AuthProxy) -> None:
+        """Test getting user by ID with from_cache=True (default behavior)."""
         user_id = "user-123"
         mock_user = UserProfileData(
             id=user_id,
@@ -244,7 +237,34 @@ class TestAuthProxyUserManagement:
 
         with (
             patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop,
-            patch("faster.core.auth.auth_proxy.set_user_profile", new_callable=AsyncMock) as mock_set_profile,
+        ):
+            mock_service_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.user = mock_user
+            mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
+            mock_service_client_prop.return_value = mock_service_client
+
+            result = await auth_proxy.get_user_by_id(user_id, from_cache=True)
+            assert result is not None
+            assert result.id == user_id
+            mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_id_with_from_cache_false(self, auth_proxy: AuthProxy) -> None:
+        """Test getting user by ID with from_cache=False (bypass cache)."""
+        user_id = "user-123"
+        mock_user = UserProfileData(
+            id=user_id,
+            email="test@example.com",
+            aud="test",
+            role="authenticated",
+            app_metadata={},
+            user_metadata={},
+            created_at=datetime.fromisoformat("2023-01-01T00:00:00"),
+        )
+
+        with (
+            patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop,
         ):
             mock_service_client = MagicMock()
             mock_response = MagicMock()
@@ -256,7 +276,32 @@ class TestAuthProxyUserManagement:
             assert result is not None
             assert result.id == user_id
             mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
-            mock_set_profile.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_id_without_cache(self, auth_proxy: AuthProxy) -> None:
+        """Test getting user by ID without using cache."""
+        user_id = "550e8400-e29b-41d4-a716-446655440000"  # Valid UUID format
+        mock_user = UserProfileData(
+            id=user_id,
+            email="test@example.com",
+            aud="test",
+            role="authenticated",
+            app_metadata={},
+            user_metadata={},
+            created_at=datetime.fromisoformat("2023-01-01T00:00:00"),
+        )
+
+        with patch.object(AuthProxy, "service_client", new_callable=PropertyMock) as mock_service_client_prop:
+            mock_service_client = MagicMock()
+            mock_response = MagicMock()
+            mock_response.user = mock_user
+            mock_service_client.auth.admin.get_user_by_id.return_value = mock_response
+            mock_service_client_prop.return_value = mock_service_client
+
+            result = await auth_proxy.get_user_by_id(user_id, from_cache=False)
+            assert result is not None
+            assert result.id == user_id
+            mock_service_client.auth.admin.get_user_by_id.assert_called_once_with(user_id)
 
     @pytest.mark.asyncio
     async def test_get_user_id_from_token_success(self, auth_proxy: AuthProxy) -> None:
@@ -412,97 +457,95 @@ class TestAuthProxyUserManagement:
 
 
 class TestAuthProxyJwksCaching:
-    """Test AuthProxy JWKS caching functionality."""
+    """Test AuthProxy JWKS in-memory caching functionality."""
 
-    @pytest.mark.asyncio
-    async def test_check_redis_cache_hit(self, auth_proxy: AuthProxy) -> None:
-        """Test Redis cache hit for JWKS key."""
+    def test_check_memory_cache_hit(self, auth_proxy: AuthProxy) -> None:
+        """Test memory cache hit for JWKS key."""
         key_id = "test-key"
         cached_key = {"kty": "RSA", "kid": key_id}
 
-        with patch("faster.core.auth.auth_proxy.get_jwks_key", new_callable=AsyncMock) as mock_get_jwks:
-            mock_get_jwks.return_value = cached_key
+        # Set up cache with valid data
+        auth_proxy._jwks_keys_cache[key_id] = cached_key  # type: ignore[reportPrivateUsage, unused-ignore]
+        auth_proxy._jwks_cache_timestamp = time.time()  # type: ignore[reportPrivateUsage, unused-ignore]
 
-            result = await auth_proxy._check_redis_cache(key_id)  # type: ignore[reportPrivateUsage, unused-ignore]
-            assert result == cached_key
-            mock_get_jwks.assert_called_once_with(key_id)
+        result = auth_proxy._check_memory_cache(key_id)  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert result == cached_key
 
-    @pytest.mark.asyncio
-    async def test_check_redis_cache_miss(self, auth_proxy: AuthProxy) -> None:
-        """Test Redis cache miss for JWKS key."""
+    def test_check_memory_cache_miss(self, auth_proxy: AuthProxy) -> None:
+        """Test memory cache miss for JWKS key."""
         key_id = "test-key"
 
-        with patch("faster.core.auth.auth_proxy.get_jwks_key", new_callable=AsyncMock) as mock_get_jwks:
-            mock_get_jwks.return_value = None
+        # Ensure cache is empty
+        auth_proxy.clear_jwks_cache()
 
-            result = await auth_proxy._check_redis_cache(key_id)  # type: ignore[reportPrivateUsage, unused-ignore]
-            assert result is None
-            mock_get_jwks.assert_called_once_with(key_id)
+        result = auth_proxy._check_memory_cache(key_id)  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert result is None
 
-    @pytest.mark.asyncio
-    async def test_check_redis_cache_exception(self, auth_proxy: AuthProxy) -> None:
-        """Test Redis cache exception handling."""
+    def test_check_memory_cache_expired(self, auth_proxy: AuthProxy) -> None:
+        """Test memory cache with expired data."""
+        key_id = "test-key"
+        cached_key = {"kty": "RSA", "kid": key_id}
+
+        # Set up cache with expired data
+        auth_proxy._jwks_keys_cache[key_id] = cached_key  # type: ignore[reportPrivateUsage, unused-ignore]
+        auth_proxy._jwks_cache_timestamp = time.time() - (auth_proxy._cache_ttl + 100)  # type: ignore[reportPrivateUsage, unused-ignore]
+
+        result = auth_proxy._check_memory_cache(key_id)  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert result is None
+
+    def test_check_memory_cache_exception(self, auth_proxy: AuthProxy) -> None:
+        """Test memory cache exception handling."""
         key_id = "test-key"
 
-        with patch("faster.core.auth.auth_proxy.get_jwks_key", new_callable=AsyncMock) as mock_get_jwks:
-            mock_get_jwks.side_effect = Exception("Redis error")
-
-            result = await auth_proxy._check_redis_cache(key_id)  # type: ignore[reportPrivateUsage, unused-ignore]
+        # Mock time.time to raise exception
+        with patch("faster.core.auth.auth_proxy.time.time", side_effect=Exception("Time error")):
+            result = auth_proxy._check_memory_cache(key_id)  # type: ignore[reportPrivateUsage, unused-ignore]
             assert result is None
 
-    @pytest.mark.asyncio
-    async def test_cache_jwks_keys_success(self, auth_proxy: AuthProxy) -> None:
-        """Test successful caching of JWKS keys."""
+    def test_cache_jwks_keys_success(self, auth_proxy: AuthProxy) -> None:
+        """Test successful caching of JWKS keys in memory."""
         jwks_data = {
             "keys": [
                 {"kid": "key1", "kty": "RSA"},
                 {"kid": "key2", "kty": "RSA"},
             ]
         }
-        cache_ttl = 3600
 
-        with patch("faster.core.auth.auth_proxy.set_jwks_key", new_callable=AsyncMock) as mock_set_jwks:
-            mock_set_jwks.return_value = True
+        target_key, cache_failed = auth_proxy._cache_jwks_keys(jwks_data)  # type: ignore[reportPrivateUsage, unused-ignore]
 
-            target_key, cache_failed = await auth_proxy._cache_jwks_keys(jwks_data, cache_ttl)  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert target_key == {"kid": "key1", "kty": "RSA"}
+        assert cache_failed is False
+        assert len(auth_proxy._jwks_keys_cache) == 2  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert "key1" in auth_proxy._jwks_keys_cache  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert "key2" in auth_proxy._jwks_keys_cache  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert auth_proxy._jwks_cache_timestamp > 0  # type: ignore[reportPrivateUsage, unused-ignore]
 
-            assert target_key == {"kid": "key1", "kty": "RSA"}
-            assert cache_failed is False
-            assert mock_set_jwks.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_cache_jwks_keys_partial_failure(self, auth_proxy: AuthProxy) -> None:
-        """Test partial failure in caching JWKS keys."""
+    def test_cache_jwks_keys_exception_handling(self, auth_proxy: AuthProxy) -> None:
+        """Test exception handling in caching JWKS keys."""
         jwks_data = {
             "keys": [
                 {"kid": "key1", "kty": "RSA"},
                 {"kid": "key2", "kty": "RSA"},
             ]
         }
-        cache_ttl = 3600
 
-        with patch("faster.core.auth.auth_proxy.set_jwks_key", new_callable=AsyncMock) as mock_set_jwks:
-            # First call succeeds, second fails
-            mock_set_jwks.side_effect = [True, False]
-
-            target_key, cache_failed = await auth_proxy._cache_jwks_keys(jwks_data, cache_ttl)  # type: ignore[reportPrivateUsage, unused-ignore]
-
-            assert target_key == {"kid": "key1", "kty": "RSA"}
-            assert cache_failed is True
-            assert mock_set_jwks.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_cache_jwks_keys_no_keys(self, auth_proxy: AuthProxy) -> None:
-        """Test caching JWKS with no keys."""
-        jwks_data: dict[str, Any] = {"keys": []}
-        cache_ttl = 3600
-
-        with patch("faster.core.auth.auth_proxy.set_jwks_key", new_callable=AsyncMock) as mock_set_jwks:
-            target_key, cache_failed = await auth_proxy._cache_jwks_keys(jwks_data, cache_ttl)  # type: ignore[reportPrivateUsage, unused-ignore]
+        # Mock time.time to raise exception during caching
+        with patch("faster.core.auth.auth_proxy.time.time", side_effect=Exception("Time error")):
+            target_key, cache_failed = auth_proxy._cache_jwks_keys(jwks_data)  # type: ignore[reportPrivateUsage, unused-ignore]
 
             assert target_key == {}
-            assert cache_failed is False
-            mock_set_jwks.assert_not_called()
+            assert cache_failed is True
+
+    def test_cache_jwks_keys_no_keys(self, auth_proxy: AuthProxy) -> None:
+        """Test caching JWKS with no keys."""
+        jwks_data: dict[str, Any] = {"keys": []}
+
+        target_key, cache_failed = auth_proxy._cache_jwks_keys(jwks_data)  # type: ignore[reportPrivateUsage, unused-ignore]
+
+        assert target_key == {}
+        assert cache_failed is False
+        assert len(auth_proxy._jwks_keys_cache) == 0  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert auth_proxy._jwks_cache_timestamp > 0  # type: ignore[reportPrivateUsage, unused-ignore]
 
     @pytest.mark.asyncio
     async def test_find_target_key_found(self, auth_proxy: AuthProxy) -> None:
@@ -540,6 +583,40 @@ class TestAuthProxyJwksCaching:
 
         result = await auth_proxy._find_target_key(jwks_data, key_id)  # type: ignore[reportPrivateUsage, unused-ignore]
         assert result == {}
+
+    def test_clear_jwks_cache(self, auth_proxy: AuthProxy) -> None:
+        """Test clearing the JWKS cache."""
+        # Set up cache with data
+        auth_proxy._jwks_keys_cache["key1"] = {"kid": "key1", "kty": "RSA"}  # type: ignore[reportPrivateUsage, unused-ignore]
+        auth_proxy._jwks_cache_timestamp = time.time()  # type: ignore[reportPrivateUsage, unused-ignore]
+        auth_proxy.last_refresh = time.time()
+
+        # Clear cache
+        auth_proxy.clear_jwks_cache()
+
+        assert len(auth_proxy._jwks_keys_cache) == 0  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert auth_proxy._jwks_cache_timestamp == 0.0  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert auth_proxy.last_refresh == 0.0
+
+    def test_get_jwks_cache_info(self, auth_proxy: AuthProxy) -> None:
+        """Test getting JWKS cache information."""
+        # Clear cache first
+        auth_proxy.clear_jwks_cache()
+
+        # Add some test data
+        test_time = time.time()
+        auth_proxy._jwks_keys_cache["key1"] = {"kid": "key1", "kty": "RSA"}  # type: ignore[reportPrivateUsage, unused-ignore]
+        auth_proxy._jwks_keys_cache["key2"] = {"kid": "key2", "kty": "RSA"}  # type: ignore[reportPrivateUsage, unused-ignore]
+        auth_proxy._jwks_cache_timestamp = test_time  # type: ignore[reportPrivateUsage, unused-ignore]
+
+        # Get cache info
+        info = auth_proxy.get_jwks_cache_info()
+
+        assert info["cached_keys_count"] == 2
+        assert info["cache_age_seconds"] >= 0
+        assert info["cache_ttl_seconds"] == auth_proxy._cache_ttl  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert "key1" in info["cached_key_ids"]
+        assert "key2" in info["cached_key_ids"]
 
 
 class TestAuthProxyJwksFetching:
@@ -618,18 +695,12 @@ class TestAuthProxyJwksFetching:
         auto_refresh = True
         cached_key = {"kty": "RSA", "kid": key_id}
 
-        # Set last refresh to recent time
-        auth_proxy.last_refresh = 1000000  # Recent timestamp
+        # Set up cache with valid data
+        auth_proxy._jwks_keys_cache[key_id] = cached_key  # type: ignore[reportPrivateUsage, unused-ignore]
+        auth_proxy._jwks_cache_timestamp = time.time()  # type: ignore[reportPrivateUsage, unused-ignore]
 
-        with (
-            patch.object(auth_proxy, "_check_redis_cache", new_callable=AsyncMock) as mock_check_cache,
-            patch("faster.core.auth.auth_proxy.time.time", return_value=1000050),  # Within TTL
-        ):
-            mock_check_cache.return_value = cached_key
-
-            result = await auth_proxy._get_cached_jwks_key(key_id, jwks_url, cache_ttl, auto_refresh)  # type: ignore[reportPrivateUsage, unused-ignore]
-            assert result == cached_key
-            mock_check_cache.assert_called_once_with(key_id)
+        result = await auth_proxy._get_cached_jwks_key(key_id, jwks_url, cache_ttl, auto_refresh)  # type: ignore[reportPrivateUsage, unused-ignore]
+        assert result == cached_key
 
     @pytest.mark.asyncio
     async def test_get_cached_jwks_key_cache_miss_fetch_success(self, auth_proxy: AuthProxy) -> None:
@@ -641,22 +712,21 @@ class TestAuthProxyJwksFetching:
         jwks_data = {"keys": [{"kid": key_id, "kty": "RSA"}]}
         target_key = {"kid": key_id, "kty": "RSA"}
 
+        # Clear cache to force miss
+        auth_proxy.clear_jwks_cache()
+
         with (
-            patch.object(auth_proxy, "_check_redis_cache", new_callable=AsyncMock) as mock_check_cache,
             patch.object(auth_proxy, "_fetch_jwks_from_server", new_callable=AsyncMock) as mock_fetch,
             patch.object(auth_proxy, "_find_target_key", new_callable=AsyncMock) as mock_find_key,
-            patch.object(auth_proxy, "_cache_jwks_keys", new_callable=AsyncMock) as mock_cache_keys,
-            patch("faster.core.auth.auth_proxy.time.time", return_value=1000100),
         ):
-            mock_check_cache.return_value = None
             mock_fetch.return_value = jwks_data
             mock_find_key.return_value = target_key
-            mock_cache_keys.return_value = (target_key, False)
 
             result = await auth_proxy._get_cached_jwks_key(key_id, jwks_url, cache_ttl, auto_refresh)  # type: ignore[reportPrivateUsage, unused-ignore]
 
             assert result == target_key
-            assert auth_proxy.last_refresh == 1000100
+            assert auth_proxy.last_refresh > 0
+            assert key_id in auth_proxy._jwks_keys_cache  # type: ignore[reportPrivateUsage, unused-ignore]
 
     @pytest.mark.asyncio
     async def test_get_cached_jwks_key_fetch_failure(self, auth_proxy: AuthProxy) -> None:
@@ -666,11 +736,10 @@ class TestAuthProxyJwksFetching:
         cache_ttl = 3600
         auto_refresh = True
 
-        with (
-            patch.object(auth_proxy, "_check_redis_cache", new_callable=AsyncMock) as mock_check_cache,
-            patch.object(auth_proxy, "_fetch_jwks_from_server", new_callable=AsyncMock) as mock_fetch,
-        ):
-            mock_check_cache.return_value = None
+        # Clear cache to force fetch
+        auth_proxy.clear_jwks_cache()
+
+        with patch.object(auth_proxy, "_fetch_jwks_from_server", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = {}
 
             result = await auth_proxy._get_cached_jwks_key(key_id, jwks_url, cache_ttl, auto_refresh)  # type: ignore[reportPrivateUsage, unused-ignore]
