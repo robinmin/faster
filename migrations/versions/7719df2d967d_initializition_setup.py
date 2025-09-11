@@ -151,11 +151,11 @@ def upgrade() -> None:
         sa.Column('D_DELETED_AT', sa.DateTime(), nullable=True),
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('C_CATEGORY', sa.String(length=64), nullable=False),
-        sa.Column('C_LEFT_VALUE', sa.String(length=64), nullable=False),
-        sa.Column('C_RIGHT_VALUE', sa.String(length=64), nullable=False),
+        sa.Column('C_LEFT', sa.String(length=64), nullable=False),
+        sa.Column('C_RIGHT', sa.String(length=64), nullable=False),
         sa.Column('N_ORDER', sa.Integer(), server_default='0', nullable=False),
         sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('C_CATEGORY', 'C_LEFT_VALUE', 'C_RIGHT_VALUE', name='uk_sys_map_category_left_right')
+        sa.UniqueConstraint('C_CATEGORY', 'C_LEFT', 'C_RIGHT', name='uk_sys_map_category_left_right')
     )
     op.create_index('idx_sys_map_category', 'SYS_MAP', ['C_CATEGORY'], unique=False)
     # ### end Alembic commands ###
@@ -164,10 +164,18 @@ def upgrade() -> None:
     conn = op.get_bind()
     result = conn.execute(
         text("""
-        INSERT INTO SYS_MAP (C_CATEGORY, C_LEFT_VALUE, C_RIGHT_VALUE, N_ORDER) VALUES
+        INSERT INTO SYS_MAP (C_CATEGORY, C_LEFT, C_RIGHT, N_ORDER) VALUES
         ('tag_role', 'sys', 'developer', 1),
         ('tag_role', 'dev', 'developer', 2),
-        ('tag_role', 'auth', 'developer', 3);
+        ('tag_role', 'auth', 'developer', 3),
+        ('tag_role', 'auth', 'default', 4);
+        """)
+    )
+    result = conn.execute(
+        text("""
+        INSERT INTO SYS_DICT (C_CATEGORY, N_KEY, C_VALUE, N_ORDER) VALUES
+        ('user_role', 10, 'default', 1),
+        ('user_role', 20, 'developer', 2);
         """)
     )
     logger.debug(f"result = {result}")
