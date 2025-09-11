@@ -81,34 +81,49 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return True
         return False
 
-    async def _set_request_state(self, request: Request, user_id: str | None, current_path: str) -> None:
-        """Set request state based on authentication result."""
-        if user_id:
-            # Successfully authenticated - get full user profile
-            try:
-                user_profile = await self._auth_service.get_user_by_id(user_id, from_cache=True)
-                if user_profile:
-                    # User profile is already UserProfileData, no conversion needed
-                    request.state.user = user_profile
-                    request.state.authenticated = True
-                    # TODO: for test purpose to assign role, should be fix after debugging
-                    # request.state.roles = set(await self._auth_service.get_roles(user_id))
-                    request.state.roles = set("developer")
+    async def _get_authenticated_user_profile(self, user_id: str) -> UserProfileData | None:
+        """Retrieve and validate user profile from auth service."""
+        try:
+            user_profile = await self._auth_service.get_user_by_id(user_id, from_cache=True)
+            if user_profile:
+                return user_profile
 
-                    # logger.debug(f"[auth] Successfully authenticated user: {user_id}")
-                    return
+            # Token valid but user not found
+            logger.warning(f"[auth] Valid token but user profile not found: {user_id}")
+            return None
 
-                # Token valid but user not found - treat as authentication failure
-                logger.warning(f"[auth] Valid token but user profile not found: {user_id}")
-            except Exception as e:
-                # Error fetching user profile - treat as authentication failure
-                logger.error(f"[auth] Error fetching user profile: {e}")
+        except Exception as e:
+            # Error fetching user profile
+            logger.error(f"[auth] Error fetching user profile: {e}")
+            return None
 
-        # Authentication failed or no token provided
+    def _set_authenticated_state(self, request: Request, user_profile: UserProfileData) -> None:
+        """Set request state for successfully authenticated user."""
+        request.state.user = user_profile
+        request.state.authenticated = True
+        # TODO: for test purpose to assign role, should be fix after debugging
+        # request.state.roles = set(await self._auth_service.get_roles(user_profile.id))
+        request.state.roles = set("developer")
+
+    def _set_unauthenticated_state(self, request: Request, current_path: str) -> None:
+        """Set request state for unauthenticated request."""
         request.state.user = None
         request.state.roles = set()
         request.state.authenticated = False
         logger.info(f"[auth] Authentication failed for endpoint: {current_path}")
+
+    async def _set_request_state(self, request: Request, user_id: str | None, current_path: str) -> None:
+        """Set request state based on authentication result."""
+        if user_id:
+            # Attempt to get authenticated user profile
+            user_profile = await self._get_authenticated_user_profile(user_id)
+            if user_profile:
+                # Successfully authenticated - set authenticated state
+                self._set_authenticated_state(request, user_profile)
+                return
+
+        # Authentication failed or no user_id provided - set unauthenticated state
+        self._set_unauthenticated_state(request, current_path)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponseDict:  # noqa: PLR0911
         """
@@ -123,6 +138,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         current_path = request.url.path
         current_method = request.method
+        # logger.debug(f"[auth] ==> Processing request: {current_method} {current_path}")
         try:
             # 1. Handle allowed paths in debug mode
             if current_method in ["HEAD", "OPTIONS"] or self._handle_allowed_path(request, current_path):
@@ -150,27 +166,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     status_code=status.HTTP_401_UNAUTHORIZED,
                 )
 
+            # 5. Get user profile
             user_id = await self._auth_service.get_user_id_from_token(token)
             await self._set_request_state(request, user_id, current_path)
 
-            # 5. Check authentication and authorization
+            # 6. Check authentication and authorization
             if not user_id and self._require_auth:
                 return AppResponseDict(
                     status="http error",
                     message="Authentication required",
                     status_code=status.HTTP_401_UNAUTHORIZED,
                 )
-            # 6. RBAC check
+
+            # 7. RBAC check
             if user_id and not await self._auth_service.check_access(user_id, tags):
                 return AppResponseDict(
                     status="http error",
                     message="Permission denied",
                     status_code=status.HTTP_403_FORBIDDEN,
                 )
+            logger.debug(f"[auth] => pass on {current_method} {current_path} for {user_id}")
 
-            # 7. Continue to the next middleware/endpoint
-            response = await call_next(request)
-            return response
+            # 8. Continue to the next middleware/endpoint
+            return await call_next(request)
         except Exception as exp:
             logger.error(f"[auth] Authentication error: {exp}")
             return AppResponseDict(
@@ -184,7 +202,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 async def get_current_user(request: Request) -> UserProfileData | None:
     """Dependency to get current authenticated user."""
     if not hasattr(request.state, "authenticated") or not request.state.authenticated:
-        logger.error("Authentication required")
+        logger.error("Authentication required in get_current_user")
         return None
 
     return cast(UserProfileData, request.state.user)
@@ -193,7 +211,7 @@ async def get_current_user(request: Request) -> UserProfileData | None:
 async def has_role(request: Request, role: str) -> bool:
     """Check if current user has a specific role."""
     if not hasattr(request.state, "authenticated") or not request.state.authenticated:
-        logger.error("Authentication required")
+        logger.error("Authentication required in has_role")
         return False
 
     return hasattr(request.state, "roles") and role in request.state.roles
