@@ -1,6 +1,6 @@
 from ..database import get_transaction
 from ..logger import get_logger
-from ..redisex import blacklist_add, blacklist_delete, tag2role_get, user2role_get, user2role_set
+from ..redisex import tag2role_get, user2role_get, user2role_set
 from .auth_proxy import AuthProxy
 from .models import UserProfileData
 from .repositories import AuthRepository
@@ -51,16 +51,11 @@ class AuthService:
     async def process_user_login(self, token: str | None, user_profile: UserProfileData) -> User:
         """
         Process user login by:
-        1. Validating JWT token
-        2. Removing token from blacklist if it exists
-        3. Saving/updating user profile in database
-        4. Returning database user record
+        1. Validating JWT token (handled in router/middleware)
+        2. Saving/updating user profile in database
+        3. Returning database user record
         """
         logger.info(f"Processing login for user: {user_profile.id}")
-
-        # Remove token from blacklist (if it exists)
-        if token and not await blacklist_delete(token):
-            logger.warning(f"Failed to remove token {token} from blacklist")
 
         # Save user profile to database
         try:
@@ -73,22 +68,19 @@ class AuthService:
 
     async def process_user_logout(self, token: str | None, user_profile: UserProfileData) -> None:
         """
-        Logout user by adding their token to blacklist.
-        Note: This would require the actual JWT token to blacklist it properly.
-        For now, we'll implement basic logout logic.
+        Process user logout operations.
         """
-
-        # Add token into blacklist
-        if token and not await blacklist_add(token):
-            logger.warning(f"Failed to add token {token} into blacklist")
-
         user_id = user_profile.id
         try:
-            # TODO: Implement proper token blacklisting
-            # This would require accessing the actual JWT token
-            logger.info(f"Logging out user: {user_id}")
+            # Process any logout-specific business logic here
+            # (e.g., update last logout time, cleanup sessions, etc.)
+            logger.info(f"Processing logout for user: {user_id}")
+
+            # Additional logout processing can be added here
+            # such as clearing user sessions, updating logout timestamps, etc.
+
         except Exception as e:
-            logger.error(f"Failed to logout user {user_id}: {e}")
+            logger.error(f"Failed to process logout for user {user_id}: {e}")
             raise
 
     async def get_roles_by_tags(self, tags: list[str]) -> set[str]:
