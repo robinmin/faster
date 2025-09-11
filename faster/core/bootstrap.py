@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 import os
 import signal
@@ -45,25 +45,6 @@ from .utilities import (
 ###############################################################################
 
 logger = get_logger(__name__)
-
-
-async def default_startup_handler() -> bool:
-    """
-    Default startup handler that can be overridden.
-    Returns True if successful, False otherwise.
-    """
-    logger.info("[faster]: Default startup handler executed.")
-
-    return True
-
-
-async def default_shutdown_handler() -> bool:
-    """
-    Default shutdown handler that can be overridden.
-    Returns True if successful, False otherwise.
-    """
-    logger.info("[faster]: Default shutdown handler executed.")
-    return True
 
 
 async def _setup_vps_specific(app: FastAPI, settings: Settings) -> None:
@@ -230,10 +211,8 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
     logger.info("=========================================================")
 
 
-def create_app(  # noqa: C901
+def create_app(
     settings: Settings | None = None,
-    startup_handler: Callable[..., Awaitable[bool]] | None = None,
-    shutdown_handler: Callable[..., Awaitable[bool]] | None = None,
     routers: list[APIRouter] | None = None,
     middlewares: list[Any] | None = None,
     **kwargs: Any,
@@ -243,8 +222,8 @@ def create_app(  # noqa: C901
 
     Args:
         settings: The configuration object. If None, it's retrieved automatically.
-        startup_handler: An async handler to call on startup.
-        shutdown_handler: An async handler to call on shutdown.
+        routers: List of additional routers to include.
+        middlewares: List of additional middlewares to add.
         **kwargs: Other FastAPI parameters.
 
     Returns:
@@ -269,10 +248,6 @@ def create_app(  # noqa: C901
             logger.info("Setting up all resources...")
             await _setup_all(app, settings)
 
-            final_startup_handler = startup_handler or default_startup_handler
-            if not await final_startup_handler():
-                raise AppError(f"Startup handler {getattr(final_startup_handler, '__name__', 'unknown')} failed.")
-
             await refresh_status(app, settings, settings.is_debug)
         except AppError as exp:
             logger.critical(f"Application startup failed: {exp}")
@@ -287,9 +262,6 @@ def create_app(  # noqa: C901
             await _teardown_all(app)
 
             logger.info("Shutting down application...")
-            final_shutdown_handler = shutdown_handler or default_shutdown_handler
-            if not await final_shutdown_handler():
-                logger.error(f"Shutdown handler {getattr(final_shutdown_handler, '__name__', 'unknown')} failed.")
         except AppError as e:
             logger.critical(f"Error during shutdown: {e}")
 
