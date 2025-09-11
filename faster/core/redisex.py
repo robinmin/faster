@@ -25,7 +25,7 @@ class KeyPrefix(Enum):
     USER_INFO = "user:info"
     USER_ROLES = "user:roles"
     USER_PROFILE = "user:profile"
-    TAG_ROLES = "tag:roles"
+    # TAG_ROLES = "tag:roles"
     SYS_DICT = "sys:dict"
     SYS_MAP = "sys:map"
     JWKS_KEY = "jwks:key"
@@ -35,6 +35,14 @@ class KeyPrefix(Enum):
 
     def get_key(self, suffix: str) -> str:
         return f"{self.value}:{suffix}"
+
+
+# class MapCategory(StrEnum): # available in Python 3.11+
+class MapCategory(Enum):
+    TAG_ROLE = "tag_role"
+
+    def __str__(self) -> str:  # no need in Python 3.11+
+        return self.value
 
 
 ###############################################################################
@@ -113,24 +121,6 @@ async def user2role_set(user_id: str, roles: list[str] | None = None) -> bool:
 ###############################################################################
 
 
-async def tag2role_get(tag: str) -> list[str]:
-    """
-    Get tag role from the database.
-    """
-    roles = await get_redis().smembers(KeyPrefix.TAG_ROLES.get_key(tag))
-    return list(roles)
-
-
-async def tag2role_set(tag: str, roles: list[str] | None = None) -> bool:
-    """
-    Set tag role in the database.
-    """
-    if roles is None:
-        result = await get_redis().delete(KeyPrefix.TAG_ROLES.get_key(tag))
-        return result > 0
-
-    result = await get_redis().sadd(KeyPrefix.TAG_ROLES.get_key(tag), *roles)
-    return result == len(roles)
 
 
 ###############################################################################
@@ -162,14 +152,40 @@ async def sysdict_set(category: str, mapping: dict[int, Any]) -> bool:
 
 
 ###############################################################################
-async def sysmap_get(category: str, left: str) -> str | None:
+async def sysmap_get(category: str, left: str | None = None) -> dict[str, str]:
     """
-    Get system map value from the database.
+    Get system map value(s) from the database.
+    Values are returned as raw strings.
+
+    Args:
+        category: The category of the system map
+        left: The key to get. If None, returns all key-value pairs in the category
+
+    Returns:
+        When left is None: dict with all key-value pairs in the category
+        When left is provided: dict with single key-value pair if found, empty dict if not found
     """
-    return await get_redis().hget(KeyPrefix.SYS_MAP.get_key(category), left)
+    try:
+        key = KeyPrefix.SYS_MAP.get_key(category)
+
+        if left is None:
+            # Get all key-value pairs in the category
+            result = await get_redis().hgetall(key)
+            return result or {}
+
+        # Get specific key value
+        value = await get_redis().hget(key, left)
+        if not value:
+            return {}
+
+        return {left: value}
+
+    except Exception as e:
+        logger.error(f"Error when hget/hgetall from [{KeyPrefix.SYS_MAP.get_key(category)}] : {e}")
+    return {}
 
 
-async def sysmap_set(category: str, mapping: dict[str, Any]) -> bool:
+async def sysmap_set(category: str, mapping: dict[str, str]) -> bool:
     """
     Set system map value from the database.
     """
@@ -181,6 +197,8 @@ async def sysmap_set(category: str, mapping: dict[str, Any]) -> bool:
     except Exception as e:
         logger.error(f"Error when hset to [{key}] : {e}")
     return False
+
+
 
 
 # =============================================================================
