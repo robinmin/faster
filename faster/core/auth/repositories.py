@@ -27,6 +27,8 @@ class AuthRepository(BaseRepository):
     Inherits from BaseRepository for standard database operations and session management.
     """
 
+    DEFAULT_ROLE = "default"
+
     def __init__(
         self, session_factory: Callable[[], DBSession] | None = None, db_manager: DatabaseManager | None = None
     ) -> None:
@@ -440,6 +442,9 @@ class AuthRepository(BaseRepository):
             if user_profile.user_metadata:
                 await self.create_or_update_user_metadata(session, user_profile.id, "user", user_profile.user_metadata)
 
+            # Ensure user has at least one role - add default role if none exist
+            await self._ensure_user_has_role(session, user_profile.id)
+
             await session.flush()
             logger.info(f"Successfully stored user profile for user_id: {user_profile.id}")
             return True
@@ -483,6 +488,40 @@ class AuthRepository(BaseRepository):
             )
             session.add(new_user)
 
+    async def _ensure_user_has_role(self, session: DBSession, user_id: str) -> None:
+        """
+        Ensure user has at least one role, add default role if none exist.
+
+        Args:
+            session: Database session
+            user_id: User's authentication ID
+        """
+        try:
+            # Check if user has any active roles
+            roles_query = select(UserRole).where(
+                UserRole.user_auth_id == user_id
+            ).where(UserRole.in_used == 1)
+
+            roles_result = await session.exec(roles_query)
+            existing_roles = roles_result.all()
+
+            # If user has no roles, add default role
+            if not existing_roles:
+                default_role = UserRole(
+                    user_auth_id=user_id,
+                    role=self.DEFAULT_ROLE,
+                    in_used=1,
+                    created_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+                session.add(default_role)
+                logger.info(f"Added default role for user {user_id} (no existing roles found)")
+            else:
+                logger.debug(f"User {user_id} already has {len(existing_roles)} role(s)")
+        except Exception as e:
+            logger.error(f"Error ensuring user has role for user_id {user_id}: {e}")
+            raise
+
     async def get_roles(self, user_id: str) -> list[str]:
         """
         Get all roles assigned to a user.
@@ -516,16 +555,14 @@ class AuthRepository(BaseRepository):
             logger.error(f"Failed to get roles for user {user_id}: {e}")
             raise DBError(f"Failed to get roles for user {user_id}: {e}") from e
 
-    async def set_roles(self, user_id: str, roles: list[str]) -> bool:
+    async def set_roles(self, user_id: str, roles: list[str], disable_others: bool = True) -> bool:
         """
-        Set roles for a user using soft delete pattern.
-
-        First marks all existing role assignments as inactive (in_used=0),
-        then creates new role assignments with the provided roles.
+        Set roles for a user with enhanced logic for managing existing roles.
 
         Args:
             user_id: User's authentication ID
             roles: List of role strings to assign to the user
+            disable_others: If True, disable roles not in current roles list; if False, keep existing roles
 
         Returns:
             True if successful
@@ -534,37 +571,76 @@ class AuthRepository(BaseRepository):
             ValueError: If user_id is empty or roles is None
             DBError: If database operation fails
 
+        Logic:
+            - If disable_others=True: Disable existing roles not in the current roles list
+            - For roles in the list: Reactivate existing disabled roles or insert new ones
+            - Avoids creating duplicate role records
+
         Example:
             >>> repo = AuthRepository()
-            >>> success = await repo.set_roles("user123", ["admin", "user"])
+            >>> success = await repo.set_roles("user123", ["admin", "user"], disable_others=True)
             >>> print(success)  # True
         """
-        if not user_id or not user_id.strip() or len(roles) <= 0:
+        if not user_id or not user_id.strip():
             logger.error("User ID cannot be empty")
             return False
 
         try:
             async with self.transaction() as session:
-                # Soft delete existing role assignments
-                _ = await self.soft_delete(
-                    self.table_name(UserRole),
-                    {"C_USER_AUTH_ID": user_id},
-                    session,
-                )
+                # Step 1: If disable_others=True, disable roles not in current roles list
+                if disable_others:
+                    # Get all active roles for the user
+                    all_user_roles_query = select(UserRole).where(
+                        UserRole.user_auth_id == user_id
+                    ).where(UserRole.in_used == 1)
 
-                # Create new role assignments
-                if roles:
-                    role_records = [
-                        UserRole(
-                            user_auth_id=user_id,
-                            role=role,
-                        )
-                        for role in roles
-                    ]
-                    session.add_all(role_records)
+                    all_user_roles_result = await session.exec(all_user_roles_query)
+                    all_user_roles = all_user_roles_result.all()
+
+                    # Find roles to disable (not in the current roles list)
+                    roles_set = set(roles)
+                    for role_record in all_user_roles:
+                        if role_record.role not in roles_set:
+                            role_record.in_used = 0
+                            role_record.updated_at = datetime.now()
+                            session.add(role_record)
+
+                # Step 2: For each role in the roles list, reactivate or insert
+                for role in roles:
+                    # Try to reactivate existing disabled role using SQLModel
+                    existing_disabled_role_query = select(UserRole).where(
+                        UserRole.user_auth_id == user_id
+                    ).where(UserRole.role == role).where(UserRole.in_used == 0)
+
+                    existing_disabled_result = await session.exec(existing_disabled_role_query)
+                    existing_disabled_role = existing_disabled_result.first()
+
+                    if existing_disabled_role:
+                        # Reactivate the existing disabled role
+                        existing_disabled_role.in_used = 1
+                        existing_disabled_role.updated_at = datetime.now()
+                        session.add(existing_disabled_role)
+                    else:
+                        # Check if role already exists and is active
+                        check_stmt = select(UserRole).where(
+                            UserRole.user_auth_id == user_id
+                        ).where(UserRole.role == role)
+                        check_result = await session.exec(check_stmt)
+                        existing_role = check_result.first()
+
+                        # Only insert if role doesn't exist at all
+                        if not existing_role:
+                            new_role = UserRole(
+                                user_auth_id=user_id,
+                                role=role,
+                                in_used=1,
+                                created_at=datetime.now(),
+                                updated_at=datetime.now()
+                            )
+                            session.add(new_role)
 
                 await session.flush()
-                logger.info(f"Successfully set roles for user {user_id}: {roles}")
+                logger.info(f"Successfully set roles for user {user_id}: {roles} (disable_others={disable_others})")
                 return True
         except Exception as e:
             logger.error(f"Failed to set roles for user {user_id}: {e}")
