@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta
 from enum import Enum
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
@@ -6,7 +5,7 @@ from fastapi.responses import RedirectResponse
 
 from ..logger import get_logger
 from ..models import AppResponseDict
-from ..redisex import blacklist_add, blacklist_delete
+from ..redisex import blacklist_delete
 from ..utilities import is_api_call
 from .middlewares import get_current_user
 from .models import UserProfileData
@@ -36,73 +35,6 @@ auth_service = AuthService(
     supabase_jwks_url="",  # Not used in this service instance
     supabase_audience="",  # Not used in this service instance
 )
-
-
-async def should_update_user_in_db(user: UserProfileData) -> bool:
-    """
-    Check if user information should be updated in database.
-    Returns True for new users or users not updated within 24 hours.
-    """
-    try:
-        # Check if user exists in database and get last update time
-        db_user = await auth_service.get_user_by_auth_id(user.id)
-
-        if not db_user:
-            # New user - needs to be stored
-            return True
-
-        # Check if user was last updated more than 24 hours ago
-        if db_user.updated_at:
-            time_since_update = datetime.now() - db_user.updated_at
-            return time_since_update > timedelta(hours=24)
-
-        # If no updated_at timestamp, consider it needs update
-        return True
-
-    except Exception as e:
-        logger.warning(f"Error checking user update status for {user.id}: {e}")
-        # If we can't determine, err on the side of updating
-        return True
-
-
-async def background_update_user_info(token: str | None, user: UserProfileData) -> None:
-    """
-    Background task to update user information in database.
-    """
-    try:
-        # Check if this user needs database update
-        if await should_update_user_in_db(user):
-            logger.info(f"Updating user info in background for {user.id}")
-            _ = await auth_service.process_user_login(token, user)
-            logger.info(f"Background user info update completed for {user.id}")
-        else:
-            logger.debug(f"User {user.id} doesn't need database update (updated within 24h)")
-    except Exception as e:
-        logger.error(f"Error in background user info update for {user.id}: {e}")
-
-
-async def background_process_logout(token: str | None, user: UserProfileData) -> None:
-    """
-    Background task to process user logout operations.
-    Handles both token blacklisting and business logic processing.
-    """
-    try:
-        logger.info(f"Processing logout in background for {user.id}")
-
-        # Add token to blacklist
-        if token:
-            blacklist_success = await blacklist_add(token)
-            if blacklist_success:
-                logger.debug(f"Added token to blacklist for user {user.id}")
-            else:
-                logger.warning(f"Failed to add token to blacklist for user {user.id}")
-
-        # Process additional logout business logic
-        await auth_service.process_user_logout(token, user)
-        logger.info(f"Background logout processing completed for {user.id}")
-
-    except Exception as e:
-        logger.error(f"Error in background logout processing for {user.id}: {e}")
 
 
 @router.get("/login", include_in_schema=False, response_model=None)
@@ -144,9 +76,11 @@ async def login(
             # Check onboarding status immediately
             has_profile = await auth_service.check_user_onboarding_complete(user.id)
 
-            # Add background task to update user info in database
-            background_tasks.add_task(background_update_user_info, token, user)
-            logger.debug(f"Added background task to update user info for {user.id}")
+            # Check if user needs database update before adding background task
+            if await auth_service.should_update_user_in_db(user):
+                # Add background task to update user info in database
+                background_tasks.add_task(auth_service.background_update_user_info, token, user.id)
+                logger.debug(f"Added background task to update user info for {user.id}")
 
             if has_profile:
                 # Existing user with profile - redirect to dashboard
@@ -213,7 +147,7 @@ async def logout(
             token = extract_bearer_token_from_request(request)
 
             # Add background task to process logout operations
-            background_tasks.add_task(background_process_logout, token, user)
+            background_tasks.add_task(auth_service.background_process_logout, token, user)
             logger.debug(f"Added background task to process logout for {user.id}")
 
             # Provide immediate response
@@ -241,7 +175,7 @@ async def logout(
     return RedirectResponse(url=resp_url, status_code=resp_code)
 
 
-@router.get("/onboarding", include_in_schema=False, response_model=None, tags=["public"])
+@router.get("/onboarding", include_in_schema=False, response_model=None)
 async def onboarding(request: Request) -> RedirectResponse | AppResponseDict:
     """
     Onboarding page for new users.
@@ -282,7 +216,7 @@ async def onboarding(request: Request) -> RedirectResponse | AppResponseDict:
     )
 
 
-@router.get("/dashboard", include_in_schema=False, response_model=None, tags=["public"])
+@router.get("/dashboard", include_in_schema=False, response_model=None)
 async def dashboard(request: Request) -> RedirectResponse | AppResponseDict:
     """
     Dashboard page for existing users.
@@ -307,7 +241,7 @@ async def dashboard(request: Request) -> RedirectResponse | AppResponseDict:
     )
 
 
-@router.get("/profile", include_in_schema=False, response_model=None, tags=["public"])
+@router.get("/profile", include_in_schema=False, response_model=None)
 async def profile(request: Request) -> RedirectResponse | AppResponseDict:
     """
     User profile page.
