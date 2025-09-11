@@ -188,3 +188,12 @@ async def get_current_user(request: Request) -> UserProfileData | None:
         return None
 
     return cast(UserProfileData, request.state.user)
+
+
+async def has_role(request: Request, role: str) -> bool:
+    """Check if current user has a specific role."""
+    if not hasattr(request.state, "authenticated") or not request.state.authenticated:
+        logger.error("Authentication required")
+        return False
+
+    return hasattr(request.state, "roles") and role in request.state.roles
