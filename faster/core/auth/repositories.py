@@ -279,12 +279,13 @@ class AuthRepository(BaseRepository):
                 f"Failed to create or update metadata for user {user_auth_id}, type {metadata_type}: {e}"
             ) from e
 
-    async def get_user_info(self, user_id: str) -> UserProfileData | None:
+    async def get_user_info(self, user_id: str, session: DBSession | None = None) -> UserProfileData | None:
         """
         Get user profile information from database.
 
         Args:
             user_id: User's authentication ID
+            session: Optional database session to use (for background tasks)
 
         Returns:
             UserProfileData object if user exists, None otherwise
@@ -302,8 +303,12 @@ class AuthRepository(BaseRepository):
             raise ValueError("User ID cannot be empty")
 
         try:
-            async with self.session(readonly=True) as session:
+            if session is not None:
+                # Use provided session (for background tasks)
                 return await self._get_user_info_impl(session, user_id)
+            # Create new session (normal operation)
+            async with self.session(readonly=True) as db_session:
+                return await self._get_user_info_impl(db_session, user_id)
         except Exception as e:
             logger.error(f"Failed to get user info: {e}", extra={"user_id": user_id})
             raise DBError(f"Failed to get user info for user {user_id}: {e}") from e
@@ -406,12 +411,13 @@ class AuthRepository(BaseRepository):
             "updated_at": profile_row.updated_at,
         }
 
-    async def set_user_info(self, user_profile: UserProfileData) -> bool:
+    async def set_user_info(self, user_profile: UserProfileData, session: DBSession | None = None) -> bool:
         """
         Store user profile information to database.
 
         Args:
             user_profile: UserProfileData object containing user data
+            session: Optional database session to use (for background tasks)
 
         Returns:
             True if successful, False otherwise
@@ -431,8 +437,12 @@ class AuthRepository(BaseRepository):
             raise ValueError("User profile must have a valid ID")
 
         try:
-            async with self.transaction() as session:
+            if session is not None:
+                # Use provided session (for background tasks)
                 return await self._set_user_info_impl(session, user_profile)
+            # Create new transaction (normal operation)
+            async with self.transaction() as db_session:
+                return await self._set_user_info_impl(db_session, user_profile)
         except Exception as e:
             logger.error(f"Failed to set user info: {e}", extra={"user_id": user_profile.id})
             raise DBError(f"Failed to set user info for user {user_profile.id}: {e}") from e

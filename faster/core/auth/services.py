@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import json
 from typing import Any
 
-from ..database import get_transaction
+from ..database import DBSession, get_transaction
 from ..logger import get_logger
 from ..redisex import (
     MapCategory,
@@ -193,6 +193,40 @@ class AuthService:
 
             return user
 
+    async def _save_user_profile_to_database_with_session(
+        self, session: DBSession, user_profile: UserProfileData
+    ) -> User:
+        """Save complete user profile to database using provided session."""
+        # Create or update user
+        user_data = {
+            "id": user_profile.id,
+            "aud": user_profile.aud,
+            "role": user_profile.role,
+            "email": user_profile.email,
+            "email_confirmed_at": user_profile.email_confirmed_at,
+            "phone": user_profile.phone,
+            "confirmed_at": user_profile.confirmed_at,
+            "last_sign_in_at": user_profile.last_sign_in_at,
+            "is_anonymous": user_profile.is_anonymous,
+            "created_at": user_profile.created_at,
+            "updated_at": user_profile.updated_at,
+        }
+        user = await self._repository.create_or_update_user(session, user_data)
+
+        # Save metadata
+        if user_profile.app_metadata:
+            await self._repository.create_or_update_user_metadata(
+                session, user_profile.id, "app", user_profile.app_metadata
+            )
+        if user_profile.user_metadata:
+            await self._repository.create_or_update_user_metadata(
+                session, user_profile.id, "user", user_profile.user_metadata
+            )
+
+        # Identities are now handled as part of simplified UserProfileData model
+
+        return user
+
     ###########################################################################
     # Proxy to enable external can call some methods defined in _auth_client
     ###########################################################################
@@ -200,12 +234,19 @@ class AuthService:
         """Get user ID from JWT token."""
         return await self._auth_client.get_user_id_from_token(token)
 
-    async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> UserProfileData | None:  # noqa: C901, PLR0912
+    async def get_user_by_id(  # noqa: C901, PLR0912
+        self, user_id: str, from_cache: bool = True, session: DBSession | None = None
+    ) -> UserProfileData | None:
         """
         Get user profile data by user ID with 3-tier caching hierarchy:
         1. Try Redis cache first
         2. Try local database second
         3. Try Supabase Auth as fallback
+
+        Args:
+            user_id: User's authentication ID
+            from_cache: Whether to check cache first
+            session: Optional database session to use (for background tasks)
         """
         if not user_id or not user_id.strip():
             logger.error("User ID cannot be empty")
@@ -223,7 +264,7 @@ class AuthService:
 
         # Step 2: Try to load from local database
         try:
-            db_profile = await self._repository.get_user_info(user_id)
+            db_profile = await self._repository.get_user_info(user_id, session)
             if db_profile:
                 logger.debug(f"User profile retrieved from database for user ID: {user_id}")
 
@@ -251,7 +292,7 @@ class AuthService:
 
                 # Update local database with Supabase data
                 try:
-                    db_success = await self._repository.set_user_info(supabase_profile)
+                    db_success = await self._repository.set_user_info(supabase_profile, session)
                     if db_success:
                         logger.debug(f"Updated database with Supabase data for user ID: {user_id}")
                     else:
@@ -395,18 +436,22 @@ class AuthService:
         """
         Background task to update user information in database.
         Fetches fresh user data and updates the database.
+        Uses a single transaction to avoid session binding issues.
         """
         try:
             logger.info(f"Updating user info in background for {user_id}")
 
-            # Fetch fresh user data from external source (bypass cache for latest data)
-            fresh_user_data = await self.get_user_by_id(user_id, from_cache=False)
-            if not fresh_user_data:
-                logger.warning(f"Could not fetch fresh user data for {user_id}")
-                return
+            # Use a single transaction for all database operations to avoid session binding issues
+            async with await get_transaction() as session:
+                # Fetch fresh user data from external source (bypass cache for latest data)
+                fresh_user_data = await self.get_user_by_id(user_id, from_cache=False, session=session)
+                if not fresh_user_data:
+                    logger.warning(f"Could not fetch fresh user data for {user_id}")
+                    return
 
-            # Update user info in database with fresh data
-            _ = await self.process_user_login(token, fresh_user_data)
+                # Update user info in database with fresh data using the same session
+                _ = await self._save_user_profile_to_database_with_session(session, fresh_user_data)
+
             logger.info(f"Background user info update completed for {user_id}")
         except Exception as e:
             logger.error(f"Error in background user info update for {user_id}: {e}")
