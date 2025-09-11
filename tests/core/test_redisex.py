@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from faster.core.redisex import (
+    MapCategory,
     blacklist_add,
     blacklist_delete,
     blacklist_exists,
@@ -12,8 +13,8 @@ from faster.core.redisex import (
     get_user_profile,
     set_jwks_key,
     set_user_profile,
-    tag2role_get,
-    tag2role_set,
+    sysmap_get,
+    sysmap_set,
     user2role_get,
     user2role_set,
 )
@@ -148,60 +149,153 @@ class TestUserRoleFunctions:
             mock_redis.delete.assert_called_once_with("user:roles:user-123")
 
 
-class TestTagRoleFunctions:
-    """Test tag role utility functions."""
+class TestSysmapFunctions:
+    """Test system map utility functions for tag-role mappings."""
 
     @pytest.mark.asyncio
-    async def test_tag2role_get(self) -> None:
-        """Test getting tag roles."""
+    async def test_sysmap_get_single_tag_roles(self) -> None:
+        """Test getting single tag roles using sysmap_get."""
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.smembers.return_value = {"admin", "moderator"}
+            mock_redis.hget.return_value = '["admin", "moderator"]'
 
-            result = await tag2role_get("tag-important")
+            result = await sysmap_get(str(MapCategory.TAG_ROLE), "tag-important")
 
-            assert set(result) == {"admin", "moderator"}
-            mock_redis.smembers.assert_called_once_with("tag:roles:tag-important")
+            assert result == {"tag-important": '["admin", "moderator"]'}
+            mock_redis.hget.assert_called_once_with("sys:map:tag_role", "tag-important")
 
     @pytest.mark.asyncio
-    async def test_tag2role_get_empty(self) -> None:
-        """Test getting tag roles when none exist."""
+    async def test_sysmap_get_tag_roles_not_found(self) -> None:
+        """Test getting tag roles when tag doesn't exist."""
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.smembers.return_value = set()
+            mock_redis.hget.return_value = None
 
-            result = await tag2role_get("tag-important")
+            result = await sysmap_get(str(MapCategory.TAG_ROLE), "tag-nonexistent")
 
-            assert result == []
-            mock_redis.smembers.assert_called_once_with("tag:roles:tag-important")
+            assert result == {}
+            mock_redis.hget.assert_called_once_with("sys:map:tag_role", "tag-nonexistent")
 
     @pytest.mark.asyncio
-    async def test_tag2role_set(self) -> None:
-        """Test setting tag roles."""
+    async def test_sysmap_set_tag_roles(self) -> None:
+        """Test setting tag roles using sysmap_set."""
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.sadd.return_value = 2
 
-            result = await tag2role_set("tag-important", ["admin", "moderator"])
+            mapping = {
+                "tag-important": '["admin", "moderator"]',
+                "tag-public": '["user"]',
+            }
+            result = await sysmap_set(str(MapCategory.TAG_ROLE), mapping)
 
             assert result is True
-            mock_redis.sadd.assert_called_once_with("tag:roles:tag-important", "admin", "moderator")
+            # Verify the mapping was converted to JSON strings
+            expected_mapping = {
+                "tag-important": '["admin", "moderator"]',
+                "tag-public": '["user"]',
+            }
+            mock_redis.hset.assert_called_once_with("sys:map:tag_role", expected_mapping)
 
     @pytest.mark.asyncio
-    async def test_tag2role_set_none(self) -> None:
-        """Test removing tag roles."""
+    async def test_sysmap_get_single_string_value(self) -> None:
+        """Test getting a single string value (non-JSON) using sysmap_get."""
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.delete.return_value = 1
+            mock_redis.hget.return_value = "admin"
 
-            result = await tag2role_set("tag-important", None)
+            result = await sysmap_get(str(MapCategory.TAG_ROLE), "tag-simple")
+
+            assert result == {"tag-simple": "admin"}
+            mock_redis.hget.assert_called_once_with("sys:map:tag_role", "tag-simple")
+
+    @pytest.mark.asyncio
+    async def test_sysmap_get_invalid_json(self) -> None:
+        """Test getting invalid JSON value using sysmap_get."""
+        with patch("faster.core.redisex.get_redis") as mock_get_redis:
+            mock_redis = AsyncMock()
+            mock_get_redis.return_value = mock_redis
+            mock_redis.hget.return_value = '["invalid json'
+
+            result = await sysmap_get(str(MapCategory.TAG_ROLE), "tag-broken")
+
+            assert result == {"tag-broken": '["invalid json'}
+            mock_redis.hget.assert_called_once_with("sys:map:tag_role", "tag-broken")
+
+    @pytest.mark.asyncio
+    async def test_sysmap_set_mixed_value_types(self) -> None:
+        """Test setting mixed value types using sysmap_set."""
+        with patch("faster.core.redisex.get_redis") as mock_get_redis:
+            mock_redis = AsyncMock()
+            mock_get_redis.return_value = mock_redis
+
+            mapping = {"tag-list": '["admin", "user"]', "tag-string": "single-value"}
+            result = await sysmap_set(str(MapCategory.TAG_ROLE), mapping)
 
             assert result is True
-            mock_redis.delete.assert_called_once_with("tag:roles:tag-important")
+            # Verify only lists were converted to JSON
+            expected_mapping = {"tag-list": '["admin", "user"]', "tag-string": "single-value"}
+            mock_redis.hset.assert_called_once_with("sys:map:tag_role", expected_mapping)
+
+    @pytest.mark.asyncio
+    async def test_sysmap_get_all_values(self) -> None:
+        """Test getting all values in a category using sysmap_get with left=None."""
+        with patch("faster.core.redisex.get_redis") as mock_get_redis:
+            mock_redis = AsyncMock()
+            mock_get_redis.return_value = mock_redis
+            mock_redis.hgetall.return_value = {
+                "tag-admin": '["admin", "superuser"]',
+                "tag-user": '["user"]',
+                "tag-simple": "basic",
+            }
+
+            result = await sysmap_get(str(MapCategory.TAG_ROLE))
+
+            assert result == {
+                "tag-admin": '["admin", "superuser"]',
+                "tag-user": '["user"]',
+                "tag-simple": "basic",
+            }
+            mock_redis.hgetall.assert_called_once_with("sys:map:tag_role")
+
+    @pytest.mark.asyncio
+    async def test_sysmap_get_all_values_empty(self) -> None:
+        """Test getting all values when category is empty."""
+        with patch("faster.core.redisex.get_redis") as mock_get_redis:
+            mock_redis = AsyncMock()
+            mock_get_redis.return_value = mock_redis
+            mock_redis.hgetall.return_value = {}
+
+            result = await sysmap_get(str(MapCategory.TAG_ROLE))
+
+            assert result == {}
+            mock_redis.hgetall.assert_called_once_with("sys:map:tag_role")
+
+    @pytest.mark.asyncio
+    async def test_sysmap_get_all_values_with_mixed_types(self) -> None:
+        """Test getting all values with mixed JSON and string types."""
+        with patch("faster.core.redisex.get_redis") as mock_get_redis:
+            mock_redis = AsyncMock()
+            mock_get_redis.return_value = mock_redis
+            mock_redis.hgetall.return_value = {
+                "tag-json": '{"role": "admin", "permissions": ["read", "write"]}',
+                "tag-list": '["admin", "user"]',
+                "tag-string": "simple-value",
+                "tag-invalid": '["broken json',
+            }
+
+            result = await sysmap_get(str(MapCategory.TAG_ROLE))
+
+            assert result == {
+                "tag-json": '{"role": "admin", "permissions": ["read", "write"]}',
+                "tag-list": '["admin", "user"]',
+                "tag-string": "simple-value",
+                "tag-invalid": '["broken json',
+            }
+            mock_redis.hgetall.assert_called_once_with("sys:map:tag_role")
 
 
 class TestAuthModuleFunctions:
