@@ -66,24 +66,36 @@ class TestAuthServiceRoles:
         """
 
         # Arrange
-        async def tag_role_side_effect(tag: str) -> list[str]:
-            if tag == "protected":
-                return ["admin"]
-            if tag == "editor-content":
-                return ["editor", "admin"]
-            return []
+        async def sysmap_side_effect(category: str, left: str | None = None) -> dict[str, str]:
+            if left is None:  # Called for lazy initialization
+                return {"protected": '["admin"]', "editor-content": '["editor", "admin"]'}
+            return {}
 
-        mock_tag2role_get = mocker.patch(
-            "faster.core.auth.services.tag2role_get",
-            side_effect=tag_role_side_effect,
+        mock_sysmap_get = mocker.patch(
+            "faster.core.auth.services.sysmap_get",
+            side_effect=sysmap_side_effect,
         )
 
         # Act
         roles = await auth_service.get_roles_by_tags(["protected", "editor-content"])
 
         # Assert
-        assert mock_tag2role_get.await_count == 2
+        assert mock_sysmap_get.await_count == 1  # Only called once for lazy initialization
         assert roles == {"admin", "editor"}
+
+        # Test that cache is used on subsequent calls
+        roles2 = await auth_service.get_roles_by_tags(["protected"])
+        assert mock_sysmap_get.await_count == 1  # Still only called once
+        assert roles2 == {"admin"}
+
+        # Test cache clearing
+        auth_service.clear_tag_role_cache()
+        assert not auth_service.is_tag_role_cache_initialized()
+
+        # Test that cache is reloaded after clearing
+        roles3 = await auth_service.get_roles_by_tags(["editor-content"])
+        assert mock_sysmap_get.await_count == 2  # Called again after cache clear
+        assert roles3 == {"editor", "admin"}
 
     async def test_get_roles_by_tags_returns_empty_set_for_no_tags(self, auth_service: AuthService) -> None:
         """
