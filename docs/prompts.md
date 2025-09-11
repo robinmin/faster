@@ -514,3 +514,76 @@ The orginal design purpose for this file is to provide a simple and consistent w
   - set_user_info in @faster/core/auth/repositories.py: save user profile information to local database with new UserProfileData model.
 - All refined code must pass linters(ruff,mypy and basedpyright)
 - One code ready, we need to adjust unit test code, all pass with certain coverage rate
+
+
+### Enhance get_user_by_id
+
+A few things to enhance:
+
+- In file @faster/core/auth/auth_proxy.py, adjust get_user_by_id's method signature to:
+```
+async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> UserProfileData | None:
+```
+That means, we just keep this method very simple, get user information from Supabase Auth directly, no cache.
+
+- In file @faster/core/auth/services.py, we enhance the logic for method `get_user_by_id` in this sequence:
+  - First, try to load user information from redis directly(call get_user_profile). If success, directly return;
+  - Then try to call get_user_info defined in @faster/core/auth/repositories.py to get data from local database. If success, update cache(call set_user_profile) then return
+  - At last, try to call self._auth_client.get_user_by_id to load data from Supabase Auth. If success, update local database(set_user_info) and update cache(call set_user_profile) then return
+
+- Evaluate current change's impact on the rest of the whole application with your suggestion list
+
+
+
+## inconsistency issue fix on tag2role_get / tag2role_set
+
+#### Background
+- I already found one inconsistent design: the mapping between tag to roles should be called via `sysmap_get(str(MapCategory.TAG_ROLE), 'tag_1')` instead of using `tag2role_get` to get back. Of course, it should be call via `sysmap_set(str(MapCategory.TAG_ROLE), 'tag_1', 'role_xxx')` to set information instead of via `tag2role_set`.
+- I already comment out tag2role_get / tag2role_set for further verification and deletion.
+
+#### Your goal
+- Find out these relevant code, to replace tag2role_get / tag2role_set by sysmap_get/sysmap_set with `MapCategory.TAG_ROLE`
+- Remove unit test cases for tag2role_get / tag2role_set
+- For the other unit test cases related to tag2role_get / tag2role_set, try to replace them by sysmap_get/sysmap_set
+- make sure both `make lint` and `make test` all pass
+
+
+A few further enhancements:
+- As all these mapping stored in table SYS_MAP, so, we'd better to simplify the singnature as:
+```python
+async def sysmap_set(category: str, mapping: dict[str, str]) -> bool:
+async def sysmap_get(category: str, left: str | None = None) -> dict[str, str]:
+```
+- Also, adjust the client code and unit tests, pass all of them
+
+
+
+## enhance tag_role mapping with lazy initialization
+Enhance the following things:
+- In class AuthService(in file @faster/core/auth/services.py), add a instance variable _tag_role_cached : dict[str, str] with lazy initialization.
+- In AuthService.get_roles_by_tags, check self._tag_role_cached already initialized or not. In case of not, call `sysmap_get(str(MapCategory.TAG_ROLE))` to load them all, and cache in self._tag_role_cached
+- Use this `self._tag_role_cached` to get back the roles related to give tags.
+- Adjust the relevant code and unit tests, make sure all pass `make lint` and `make test`.
+
+## Simplify the startup mechanism on create_app
+For function `create_app` in file @faster/core/bootstrap.py, as we already has Plugin mechanism, for anyone ,who want to control the startup and shutdown lifecricle, he or she can inhireted a new class from BasePlugin to customize a new plugin to do so. It allows us the reduce the parameters `startup_handler` and `shutdown_handler` to unify the startup-shutdown mechnism. So, help to:
+
+- Reduce the parameters `startup_handler` and `shutdown_handler` from `create_app`, and adjust relevant code
+- Adjust the client code and relevant unit tests to make sure all of them pass `make lint` and `make test`.
+
+
+## bug fix on : background tasks `auth_service.background_update_user_info`
+For a particular `/auth/login` request, I got the following log. Help to figure out what happened and how to fix it.
+In previous log, I can see it passed the RBAC check within the `AuthMiddleware`, and encountered an error in the background tasks `auth_service.background_update_user_info`. And I also saw some following transactions failed due to the UNIQUE constraint violation, please also fix them if necessary:
+
+```
+2025-09-11T13:19:29.097660 [debug   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.routers] Removed token from blacklist for user 61332569-ce63-4876-a207-9f376d89696b
+2025-09-11T13:19:29.117589 [debug   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.routers] Added background task to update user info for 61332569-ce63-4876-a207-9f376d89696b
+2025-09-11T13:19:29.158459 [warning ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Error checking user update status for 61332569-ce63-4876-a207-9f376d89696b: Instance <User at 0x1091b3d80> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+2025-09-11T13:19:29.159112 [info    ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Updating user info in background for 61332569-ce63-4876-a207-9f376d89696b
+2025-09-11T13:19:29.159769 [info    ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Processing login for user: 61332569-ce63-4876-a207-9f376d89696b
+2025-09-11T13:19:29.176809 [info    ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.repositories] Updated existing user with auth_id: 61332569-ce63-4876-a207-9f376d89696b
+2025-09-11T13:19:29.221055 [error   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.database] Transaction failed: (sqlite3.IntegrityError) UNIQUE constraint failed: AUTH_USER_METADATA.C_USER_AUTH_ID, AUTH_USER_METADATA.C_METADATA_TYPE, AUTH_USER_METADATA.C_KEY
+2025-09-11T13:19:29.236760 [error   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Failed to save user profile to database: Transaction failed: (sqlite3.IntegrityError) UNIQUE constraint failed: AUTH_USER_METADATA.C_USER_AUTH_ID, AUTH_USER_METADATA.C_METADATA_TYPE, AUTH_USER_METADATA.C_KEY
+2025-09-11T13:19:29.248416 [error   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Error in background user info update for 61332569-ce63-4876-a207-9f376d89696b: Transaction failed: (sqlite3.IntegrityError) UNIQUE constraint failed: AUTH_USER_METADATA.C_USER_AUTH_ID, AUTH_USER_METADATA.C_METADATA_TYPE, AUTH_USER_METADATA.C_KEY
+```
