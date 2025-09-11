@@ -36,46 +36,45 @@ class SysService:
 
         return result
 
-    async def set_sys_info(  # noqa: C901
-        self, sys_dict: dict[str, dict[int, Any]], sys_map: dict[str, dict[str, Any]], to_cache: bool = False
+    async def _set_sys_dict_info(self, sys_dict: dict[str, dict[int, Any]], to_cache: bool) -> bool:
+        """Set sys_dict information to database and redis."""
+        for cat1, items1 in sys_dict.items():
+            if len(items1) == 0:
+                continue
+
+            # set sys_dict into database
+            if not await self._repository.set_sys_dict(cat1, items1):
+                logger.error(f"Failed to set sys_dict for category {cat1} into database")
+                return False
+
+            # set sys_dict into redis
+            if to_cache and not await sysdict_set(cat1, items1):
+                logger.error(f"Failed to set sys_dict for category {cat1} into redis")
+                return False
+        return True
+
+    async def _set_sys_map_info(self, sys_map: dict[str, dict[str, str]], to_cache: bool) -> bool:
+        """Set sys_map information to database and redis."""
+        for cat2, items2 in sys_map.items():
+            if len(items2) == 0:
+                continue
+
+            # set sys_map into database
+            if not await self._repository.set_sys_map(cat2, items2):
+                logger.error(f"Failed to set sys_map for category {cat2} into database")
+                return False
+
+            # set sys_map into redis
+            if to_cache and not await sysmap_set(cat2, items2):
+                logger.error(f"Failed to set sys_map for category {cat2}")
+                return False
+        return True
+
+    async def set_sys_info(
+        self, sys_dict: dict[str, dict[int, Any]], sys_map: dict[str, dict[str, str]], to_cache: bool = False
     ) -> bool:
         """Set all system information to database and redis."""
-        result = True
+        if sys_dict and not await self._set_sys_dict_info(sys_dict, to_cache):
+            return False
 
-        # save all sys_dict information into database and redis
-        if sys_dict:
-            for cat1, items1 in sys_dict.items():
-                if len(items1) == 0:
-                    continue
-
-                # set sys_dict into database
-                if not await self._repository.set_sys_dict(cat1, items1):
-                    logger.error(f"Failed to set sys_dict for category {cat1} into database")
-                    result = False
-                    break
-
-                # set sys_dict into redis
-                if to_cache and not await sysdict_set(cat1, items1):
-                    logger.error(f"Failed to set sys_dict for category {cat1} into redis")
-                    result = False
-                    break
-
-        # save all sys_map information into database and redis
-        if sys_map:
-            for cat2, items2 in sys_map.items():
-                if len(items2) == 0:
-                    continue
-
-                # set sys_map into database
-                if not await self._repository.set_sys_map(cat2, items2):
-                    logger.error(f"Failed to set sys_map for category {cat2} into database")
-                    result = False
-                    break
-
-                # set sys_map into redis
-                if to_cache and not await sysmap_set(cat2, items2):
-                    logger.error(f"Failed to set sys_map for category {cat2}")
-                    result = False
-                    break
-
-        return result
+        return not sys_map or await self._set_sys_map_info(sys_map, to_cache)
