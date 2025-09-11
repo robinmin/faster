@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import re
+from collections.abc import Iterable
 from logging.config import fileConfig
-from typing import Any, Sequence
+import re
+from typing import Any
 
 from alembic import context
+from alembic.runtime.migration import MigrationContext
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Engine
 from sqlmodel import SQLModel
+
 # import sqlalchemy as sa
 
 # Alembic Config object
@@ -32,8 +35,8 @@ target_metadata = SQLModel.metadata
 
 # --------------------- Post-process migration scripts -----------------------
 def process_revision_directives(
-    context: Any,
-    revision: str | Sequence[str] | None,
+    context: MigrationContext,
+    revision: str | Iterable[str | None] | Iterable[str],
     directives: list[Any],
 ) -> None:
     """
@@ -43,7 +46,7 @@ def process_revision_directives(
     if not directives:
         return
 
-    script: Any = directives[0]
+    script = directives[0]
     doc: str = getattr(script, "doc", "")
 
     # This is optional, won't break anything even if empty
@@ -53,13 +56,15 @@ def process_revision_directives(
         doc,
     )
 
-    setattr(script, "doc", doc)
+    script.doc = doc
 
 # --------------------- Migration runners ------------------------------------
 
 def run_migrations_offline() -> None:
     """Run migrations in offline mode (no DB connection)."""
-    url: str = config.get_main_option("sqlalchemy.url")
+    url = config.get_main_option("sqlalchemy.url")
+    if url is None:
+        raise ValueError("sqlalchemy.url not found in configuration")
     context.configure(
         url=url,
         target_metadata=target_metadata,
