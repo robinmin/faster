@@ -86,16 +86,6 @@ def mock_auth_service() -> Generator[MagicMock, None, None]:
 
 
 @pytest.mark.asyncio
-async def test_default_startup_handler() -> None:
-    assert await bootstrap.default_startup_handler() is True
-
-
-@pytest.mark.asyncio
-async def test_default_shutdown_handler() -> None:
-    assert await bootstrap.default_shutdown_handler() is True
-
-
-@pytest.mark.asyncio
 async def test_create_app_calls_plugin_setup(mock_settings: Settings, mock_plugin_mgr: MagicMock) -> None:
     """Test that create_app properly initializes plugins."""
     app = bootstrap.create_app(settings=mock_settings)
@@ -155,14 +145,7 @@ def test_create_app(mock_settings: Settings, mock_db_mgr: MagicMock, mock_redis_
 
 
 def test_create_app_lifespan(mock_settings: Settings) -> None:
-    startup_mock = AsyncMock(return_value=True)
-    shutdown_mock = AsyncMock(return_value=True)
-
-    app = bootstrap.create_app(
-        settings=mock_settings,
-        startup_handler=startup_mock,
-        shutdown_handler=shutdown_mock,
-    )
+    app = bootstrap.create_app(settings=mock_settings)
 
     with (
         patch("faster.core.bootstrap._setup_all") as setup_mock,
@@ -171,32 +154,31 @@ def test_create_app_lifespan(mock_settings: Settings) -> None:
     ):
         with TestClient(app):
             setup_mock.assert_called_once()
-            startup_mock.assert_called_once()
         close_mock.assert_called_once()
-        shutdown_mock.assert_called_once()
 
 
-def test_create_app_lifespan_startup_fails(mock_settings: Settings) -> None:
-    startup_mock = AsyncMock(return_value=False)
-    startup_mock.__name__ = "startup_mock"
-    app = bootstrap.create_app(settings=mock_settings, startup_handler=startup_mock)
+def test_create_app_lifespan_plugin_setup_failure(mock_settings: Settings) -> None:
+    """Test that create_app handles plugin setup failures gracefully."""
+    app = bootstrap.create_app(settings=mock_settings)
 
-    # Mock the logger to capture the critical log message
+    # Mock the plugin manager to simulate setup failure
     with (
-        patch("faster.core.bootstrap._setup_all"),
+        patch("faster.core.bootstrap.PluginManager.get_instance") as mock_plugin_mgr,
         patch("faster.core.bootstrap.refresh_status"),
-        patch("faster.core.bootstrap.logger.critical") as mock_critical,
+        patch("faster.core.bootstrap.logger.warning") as mock_warning,
     ):
+        mock_instance = MagicMock()
+        mock_instance.setup = AsyncMock(return_value=False)  # Simulate async setup failure
+        mock_instance.teardown = AsyncMock(return_value=True)  # Mock teardown as well
+        mock_plugin_mgr.return_value = mock_instance
+
         with TestClient(app):
             pass  # Lifespan is triggered on context entry
 
-        # Verify that the critical log was called with the expected message
-        mock_critical.assert_called_once()
-        call_args = mock_critical.call_args[0][0]
-        assert "Application startup failed" in call_args
-        assert "Startup handler startup_mock failed" in call_args
-
-    startup_mock.assert_called_once()
+        # Verify that the warning log was called
+        mock_warning.assert_called_once()
+        call_args = mock_warning.call_args[0][0]
+        assert "Some plugins failed to initialize" in call_args
 
 
 def test_create_app_with_routers_and_middlewares(mock_settings: Settings) -> None:
