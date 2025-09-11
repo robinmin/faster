@@ -26,7 +26,7 @@ class User(MyBase, table=True):
         Index("idx_auth_user_role", "C_ROLE"),
     )
 
-    id: int | None = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True, description="Primary key")
     auth_id: str = Field(max_length=64, sa_column_kwargs={"name": "C_AUTH_ID"}, description="Supabase Auth user ID")
     aud: str = Field(max_length=32, sa_column_kwargs={"name": "C_AUD"}, description="JWT audience")
     role: str = Field(max_length=32, sa_column_kwargs={"name": "C_ROLE"}, description="User role")
@@ -68,7 +68,7 @@ class UserMetadata(MyBase, table=True):
         Index("idx_user_metadata_type", "C_METADATA_TYPE"),
     )
 
-    id: int | None = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True, description="Primary key")
     user_auth_id: str = Field(max_length=64, sa_column_kwargs={"name": "C_USER_AUTH_ID"}, description="User auth ID")
     metadata_type: str = Field(
         max_length=32, sa_column_kwargs={"name": "C_METADATA_TYPE"}, description="Metadata type (app/user)"
@@ -91,7 +91,7 @@ class UserIdentity(MyBase, table=True):
         Index("idx_user_identity_provider", "C_PROVIDER"),
     )
 
-    id: int | None = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True, description="Primary key")
     identity_id: str = Field(max_length=64, sa_column_kwargs={"name": "C_IDENTITY_ID"}, description="Identity ID")
     user_auth_id: str = Field(max_length=64, sa_column_kwargs={"name": "C_USER_AUTH_ID"}, description="User auth ID")
     provider_user_id: str = Field(
@@ -128,7 +128,7 @@ class UserProfile(MyBase, table=True):
         Index("idx_user_profile_user_auth_id", "C_USER_AUTH_ID"),
     )
 
-    id: int | None = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True, description="Primary key")
     user_auth_id: str = Field(max_length=64, sa_column_kwargs={"name": "C_USER_AUTH_ID"}, description="User auth ID")
     first_name: str | None = Field(
         default=None, max_length=128, sa_column_kwargs={"name": "C_FIRST_NAME"}, description="User first name"
@@ -180,6 +180,6 @@ class UserRole(MyBase, table=True):
         Index("idx_user_role_role", "C_ROLE"),
     )
 
-    id: int | None = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True, description="Primary key")
     user_auth_id: str = Field(max_length=64, sa_column_kwargs={"name": "C_USER_AUTH_ID"}, description="User auth ID")
     role: str = Field(max_length=32, sa_column_kwargs={"name": "C_ROLE"}, description="User role")
