@@ -184,12 +184,14 @@ def get_default_logger_config() -> dict[str, Any]:
             "mode": "a",
         },
         "external_loggers": {
-            "propagate": [
-                "uvicorn",
-                "uvicorn.error",
-                "uvicorn.access",
+            "propagate": ["uvicorn", "uvicorn.error", "uvicorn.access", "aiosqlite"],
+            "ignore": [
+                "sentry_sdk.errors",
+                "hpack.hpack",
+                "httpcore.http11",
+                "httpcore.connection",
+                "httpcore.http2",
             ],
-            "ignore": ["aiosqlite", "sentry_sdk.errors"],
         },
     }
 
