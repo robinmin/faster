@@ -1,6 +1,19 @@
+import contextlib
+from datetime import datetime, timedelta
+import json
+from typing import Any
+
 from ..database import get_transaction
 from ..logger import get_logger
-from ..redisex import tag2role_get, user2role_get, user2role_set
+from ..redisex import (
+    MapCategory,
+    blacklist_add,
+    get_user_profile,
+    set_user_profile,
+    sysmap_get,
+    user2role_get,
+    user2role_set,
+)
 from .auth_proxy import AuthProxy
 from .models import UserProfileData
 from .repositories import AuthRepository
@@ -47,6 +60,7 @@ class AuthService:
         )
 
         self._repository = AuthRepository()
+        self._tag_role_cached: dict[str, str] | None = None
 
     async def process_user_login(self, token: str | None, user_profile: UserProfileData) -> User:
         """
@@ -86,15 +100,50 @@ class AuthService:
     async def get_roles_by_tags(self, tags: list[str]) -> set[str]:
         """
         Return set of roles for a given list of tags.
+        Uses lazy initialization to cache all tag-role mappings.
         """
         if not tags:
             return set()
 
+        # Lazy initialization: load all tag roles if not cached
+        if self._tag_role_cached is None:
+            all_tag_data = await sysmap_get(str(MapCategory.TAG_ROLE))
+            self._tag_role_cached = all_tag_data if all_tag_data else {}
+
         required: set[str] = set()
         for t in tags:
-            r = await tag2role_get(t)
-            required |= set(r or [])
+            if t in self._tag_role_cached:
+                roles: str | list[Any] | dict[str, Any] = self._tag_role_cached[t]
+                if isinstance(roles, str):
+                    with contextlib.suppress(json.JSONDecodeError):
+                        roles = json.loads(roles)
+
+                if isinstance(roles, list):
+                    r: list[str] = []
+                    for role in roles:
+                        role_str: str = str(role)
+                        r.append(role_str)
+                else:
+                    r = [str(roles)]
+                logger.debug(f"[RBAC] - tag: {t}, roles: {r}")
+                required |= set(r)
+            else:
+                logger.debug(f"[RBAC] - tag: {t}, roles: []")
         return required
+
+    def clear_tag_role_cache(self) -> None:
+        """
+        Clear the cached tag-role mappings.
+        Useful for testing or when tag-role mappings need to be refreshed.
+        """
+        self._tag_role_cached = None
+
+    def is_tag_role_cache_initialized(self) -> bool:
+        """
+        Check if the tag-role cache has been initialized.
+        Useful for testing purposes.
+        """
+        return self._tag_role_cached is not None
 
     async def check_access(self, user_id: str, tags: list[str]) -> bool:
         """Check if user has access to a given list of tags."""
@@ -103,7 +152,12 @@ class AuthService:
 
         # If endpoint has required roles, ensure intersection exists
         if required_roles:
-            return not user_roles.isdisjoint(required_roles)
+            if user_roles.isdisjoint(required_roles):
+                logger.info(f"[RBAC] - denied access(0) : {user_id} / {user_roles} for {tags} / {required_roles}")
+                return False
+            return True
+
+        logger.info(f"[RBAC] - denied access(1) : {user_id} / {user_roles} for {tags} / {required_roles}")
         return False  # no required roles → deny access
 
     async def _save_user_profile_to_database(self, user_profile: UserProfileData) -> User:
@@ -146,9 +200,83 @@ class AuthService:
         """Get user ID from JWT token."""
         return await self._auth_client.get_user_id_from_token(token)
 
-    async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> UserProfileData | None:
-        """Get user profile data by user ID."""
-        return await self._auth_client.get_user_by_id(user_id, from_cache)
+    async def get_user_by_id(self, user_id: str, from_cache: bool = True) -> UserProfileData | None:  # noqa: C901, PLR0912
+        """
+        Get user profile data by user ID with 3-tier caching hierarchy:
+        1. Try Redis cache first
+        2. Try local database second
+        3. Try Supabase Auth as fallback
+        """
+        if not user_id or not user_id.strip():
+            logger.error("User ID cannot be empty")
+            return None
+
+        # Step 1: Try to load from Redis cache
+        if from_cache:
+            try:
+                cached_profile_json = await get_user_profile(user_id)
+                if cached_profile_json:
+                    logger.debug(f"User profile retrieved from Redis cache for user ID: {user_id}")
+                    return UserProfileData.model_validate_json(cached_profile_json)
+            except Exception as e:
+                logger.warning(f"Failed to retrieve user profile from Redis cache: {e}")
+
+        # Step 2: Try to load from local database
+        try:
+            db_profile = await self._repository.get_user_info(user_id)
+            if db_profile:
+                logger.debug(f"User profile retrieved from database for user ID: {user_id}")
+
+                # Update Redis cache with database data
+                if from_cache:
+                    try:
+                        profile_json = db_profile.model_dump_json()
+                        cache_success = await set_user_profile(user_id, profile_json, self._expiry_minutes * 60)
+                        if cache_success:
+                            logger.debug(f"Updated Redis cache with database data for user ID: {user_id}")
+                        else:
+                            logger.warning(f"Failed to update Redis cache for user ID: {user_id}")
+                    except Exception as e:
+                        logger.warning(f"Error updating Redis cache from database: {e}")
+
+                return db_profile
+        except Exception as e:
+            logger.warning(f"Failed to retrieve user profile from database: {e}")
+
+        # Step 3: Fallback to Supabase Auth
+        try:
+            supabase_profile = await self._auth_client.get_user_by_id(user_id)
+            if supabase_profile:
+                logger.info(f"User profile retrieved from Supabase Auth for user ID: {user_id}")
+
+                # Update local database with Supabase data
+                try:
+                    db_success = await self._repository.set_user_info(supabase_profile)
+                    if db_success:
+                        logger.debug(f"Updated database with Supabase data for user ID: {user_id}")
+                    else:
+                        logger.warning(f"Failed to update database for user ID: {user_id}")
+                except Exception as e:
+                    logger.warning(f"Error updating database from Supabase: {e}")
+
+                # Update Redis cache with Supabase data
+                if from_cache:
+                    try:
+                        profile_json = supabase_profile.model_dump_json()
+                        cache_success = await set_user_profile(user_id, profile_json, self._expiry_minutes * 60)
+                        if cache_success:
+                            logger.debug(f"Updated Redis cache with Supabase data for user ID: {user_id}")
+                        else:
+                            logger.warning(f"Failed to update Redis cache for user ID: {user_id}")
+                    except Exception as e:
+                        logger.warning(f"Error updating Redis cache from Supabase: {e}")
+
+                return supabase_profile
+        except Exception as e:
+            logger.error(f"Failed to retrieve user profile from Supabase Auth: {e}")
+
+        logger.error(f"User profile not found in any data source for user ID: {user_id}")
+        return None
 
     async def get_user_by_token(self, token: str) -> UserProfileData | None:
         """Authenticate JWT token and return user profile data."""
@@ -234,3 +362,74 @@ class AuthService:
         except Exception as e:
             logger.error(f"Failed to set roles for user {user_id}: {e}")
         return False
+
+    async def should_update_user_in_db(self, user: UserProfileData) -> bool:
+        """
+        Check if user information should be updated in database.
+        Returns True for new users or users not updated within 24 hours.
+        """
+        try:
+            # Check if user exists in database and get last update time
+            # Use a fresh session to avoid session binding issues in background tasks
+            async with await get_transaction() as session:
+                db_user = await self._repository.get_user_by_auth_id(session, user.id)
+
+                if not db_user:
+                    # New user - needs to be stored
+                    return True
+
+                # Check if user was last updated more than 24 hours ago
+                if db_user.updated_at:
+                    time_since_update = datetime.now() - db_user.updated_at
+                    return time_since_update > timedelta(hours=24)
+
+                # If no updated_at timestamp, consider it needs update
+                return True
+
+        except Exception as e:
+            logger.warning(f"Error checking user update status for {user.id}: {e}")
+            # If we can't determine, err on the side of updating
+            return True
+
+    async def background_update_user_info(self, token: str | None, user_id: str) -> None:
+        """
+        Background task to update user information in database.
+        Fetches fresh user data and updates the database.
+        """
+        try:
+            logger.info(f"Updating user info in background for {user_id}")
+
+            # Fetch fresh user data from external source (bypass cache for latest data)
+            fresh_user_data = await self.get_user_by_id(user_id, from_cache=False)
+            if not fresh_user_data:
+                logger.warning(f"Could not fetch fresh user data for {user_id}")
+                return
+
+            # Update user info in database with fresh data
+            _ = await self.process_user_login(token, fresh_user_data)
+            logger.info(f"Background user info update completed for {user_id}")
+        except Exception as e:
+            logger.error(f"Error in background user info update for {user_id}: {e}")
+
+    async def background_process_logout(self, token: str | None, user: UserProfileData) -> None:
+        """
+        Background task to process user logout operations.
+        Handles both token blacklisting and business logic processing.
+        """
+        try:
+            logger.info(f"Processing logout in background for {user.id}")
+
+            # Add token to blacklist
+            if token:
+                blacklist_success = await blacklist_add(token)
+                if blacklist_success:
+                    logger.debug(f"Added token to blacklist for user {user.id}")
+                else:
+                    logger.warning(f"Failed to add token to blacklist for user {user.id}")
+
+            # Process additional logout business logic
+            await self.process_user_logout(token, user)
+            logger.info(f"Background logout processing completed for {user.id}")
+
+        except Exception as e:
+            logger.error(f"Error in background logout processing for {user.id}: {e}")
