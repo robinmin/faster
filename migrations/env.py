@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import logging
 from logging.config import fileConfig
 import re
 from typing import Any
@@ -10,6 +11,9 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Engine
 from sqlmodel import SQLModel
+
+# Setup logger for migrations
+logger = logging.getLogger(__name__)
 
 # import sqlalchemy as sa
 
@@ -28,10 +32,11 @@ try:
     import faster.core.auth.schemas  # type: ignore[unused-ignore]
     import faster.core.schemas  # noqa: F401  # type: ignore[unused-ignore]
 except ImportError as e:
-    print(f"Warning: Could not import models: {e}")
+    logger.warning(f"Could not import models: {e}")
 
 # Target metadata for 'autogenerate'
 target_metadata = SQLModel.metadata
+
 
 # --------------------- Post-process migration scripts -----------------------
 def process_revision_directives(
@@ -58,7 +63,9 @@ def process_revision_directives(
 
     script.doc = doc
 
+
 # --------------------- Migration runners ------------------------------------
+
 
 def run_migrations_offline() -> None:
     """Run migrations in offline mode (no DB connection)."""
