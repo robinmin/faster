@@ -100,7 +100,7 @@ class AuthProxy:
         """Construct public key from JWKS key."""
         try:
             return jwt.PyJWK(jwks_key).key
-        except Exception as e:
+        except (jwt.InvalidKeyError, jwt.PyJWKError, Exception) as e:
             logger.debug(f"Failed to construct public key from JWKS: {e}")
             return None
 
