@@ -97,15 +97,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.error(f"[auth] Error fetching user profile: {e}")
             return None
 
-    def _set_authenticated_state(self, request: Request, user_profile: UserProfileData) -> None:
+    async def _set_authenticated_state(self, request: Request, user_profile: UserProfileData) -> None:
         """Set request state for successfully authenticated user."""
         request.state.user = user_profile
         request.state.authenticated = True
-        # TODO: for test purpose to assign role, should be fix after debugging
-        # request.state.roles = set(await self._auth_service.get_roles(user_profile.id))
-        request.state.roles = set("developer")
+        request.state.roles = set(await self._auth_service.get_roles(user_profile.id))
 
-    def _set_unauthenticated_state(self, request: Request, current_path: str) -> None:
+    async def _set_unauthenticated_state(self, request: Request, current_path: str) -> None:
         """Set request state for unauthenticated request."""
         request.state.user = None
         request.state.roles = set()
@@ -119,11 +117,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             user_profile = await self._get_authenticated_user_profile(user_id)
             if user_profile:
                 # Successfully authenticated - set authenticated state
-                self._set_authenticated_state(request, user_profile)
+                await self._set_authenticated_state(request, user_profile)
                 return
 
         # Authentication failed or no user_id provided - set unauthenticated state
-        self._set_unauthenticated_state(request, current_path)
+        await self._set_unauthenticated_state(request, current_path)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response | AppResponseDict:  # noqa: PLR0911
         """
