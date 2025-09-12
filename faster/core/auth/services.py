@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from ..database import DBSession, get_transaction
+from ..exceptions import DBError
 from ..logger import get_logger
 from ..redisex import (
     MapCategory,
@@ -76,8 +77,11 @@ class AuthService:
             user = await self._save_user_profile_to_database(user_profile)
             logger.info(f"Saved user profile to database: {user.auth_id}")
             return user
-        except Exception as e:
+        except DBError as e:
             logger.error(f"Failed to save user profile to database: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error saving user profile to database: {e}")
             raise
 
     async def process_user_logout(self, token: str | None, user_profile: UserProfileData) -> None:
@@ -281,8 +285,10 @@ class AuthService:
                         logger.warning(f"Error updating Redis cache from database: {e}")
 
                 return db_profile
-        except Exception as e:
+        except DBError as e:
             logger.warning(f"Failed to retrieve user profile from database: {e}")
+        except Exception as e:
+            logger.warning(f"Unexpected error retrieving user profile from database: {e}")
 
         # Step 3: Fallback to Supabase Auth
         try:
@@ -297,8 +303,10 @@ class AuthService:
                         logger.debug(f"Updated database with Supabase data for user ID: {user_id}")
                     else:
                         logger.warning(f"Failed to update database for user ID: {user_id}")
-                except Exception as e:
+                except DBError as e:
                     logger.warning(f"Error updating database from Supabase: {e}")
+                except Exception as e:
+                    logger.warning(f"Unexpected error updating database from Supabase: {e}")
 
                 # Update Redis cache with Supabase data
                 if from_cache:
@@ -366,8 +374,10 @@ class AuthService:
                 # logger.debug(f"Updated cache with database roles for user {user_id}")
 
             return db_roles
-        except Exception as e:
+        except DBError as e:
             logger.error(f"Failed to get roles for user {user_id}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error getting roles for user {user_id}: {e}")
         return []
 
     async def set_roles(self, user_id: str, roles: list[str], to_cache: bool = True) -> bool:
@@ -400,9 +410,12 @@ class AuthService:
                     logger.warning(f"Failed to update cache for user {user_id}")
 
             return True
-        except Exception as e:
+        except DBError as e:
             logger.error(f"Failed to set roles for user {user_id}: {e}")
-        return False
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error setting roles for user {user_id}: {e}")
+            return False
 
     async def should_update_user_in_db(self, user: UserProfileData) -> bool:
         """
@@ -427,8 +440,12 @@ class AuthService:
                 # If no updated_at timestamp, consider it needs update
                 return True
 
-        except Exception as e:
+        except DBError as e:
             logger.warning(f"Error checking user update status for {user.id}: {e}")
+            # If we can't determine, err on the side of updating
+            return True
+        except Exception as e:
+            logger.warning(f"Unexpected error checking user update status for {user.id}: {e}")
             # If we can't determine, err on the side of updating
             return True
 
@@ -453,8 +470,10 @@ class AuthService:
                 _ = await self._save_user_profile_to_database_with_session(session, fresh_user_data)
 
             logger.info(f"Background user info update completed for {user_id}")
+        except DBError as e:
+            logger.error(f"Database error in background user info update for {user_id}: {e}")
         except Exception as e:
-            logger.error(f"Error in background user info update for {user_id}: {e}")
+            logger.error(f"Unexpected error in background user info update for {user_id}: {e}")
 
     async def background_process_logout(self, token: str | None, user: UserProfileData) -> None:
         """
@@ -477,4 +496,4 @@ class AuthService:
             logger.info(f"Background logout processing completed for {user.id}")
 
         except Exception as e:
-            logger.error(f"Error in background logout processing for {user.id}: {e}")
+            logger.error(f"Unexpected error in background logout processing for {user.id}: {e}")
