@@ -126,15 +126,22 @@ def get_current_endpoint(request: Request, endpoints: list[dict[str, Any]]) -> d
         endpoints: List returned by get_all_endpoints
 
     Returns:
-        The matching endpoint dict or None if not found
+        The matching endpoint dict or None if not found or method not supported
     """
     request_path = request.url.path
-    request_method = request.method.upper()
+    request_method = request.method
 
-    # TODO: We enabled HEAD method support here, need to check if it's necessary to balance the convinence and security
     for ep in endpoints:
-        if request_path == ep.get("path") and (request_method == "HEAD" or request_method in ep.get("methods", [])):
-            return ep
+        if request_path == ep.get("path"):
+            # Check if the request method is supported by this endpoint
+            endpoint_methods = ep.get("methods", [])
+
+            # HEAD requests are automatically supported for GET endpoints
+            if request_method == "HEAD" and "GET" in endpoint_methods:
+                return ep
+
+            if request_method in endpoint_methods:
+                return ep
 
     return None
 
