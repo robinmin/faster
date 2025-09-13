@@ -53,7 +53,7 @@ class SysService:
                 return False
         return True
 
-    async def _set_sys_map_info(self, sys_map: dict[str, dict[str, str]], to_cache: bool) -> bool:
+    async def _set_sys_map_info(self, sys_map: dict[str, dict[str, list[str]]], to_cache: bool) -> bool:
         """Set sys_map information to database and redis."""
         for cat2, items2 in sys_map.items():
             if len(items2) == 0:
@@ -71,7 +71,7 @@ class SysService:
         return True
 
     async def set_sys_info(
-        self, sys_dict: dict[str, dict[int, Any]], sys_map: dict[str, dict[str, str]], to_cache: bool = False
+        self, sys_dict: dict[str, dict[int, Any]], sys_map: dict[str, dict[str, list[str]]], to_cache: bool = False
     ) -> bool:
         """Set all system information to database and redis."""
         if sys_dict and not await self._set_sys_dict_info(sys_dict, to_cache):
