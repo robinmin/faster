@@ -31,7 +31,8 @@
       "mcp__playwright__browser_snapshot",
       "mcp__playwright__browser_evaluate",
       "mcp__playwright__browser_console_messages",
-      "mcp__playwright__browser_wait_for"
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_close"
     ],
     "deny": [
       "Read(.env)",
@@ -45,9 +46,7 @@
       "Read(./mcp/**)",
       "Read(./venv/**)"
     ],
-    "ask": [
-      "Bash(python:*)"
-    ]
+    "ask": ["Bash(python:*)"]
   },
   "contextFileName": "docs/AGENTS.md"
 }
