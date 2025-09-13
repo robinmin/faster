@@ -14,14 +14,14 @@ logger = get_logger(__name__)
 
 dev_router = APIRouter(prefix="/dev", tags=["dev"])
 
-sys_router = APIRouter(tags=["public", "sys"])
+sys_router = APIRouter(tags=["sys"])
 
 
 ###############################################################################
 # Endpoints for dev router
 ###############################################################################
-@dev_router.get("/admin")
-async def health_check() -> FileResponse:
+@dev_router.get("/admin", tags=["public"])
+async def admin_login() -> FileResponse:
     """
     Returns the content of the faster/resources/dev-admin.html file.
     """
@@ -31,7 +31,7 @@ async def health_check() -> FileResponse:
     return FileResponse(str(file_path))
 
 
-@dev_router.get("/settings", response_model=None)
+@dev_router.get("/settings", response_model=None, tags=["public"])
 async def settings(request: Request) -> AppResponseDict:
     """
     Returns the settings for dev-admin.
@@ -51,7 +51,7 @@ async def settings(request: Request) -> AppResponseDict:
     )
 
 
-@dev_router.get("/app_state", response_model=None, tags=["dev"])
+@dev_router.get("/app_state", response_model=None)
 async def app_state(request: Request) -> AppResponseDict:
     """
     Returns the app state for dev-admin.
@@ -61,7 +61,7 @@ async def app_state(request: Request) -> AppResponseDict:
     )
 
 
-@dev_router.get("/request_state", response_model=None, tags=["dev"])
+@dev_router.get("/request_state", response_model=None)
 async def request_state(request: Request) -> AppResponseDict:
     """
     Returns the request state for dev-admin.
