@@ -158,12 +158,14 @@ class TestSysmapFunctions:
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.hget.return_value = '["admin", "moderator"]'
+            mock_redis.smembers.return_value = {"admin", "moderator"}
 
             result = await sysmap_get(str(MapCategory.TAG_ROLE), "tag-important")
 
-            assert result == {"tag-important": '["admin", "moderator"]'}
-            mock_redis.hget.assert_called_once_with("sys:map:tag_role", "tag-important")
+            expected = {"tag-important": ["admin", "moderator"]}
+            # Sort both lists for consistent comparison since sets don't guarantee order
+            assert sorted(result["tag-important"]) == sorted(expected["tag-important"])
+            mock_redis.smembers.assert_called_once_with("sys:map:tag_role:tag-important")
 
     @pytest.mark.asyncio
     async def test_sysmap_get_tag_roles_not_found(self) -> None:
@@ -171,12 +173,12 @@ class TestSysmapFunctions:
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.hget.return_value = None
+            mock_redis.smembers.return_value = set()  # Empty set
 
             result = await sysmap_get(str(MapCategory.TAG_ROLE), "tag-nonexistent")
 
             assert result == {}
-            mock_redis.hget.assert_called_once_with("sys:map:tag_role", "tag-nonexistent")
+            mock_redis.smembers.assert_called_once_with("sys:map:tag_role:tag-nonexistent")
 
     @pytest.mark.asyncio
     async def test_sysmap_set_tag_roles(self) -> None:
@@ -186,59 +188,37 @@ class TestSysmapFunctions:
             mock_get_redis.return_value = mock_redis
 
             mapping = {
-                "tag-important": '["admin", "moderator"]',
-                "tag-public": '["user"]',
+                "tag-important": ["admin", "moderator"],
+                "tag-public": ["user"],
             }
             result = await sysmap_set(str(MapCategory.TAG_ROLE), mapping)
 
             assert result is True
-            # Verify the mapping was converted to JSON strings
-            expected_mapping = {
-                "tag-important": '["admin", "moderator"]',
-                "tag-public": '["user"]',
-            }
-            mock_redis.hset.assert_called_once_with("sys:map:tag_role", expected_mapping)
+            # Verify the keys are deleted first
+            mock_redis.client.keys.assert_called_once_with("sys:map:tag_role:*")
+            # Verify sadd is called for each left_value -> right_values mapping
+            assert mock_redis.sadd.call_count == 2
+            mock_redis.sadd.assert_any_call("sys:map:tag_role:tag-important", "admin", "moderator")
+            mock_redis.sadd.assert_any_call("sys:map:tag_role:tag-public", "user")
 
     @pytest.mark.asyncio
-    async def test_sysmap_get_single_string_value(self) -> None:
-        """Test getting a single string value (non-JSON) using sysmap_get."""
-        with patch("faster.core.redisex.get_redis") as mock_get_redis:
-            mock_redis = AsyncMock()
-            mock_get_redis.return_value = mock_redis
-            mock_redis.hget.return_value = "admin"
-
-            result = await sysmap_get(str(MapCategory.TAG_ROLE), "tag-simple")
-
-            assert result == {"tag-simple": "admin"}
-            mock_redis.hget.assert_called_once_with("sys:map:tag_role", "tag-simple")
-
-    @pytest.mark.asyncio
-    async def test_sysmap_get_invalid_json(self) -> None:
-        """Test getting invalid JSON value using sysmap_get."""
-        with patch("faster.core.redisex.get_redis") as mock_get_redis:
-            mock_redis = AsyncMock()
-            mock_get_redis.return_value = mock_redis
-            mock_redis.hget.return_value = '["invalid json'
-
-            result = await sysmap_get(str(MapCategory.TAG_ROLE), "tag-broken")
-
-            assert result == {"tag-broken": '["invalid json'}
-            mock_redis.hget.assert_called_once_with("sys:map:tag_role", "tag-broken")
-
-    @pytest.mark.asyncio
-    async def test_sysmap_set_mixed_value_types(self) -> None:
-        """Test setting mixed value types using sysmap_set."""
+    async def test_sysmap_set_multiple_right_values(self) -> None:
+        """Test setting multiple right values for a left value using sysmap_set."""
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
 
-            mapping = {"tag-list": '["admin", "user"]', "tag-string": "single-value"}
+            mapping = {"tag-admin": ["read", "write", "delete"], "tag-user": ["read"], "tag-guest": ["read"]}
             result = await sysmap_set(str(MapCategory.TAG_ROLE), mapping)
 
             assert result is True
-            # Verify only lists were converted to JSON
-            expected_mapping = {"tag-list": '["admin", "user"]', "tag-string": "single-value"}
-            mock_redis.hset.assert_called_once_with("sys:map:tag_role", expected_mapping)
+            # Verify the keys are deleted first
+            mock_redis.client.keys.assert_called_once_with("sys:map:tag_role:*")
+            # Verify sadd is called for each left_value -> right_values mapping
+            assert mock_redis.sadd.call_count == 3
+            mock_redis.sadd.assert_any_call("sys:map:tag_role:tag-admin", "read", "write", "delete")
+            mock_redis.sadd.assert_any_call("sys:map:tag_role:tag-user", "read")
+            mock_redis.sadd.assert_any_call("sys:map:tag_role:tag-guest", "read")
 
     @pytest.mark.asyncio
     async def test_sysmap_get_all_values(self) -> None:
@@ -246,20 +226,34 @@ class TestSysmapFunctions:
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.hgetall.return_value = {
-                "tag-admin": '["admin", "superuser"]',
-                "tag-user": '["user"]',
-                "tag-simple": "basic",
-            }
+
+            # Mock the keys and smembers calls
+            mock_redis.client.keys.return_value = [
+                b"sys:map:tag_role:tag-admin",
+                b"sys:map:tag_role:tag-user",
+                b"sys:map:tag_role:tag-guest",
+            ]
+            mock_redis.smembers.side_effect = [
+                {"admin", "superuser"},  # for tag-admin
+                {"user"},  # for tag-user
+                {"guest"},  # for tag-guest
+            ]
 
             result = await sysmap_get(str(MapCategory.TAG_ROLE))
 
-            assert result == {
-                "tag-admin": '["admin", "superuser"]',
-                "tag-user": '["user"]',
-                "tag-simple": "basic",
+            expected = {
+                "tag-admin": ["admin", "superuser"],
+                "tag-user": ["user"],
+                "tag-guest": ["guest"],
             }
-            mock_redis.hgetall.assert_called_once_with("sys:map:tag_role")
+            # Sort lists for consistent comparison since sets don't guarantee order
+            for key in expected:  # noqa: PLC0206
+                if key in result:
+                    result[key] = sorted(result[key])
+                    expected[key] = sorted(expected[key])
+            assert result == expected
+            mock_redis.client.keys.assert_called_once_with("sys:map:tag_role:*")
+            assert mock_redis.smembers.call_count == 3
 
     @pytest.mark.asyncio
     async def test_sysmap_get_all_values_empty(self) -> None:
@@ -267,35 +261,47 @@ class TestSysmapFunctions:
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.hgetall.return_value = {}
+            mock_redis.client.keys.return_value = []
 
             result = await sysmap_get(str(MapCategory.TAG_ROLE))
 
             assert result == {}
-            mock_redis.hgetall.assert_called_once_with("sys:map:tag_role")
+            mock_redis.client.keys.assert_called_once_with("sys:map:tag_role:*")
 
     @pytest.mark.asyncio
-    async def test_sysmap_get_all_values_with_mixed_types(self) -> None:
-        """Test getting all values with mixed JSON and string types."""
+    async def test_sysmap_get_all_values_complex(self) -> None:
+        """Test getting all values with complex role mappings."""
         with patch("faster.core.redisex.get_redis") as mock_get_redis:
             mock_redis = AsyncMock()
             mock_get_redis.return_value = mock_redis
-            mock_redis.hgetall.return_value = {
-                "tag-json": '{"role": "admin", "permissions": ["read", "write"]}',
-                "tag-list": '["admin", "user"]',
-                "tag-string": "simple-value",
-                "tag-invalid": '["broken json',
-            }
+
+            # Mock the keys and smembers calls
+            mock_redis.client.keys.return_value = [
+                b"sys:map:tag_role:admin",
+                b"sys:map:tag_role:user",
+                b"sys:map:tag_role:guest",
+            ]
+            mock_redis.smembers.side_effect = [
+                {"read", "write", "delete"},  # for admin
+                {"read", "write"},  # for user
+                {"read"},  # for guest
+            ]
 
             result = await sysmap_get(str(MapCategory.TAG_ROLE))
 
-            assert result == {
-                "tag-json": '{"role": "admin", "permissions": ["read", "write"]}',
-                "tag-list": '["admin", "user"]',
-                "tag-string": "simple-value",
-                "tag-invalid": '["broken json',
+            expected = {
+                "admin": ["read", "write", "delete"],
+                "user": ["read", "write"],
+                "guest": ["read"],
             }
-            mock_redis.hgetall.assert_called_once_with("sys:map:tag_role")
+            # Sort lists for consistent comparison since sets don't guarantee order
+            for key in expected:  # noqa: PLC0206
+                if key in result:
+                    result[key] = sorted(result[key])
+                    expected[key] = sorted(expected[key])
+            assert result == expected
+            mock_redis.client.keys.assert_called_once_with("sys:map:tag_role:*")
+            assert mock_redis.smembers.call_count == 3
 
 
 class TestAuthModuleFunctions:
