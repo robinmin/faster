@@ -1,20 +1,46 @@
-from typing import cast
+from collections.abc import Callable
+from functools import lru_cache
+from typing import Any, cast
 
-from fastapi import Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+from starlette.routing import Match
 from starlette.types import ASGIApp
 
 from ..logger import get_logger
 from ..models import AppResponseDict
 from ..redisex import blacklist_exists
-from ..utilities import get_current_endpoint
 from .models import UserProfileData
 from .services import AuthService
 from .utilities import extract_bearer_token_from_request
 
 logger = get_logger(__name__)
+
+
+def make_route_finder(
+    app: FastAPI,
+) -> Callable[[str, str], dict[str, Any] | None]:
+    @lru_cache(maxsize=4096)
+    def _find_route(method: str, path: str) -> dict[str, Any] | None:
+        scope = {"type": "http", "method": method, "path": path, "root_path": getattr(app, "root_path", "")}
+        for route in app.routes:
+            try:
+                match, child_scope = route.matches(scope)
+            except Exception:
+                continue
+            if match is Match.FULL:
+                return {
+                    "method": method,
+                    "path": path,
+                    "path_template": getattr(route, "path", None),
+                    "tags": getattr(route, "tags", []),
+                    "path_params": child_scope.get("path_params", {}) if child_scope else {},
+                }
+        return None
+
+    return _find_route
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -66,13 +92,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return True
         return False
 
-    def _get_endpoint_tags(self, request: Request, current_path: str) -> list[str] | None:
-        """Get endpoint tags or return None if endpoint not found."""
-        current_endpoint = get_current_endpoint(request, request.app.state.endpoints)
-        if not current_endpoint or "tags" not in current_endpoint:
-            logger.error(f"[auth] Not Found - 404: [{request.method.upper()}] {current_path}")
-            return None
-        return list(current_endpoint["tags"])
+    # def _get_endpoint_tags(self, request: Request, current_path: str) -> list[str] | None:
+    #     """Get endpoint tags or return None if endpoint not found."""
+    #     current_endpoint = get_current_endpoint(request, request.app.state.endpoints)
+    #     if not current_endpoint or "tags" not in current_endpoint:
+    #         logger.error(f"[auth] Not Found - 404: [{request.method.upper()}] {current_path}")
+    #         return None
+    #     return list(current_endpoint["tags"])
 
     def _is_public_endpoint(self, tags: list[str], current_path: str) -> bool:
         """Check if endpoint is public."""
@@ -136,18 +162,32 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         current_path = request.url.path
         current_method = request.method
+
+        # replace with path_template if necessary: "/notification/INITIAL_SESSION" -> "/notification/{event}"
+        _find_route = make_route_finder(request.app)
+        route_info = _find_route(current_method, current_path)
+        if route_info and "path_template" in route_info:
+            current_path = route_info["path_template"]
+        else:
+            return AppResponseDict(
+                status="http error",
+                message="Not Found(0)",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
         # logger.debug(f"[auth] ==> Processing request: {current_method} {current_path}")
+
         try:
             # 1. Handle allowed paths in debug mode
             if current_method in ["HEAD", "OPTIONS"] or self._handle_allowed_path(request, current_path):
                 return await call_next(request)
 
             # 2. Get endpoint tags
-            tags = self._get_endpoint_tags(request, current_path)
-            if tags is None:
+            # tags = self._get_endpoint_tags(request, current_path)
+            tags = route_info.get("tags", [])
+            if not tags:
                 return AppResponseDict(
                     status="http error",
-                    message="Not Found",
+                    message="Not Found(1)",
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
 
