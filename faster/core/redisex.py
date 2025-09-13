@@ -44,6 +44,9 @@ class MapCategory(Enum):
     def __str__(self) -> str:  # no need in Python 3.11+
         return self.value
 
+    def get_key(self, suffix: str) -> str:
+        return f"{self.value}:{suffix}"
+
 
 ###############################################################################
 
@@ -121,8 +124,6 @@ async def user2role_set(user_id: str, roles: list[str] | None = None) -> bool:
 ###############################################################################
 
 
-
-
 ###############################################################################
 async def sysdict_get(category: str, key: str) -> int | None:
     """
@@ -152,53 +153,86 @@ async def sysdict_set(category: str, mapping: dict[int, Any]) -> bool:
 
 
 ###############################################################################
-async def sysmap_get(category: str, left: str | None = None) -> dict[str, str]:
+async def sysmap_get(category: str, left: str | None = None) -> dict[str, list[str]]:
     """
-    Get system map value(s) from the database.
-    Values are returned as raw strings.
+    Get system map value(s) from Redis.
+    Values are returned as lists of strings (multiple right values per left value).
 
     Args:
         category: The category of the system map
         left: The key to get. If None, returns all key-value pairs in the category
 
     Returns:
-        When left is None: dict with all key-value pairs in the category
-        When left is provided: dict with single key-value pair if found, empty dict if not found
+        When left is None: dict with all left->rights mappings in the category
+        When left is provided: dict with single left->rights mapping if found, empty dict if not found
     """
     try:
-        key = KeyPrefix.SYS_MAP.get_key(category)
+        redis = get_redis()
 
         if left is None:
-            # Get all key-value pairs in the category
-            result = await get_redis().hgetall(key)
-            return result or {}
+            # Get all left values for this category by scanning keys
+            pattern = f"{KeyPrefix.SYS_MAP.get_key(category)}:*"
+            keys = await redis.client.keys(pattern)  # Access client directly for keys method
 
-        # Get specific key value
-        value = await get_redis().hget(key, left)
-        if not value:
+            result: dict[str, list[str]] = {}
+            for key in keys:
+                # Extract left_value from key: sys:map:{category}:{left_value}
+                key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
+                key_parts = key_str.split(":")
+                if len(key_parts) >= 4:
+                    left_value = key_parts[3]  # The left_value part
+                    right_values = await redis.smembers(key_str)
+                    if right_values:
+                        result[left_value] = list(right_values)
+
+            return result
+
+        # Get specific left value
+        key = f"{KeyPrefix.SYS_MAP.get_key(category)}:{left}"
+        right_values = await redis.smembers(key)
+        if not right_values:
             return {}
 
-        return {left: value}
+        return {left: list(right_values)}
 
     except Exception as e:
-        logger.error(f"Error when hget/hgetall from [{KeyPrefix.SYS_MAP.get_key(category)}] : {e}")
+        logger.error(f"Error when getting from sys:map:{category}: {e}")
     return {}
 
 
-async def sysmap_set(category: str, mapping: dict[str, str]) -> bool:
+async def sysmap_set(category: str, mapping: dict[str, list[str]]) -> bool:
     """
-    Set system map value from the database.
+    Set system map values in Redis using sets.
+    Each left value can map to multiple right values.
+
+    Args:
+        category: The category of the system map
+        mapping: dict where keys are left values and values are lists of right values
+
+    Returns:
+        True if successful, False otherwise
     """
-    key = KeyPrefix.SYS_MAP.get_key(category)
     try:
-        # no matter existing or not, just overwrite it
-        _ = await get_redis().hset(key, mapping)
+        redis = get_redis()
+
+        # First, delete all existing keys for this category
+        pattern = f"{KeyPrefix.SYS_MAP.get_key(category)}:*"
+        existing_keys = await redis.client.keys(pattern)
+        if existing_keys:
+            keys_to_delete = [key.decode("utf-8") if isinstance(key, bytes) else str(key) for key in existing_keys]
+            if keys_to_delete:
+                _ = await redis.delete(*keys_to_delete)
+
+        # Set new mappings
+        for left_value, right_values in mapping.items():
+            if right_values:  # Only set if there are right values
+                key = f"{KeyPrefix.SYS_MAP.get_key(category)}:{left_value}"
+                _ = await redis.sadd(key, *right_values)
+
         return True
     except Exception as e:
-        logger.error(f"Error when hset to [{key}] : {e}")
+        logger.error(f"Error when setting sys:map:{category}: {e}")
     return False
-
-
 
 
 # =============================================================================
