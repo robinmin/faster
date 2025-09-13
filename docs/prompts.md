@@ -572,18 +572,95 @@ For function `create_app` in file @faster/core/bootstrap.py, as we already has P
 - Adjust the client code and relevant unit tests to make sure all of them pass `make lint` and `make test`.
 
 
-## bug fix on : background tasks `auth_service.background_update_user_info`
-For a particular `/auth/login` request, I got the following log. Help to figure out what happened and how to fix it.
-In previous log, I can see it passed the RBAC check within the `AuthMiddleware`, and encountered an error in the background tasks `auth_service.background_update_user_info`. And I also saw some following transactions failed due to the UNIQUE constraint violation, please also fix them if necessary:
+## Refactory supabase.auth.onAuthStateChange handler
 
+#### Background
+So far, we have the mechanism to response the `supabase.auth.onAuthStateChange` events:
+  - When received event 'SIGNED_IN', call '/auth/login' API;
+  - When received event 'SIGNED_OUT', call '/auth/logout' API;
+It's very limited and hard to extend for other events going forward. In the backeend, we need more and more API to response these eevents. It's unnecessary.
+
+#### Your Goal
+- Add a new interface '/auth/notification/{event}' (function on_notification in file @faster/core/auth/routers.py) to receive all events centrally. It at least to support events:
+  - INITIAL_SESSION: Emitted right after the Supabase client is constructed and the initial session from storage is loaded.
+  - SIGNED_IN:
+    - Emitted each time a user session is confirmed or re-established, including on user sign in and when refocusing a tab.
+    - Avoid making assumptions as to when this event is fired, this may occur even when the user is already signed in. Instead, check the user object attached to the event to see if a new user has signed in and update your application's UI.
+    - This event can fire very frequently depending on the number of tabs open in your application.
+  - SIGNED_OUT:
+    - Emitted when the user signs out. This can be after:
+      - A call to supabase.auth.signOut().
+      - After the user's session has expired for any reason:
+        - User has signed out on another device.
+        - The session has reached its timebox limit or inactivity timeout.
+        - User has signed in on another device with single session per user enabled.
+        - Check the User Sessions docs for more information.
+    - Use this to clean up any local storage your application has associated with the user.
+  - TOKEN_REFRESHED:
+    - Emitted each time a new access and refresh token are fetched for the signed in user.
+    - It's best practice and highly recommended to extract the access token (JWT) and store it in memory for further use in your application.
+      - Avoid frequent calls to supabase.auth.getSession() for the same purpose.
+    - There is a background process that keeps track of when the session should be refreshed so you will always receive valid tokens by listening to this event.
+    - The frequency of this event is related to the JWT expiry limit configured on your project.
+  - USER_UPDATED: Emitted each time the supabase.auth.updateUser() method finishes successfully. Listen to it to update your application's UI based on new profile information.
+  - PASSWORD_RECOVERY:
+    - Emitted instead of the SIGNED_IN event when the user lands on a page that includes a password recovery link in the URL.
+    - Use it to show a UI to the user where they can reset their password.
+- In on_notification, you need to call existing functions prioritoly. If you need any new function, you can add non-utility function into @faster/core/auth/services.py, and add utility function into @faster/core/auth/utilities.py.
+- Of course, in on_notification, you need to cover current logic of login/logout logic (blacklist operation, and use background task to update user information and etc)
+- At the front end, you need to refactory function handleAuthStateChange to handle above events, also. Do not forget to bring Bearer token, as server side relay on it to identify who is the current user.
+- Prepare to retire login/logout interface at both backend and frontend.
+- get `make lint` and `make test` all pass, before end of this refactory.
+
+
+I noticeed that, when server side received /notification/INITIAL_SESSION request without any Bearer token. It's fare enough in that time, client still can not find any valid token. So let's do the following enhancement:
+
+- Rename current function from:
+```python
+@router.post("/notification/{event}", include_in_schema=False, response_model=None)
+async def on_notification(
+    event: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: UserProfileData | None = Depends(get_current_user),
+) -> AppResponseDict:
 ```
-2025-09-11T13:19:29.097660 [debug   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.routers] Removed token from blacklist for user 61332569-ce63-4876-a207-9f376d89696b
-2025-09-11T13:19:29.117589 [debug   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.routers] Added background task to update user info for 61332569-ce63-4876-a207-9f376d89696b
-2025-09-11T13:19:29.158459 [warning ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Error checking user update status for 61332569-ce63-4876-a207-9f376d89696b: Instance <User at 0x1091b3d80> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
-2025-09-11T13:19:29.159112 [info    ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Updating user info in background for 61332569-ce63-4876-a207-9f376d89696b
-2025-09-11T13:19:29.159769 [info    ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Processing login for user: 61332569-ce63-4876-a207-9f376d89696b
-2025-09-11T13:19:29.176809 [info    ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.repositories] Updated existing user with auth_id: 61332569-ce63-4876-a207-9f376d89696b
-2025-09-11T13:19:29.221055 [error   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.database] Transaction failed: (sqlite3.IntegrityError) UNIQUE constraint failed: AUTH_USER_METADATA.C_USER_AUTH_ID, AUTH_USER_METADATA.C_METADATA_TYPE, AUTH_USER_METADATA.C_KEY
-2025-09-11T13:19:29.236760 [error   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Failed to save user profile to database: Transaction failed: (sqlite3.IntegrityError) UNIQUE constraint failed: AUTH_USER_METADATA.C_USER_AUTH_ID, AUTH_USER_METADATA.C_METADATA_TYPE, AUTH_USER_METADATA.C_KEY
-2025-09-11T13:19:29.248416 [error   ] [cc9b0787137c4abe8e58c082991dc561] [faster.core.auth.services] Error in background user info update for 61332569-ce63-4876-a207-9f376d89696b: Transaction failed: (sqlite3.IntegrityError) UNIQUE constraint failed: AUTH_USER_METADATA.C_USER_AUTH_ID, AUTH_USER_METADATA.C_METADATA_TYPE, AUTH_USER_METADATA.C_KEY
+
+to:
+
+```python
+@router.post("/callback/{event}", include_in_schema=False, response_model=None)
+async def on_callback(
+    event: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: UserProfileData | None = Depends(get_current_user),
+) -> AppResponseDict:
 ```
+
+- Add a new endpoint like this:
+```python
+@router.post("/notification/{event}", include_in_schema=False, response_model=None, tags=["public"])
+async def on_notification(
+    event: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> AppResponseDict:
+```
+
+- Add just logic on both server side and client side: For the events we can find the valid access token/ particular user, we call "/callback/{event}" to process, for the others, we should call "/notification/{event}". That means INITIAL_SESSION should go to "/notification/{event}"
+
+- Add just all relevant code, including their tests, make sure all pass `make lint` and `make test`.
+
+- use MCP playwright to have frontend tests.
+
+
+Your previous task is interupted, please continue it. The original task is: As I tried, the Menu navigation is not working propriate: 'Dashboard' is okay, but the
+others(including 'Profile' and 'Onboarding' is not right. Try again deeply to figure out the issues and fix them all if any with MCP playwright.
+robin
+
+
+## fix frontend
+My frontend web application has been broken by another LLM. This web application is defined in file @faster/resources/dev-admin.html. You can use MCP playwright to access it via http://127.0.0.1:8000/dev/admin.
+
+Currently, it is stucked at the loading page, help to find the root cause and fix it. Meanwhile, there also have some web console errors, you need to fix all of them too.
