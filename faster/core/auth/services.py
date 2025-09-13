@@ -1,7 +1,4 @@
-import contextlib
 from datetime import datetime, timedelta
-import json
-from typing import Any
 
 from ..database import DBSession, get_transaction
 from ..exceptions import DBError
@@ -61,7 +58,7 @@ class AuthService:
         )
 
         self._repository = AuthRepository()
-        self._tag_role_cached: dict[str, str] | None = None
+        self._tag_role_cached: dict[str, list[str]] | None = None
 
     async def process_user_login(self, token: str | None, user_profile: UserProfileData) -> User:
         """
@@ -117,17 +114,12 @@ class AuthService:
         required: set[str] = set()
         for t in tags:
             if t in self._tag_role_cached:
-                roles: str | list[Any] | dict[str, Any] = self._tag_role_cached[t]
-                if isinstance(roles, str):
-                    with contextlib.suppress(json.JSONDecodeError):
-                        roles = json.loads(roles)
-
+                roles = self._tag_role_cached[t]
+                # roles is now already a list[str] from the new sysmap_get implementation
                 if isinstance(roles, list):
-                    r: list[str] = []
-                    for role in roles:
-                        role_str: str = str(role)
-                        r.append(role_str)
+                    r: list[str] = [str(role) for role in roles]
                 else:
+                    # Fallback for backward compatibility
                     r = [str(roles)]
                 logger.debug(f"[RBAC] - tag: {t}, roles: {r}")
                 required |= set(r)
