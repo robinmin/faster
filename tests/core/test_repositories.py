@@ -50,7 +50,7 @@ class TestAppRepository:
         result = await app_repository.get_sys_map()
 
         # Verify the result
-        expected = {"cat1": {"left1": "right1", "left2": "right2"}, "cat2": {"left3": "right3"}}
+        expected = {"cat1": {"left1": ["right1"], "left2": ["right2"]}, "cat2": {"left3": ["right3"]}}
         assert result == expected
 
     async def test_get_sys_map_with_category_filter(self, app_repository: AppRepository, db_session: DBSession) -> None:
@@ -70,7 +70,7 @@ class TestAppRepository:
         # Test with category filter
         result = await app_repository.get_sys_map(category="cat1")
 
-        expected = {"cat1": {"left1": "right1"}}
+        expected = {"cat1": {"left1": ["right1"]}}
         assert result == expected
 
     async def test_get_sys_map_with_left_filter(self, app_repository: AppRepository, db_session: DBSession) -> None:
@@ -90,7 +90,7 @@ class TestAppRepository:
         # Test with left filter
         result = await app_repository.get_sys_map(left="left1")
 
-        expected = {"cat1": {"left1": "right1"}}
+        expected = {"cat1": {"left1": ["right1"]}}
         assert result == expected
 
     async def test_get_sys_map_with_right_filter(self, app_repository: AppRepository, db_session: DBSession) -> None:
@@ -110,7 +110,7 @@ class TestAppRepository:
         # Test with right filter
         result = await app_repository.get_sys_map(right="right1")
 
-        expected = {"cat1": {"left1": "right1"}}
+        expected = {"cat1": {"left1": ["right1"]}}
         assert result == expected
 
     async def test_get_sys_map_in_used_only_false(self, app_repository: AppRepository, db_session: DBSession) -> None:
@@ -130,13 +130,13 @@ class TestAppRepository:
         # Test with in_used_only=False (should include inactive records)
         result = await app_repository.get_sys_map(in_used_only=False)
 
-        expected = {"cat1": {"left1": "right1", "left2": "right2"}}
+        expected = {"cat1": {"left1": ["right1"], "left2": ["right2"]}}
         assert result == expected
 
         # Test with in_used_only=True (default, should exclude inactive records)
         result_active_only = await app_repository.get_sys_map(in_used_only=True)
 
-        expected_active_only = {"cat1": {"left1": "right1"}}
+        expected_active_only = {"cat1": {"left1": ["right1"]}}
         assert result_active_only == expected_active_only
 
     async def test_get_sys_map_empty_result(self, app_repository: AppRepository, db_session: DBSession) -> None:
@@ -259,7 +259,7 @@ class TestAppRepository:
 
         # Should only contain the "other_category" records as active
         active_data = await app_repository.get_sys_map(in_used_only=True)
-        expected_active = {"other_category": {"left3": "right3"}}
+        expected_active = {"other_category": {"left3": ["right3"]}}
         assert active_data == expected_active
 
     async def test_disable_category_no_rows_affected(
