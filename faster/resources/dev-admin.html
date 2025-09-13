@@ -13,15 +13,6 @@
     />
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
-
-    <!-- Alpine.js -->
-    <script
-      src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"
-      defer
-    ></script>
-
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
@@ -35,7 +26,23 @@
     ></script>
 
     <style>
-      .fade-in {
+      [x-cloak] {
+        display: none !important;
+      }
+
+      /* Active menu item styling */
+      .dropdown-content .active {
+        background-color: hsl(var(--p) / 0.1);
+        color: hsl(var(--p));
+        font-weight: 600;
+      }
+
+      /* Page transition animation */
+      #main-content {
+        transition: opacity 0.3s ease-in-out;
+      }
+
+      #main-content.fade-in {
         animation: fadeIn 0.3s ease-in;
       }
 
@@ -49,21 +56,10 @@
           transform: translateY(0);
         }
       }
-
-      [x-cloak] {
-        display: none !important;
-      }
     </style>
   </head>
 
-  <body class="bg-base-100 min-h-screen" x-data="devAdmin">
-    <!--
-       DEBUGGING: If the app is stuck on loading, check:
-       1. Browser console for detailed logs
-       2. Network tab for /dev/settings request
-       3. Server logs for backend errors
-       4. Try: curl http://localhost:8000/dev/settings (adjust port as needed)
-     -->
+  <body class="bg-base-100 min-h-screen" x-data="devAdminData()">
     <!-- Toast Container -->
     <div class="toast toast-end z-50" x-show="toast.show" x-transition>
       <div class="alert" :class="toast.class">
@@ -99,11 +95,11 @@
 
           <!-- OAuth Login Buttons -->
           <div class="space-y-3 mb-4">
-            <button
-              @click="signInWithOAuth('google')"
-              :disabled="authLoading"
-              class="btn btn-outline btn-block"
-            >
+             <button
+               @click="signInWithOAuth('google')"
+               :disabled="authLoading"
+               class="btn btn-outline btn-block"
+             >
               <svg class="w-5 h-5" viewBox="0 0 24 24">
                 <path
                   fill="currentColor"
@@ -125,11 +121,11 @@
               Continue with Google
             </button>
 
-            <button
-              @click="signInWithOAuth('github')"
-              :disabled="authLoading"
-              class="btn btn-outline btn-block"
-            >
+             <button
+               @click="signInWithOAuth('github')"
+               :disabled="authLoading"
+               class="btn btn-outline btn-block"
+             >
               <i data-lucide="github" class="w-5 h-5"></i>
               Continue with GitHub
             </button>
@@ -138,7 +134,7 @@
           <div class="divider">OR</div>
 
           <!-- Email/Password Form -->
-          <form @submit.prevent="handleEmailSubmit" class="space-y-4">
+           <form @submit.prevent="handleEmailSubmit" class="space-y-4">
             <div class="form-control">
               <label class="label">
                 <span class="label-text">Email</span>
@@ -199,7 +195,7 @@
 
           <!-- Sign Up Toggle -->
           <div class="text-center mt-4">
-            <button @click="toggleSignUp" class="link link-primary text-sm">
+             <button @click="toggleSignUp" class="link link-primary text-sm">
               <span
                 x-text="auth.isSignUp ? 'Already have an account? Sign in' : 'Need an account? Sign up'"
               ></span>
@@ -209,1004 +205,816 @@
       </div>
     </div>
 
-    <!-- Main Application Container -->
-    <div x-show="currentView === 'app'" class="min-h-screen" x-cloak>
-      <!-- Navigation Header -->
-      <div class="navbar bg-base-100 shadow-lg">
-        <div class="navbar-start">
-          <h1 class="text-xl font-bold text-primary">
-            <i data-lucide="code" class="w-6 h-6 inline mr-2"></i>
-            Dev Admin
-          </h1>
-        </div>
+   <!-- Main Application Container -->
+   <div x-show="currentView === 'app'" class="min-h-screen" x-cloak>
+     <!-- Navigation Header -->
+     <div class="navbar bg-base-100 shadow-lg">
+       <div class="navbar-start">
+         <h1 class="text-xl font-bold text-primary">
+           <i data-lucide="code" class="w-6 h-6 inline mr-2"></i>
+           Dev Admin
+         </h1>
+       </div>
 
-        <div class="navbar-end">
-          <!-- Theme Toggler -->
-          <label class="swap swap-rotate mr-2">
+       <div class="navbar-end">
+         <!-- Theme Toggler -->
+         <label class="swap swap-rotate mr-2">
             <input type="checkbox" @change="toggleTheme" x-model="darkMode" />
-            <i data-lucide="sun" class="swap-on w-5 h-5"></i>
-            <i data-lucide="moon" class="swap-off w-5 h-5"></i>
-          </label>
+           <i data-lucide="sun" class="swap-on w-5 h-5"></i>
+           <i data-lucide="moon" class="swap-off w-5 h-5"></i>
+         </label>
 
-          <div class="dropdown dropdown-end">
-            <div
-              tabindex="0"
-              role="button"
-              class="btn btn-ghost btn-circle avatar placeholder"
-            >
-              <div class="w-10 rounded-full bg-neutral text-neutral-content">
-                <img
-                  x-show="user && user.user_metadata && user.user_metadata.avatar_url"
-                  :src="user && user.user_metadata ? user.user_metadata.avatar_url : ''"
-                  class="rounded-full"
-                  alt="User Avatar"
-                />
+         <div class="dropdown dropdown-end">
+           <div
+             tabindex="0"
+             role="button"
+             class="btn btn-ghost btn-circle avatar placeholder"
+           >
+             <div class="w-10 rounded-full bg-neutral text-neutral-content">
+               <img
+                 x-show="user && user.user_metadata && user.user_metadata.avatar_url"
+                 :src="user && user.user_metadata ? user.user_metadata.avatar_url : ''"
+                 class="rounded-full"
+                 alt="User Avatar"
+               />
                 <span
                   x-show="!user || !user.user_metadata || !user.user_metadata.avatar_url"
                   class="text-xl"
                   x-text="getUserInitials()"
                 ></span>
-              </div>
-            </div>
+             </div>
+           </div>
             <ul
               tabindex="0"
               class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52"
             >
-              <li>
-                <a @click.prevent="loadPage('dashboard')" href="#">
-                  <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
-                  Dashboard
-                </a>
-              </li>
-              <li>
-                <a @click.prevent="loadPage('onboarding')" href="#">
-                  <i data-lucide="user-check" class="w-4 h-4"></i>
-                  Onboarding
-                </a>
-              </li>
-              <li>
-                <a @click.prevent="loadPage('profile')" href="#">
-                  <i data-lucide="user" class="w-4 h-4"></i>
-                  Profile
-                </a>
-              </li>
+                <li>
+                  <a @click.prevent="handleMenuClick($event, 'dashboard')" href="#" :class="currentPage === 'dashboard' ? 'active' : ''">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                    Dashboard
+                  </a>
+                </li>
+                <li>
+                  <a @click.prevent="handleMenuClick($event, 'onboarding')" href="#" :class="currentPage === 'onboarding' ? 'active' : ''">
+                    <i data-lucide="user-check" class="w-4 h-4"></i>
+                    Onboarding
+                  </a>
+                </li>
+                <li>
+                  <a @click.prevent="handleMenuClick($event, 'profile')" href="#" :class="currentPage === 'profile' ? 'active' : ''">
+                    <i data-lucide="user" class="w-4 h-4"></i>
+                    Profile
+                  </a>
+                </li>
               <li>
                 <hr class="my-2" />
               </li>
               <li>
-                <a @click.prevent="signOut" href="#" class="text-error">
-                  <i data-lucide="log-out" class="w-4 h-4"></i>
+                 <button @click="signOut" class="text-error flex items-center w-full text-left px-4 py-2 hover:bg-base-200" hx-disable>
+                  <i data-lucide="log-out" class="w-4 h-4 mr-2"></i>
                   Logout
-                </a>
+                </button>
               </li>
             </ul>
-          </div>
-        </div>
-      </div>
+         </div>
+       </div>
+     </div>
 
       <!-- Main Content Area -->
       <div class="container mx-auto p-4">
-        <div id="main-content" class="fade-in">
-          <!-- Default Dashboard Content -->
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Welcome Card -->
-            <div
-              class="card bg-gradient-to-r from-primary to-secondary text-primary-content col-span-full"
-            >
-              <div class="card-body">
-                <h2 class="card-title">
-                  <i data-lucide="hand-heart" class="w-6 h-6"></i>
-                  Welcome back!
-                </h2>
-                <p>Your development admin dashboard is ready to go.</p>
-              </div>
-            </div>
+         <!-- Virtual Pages Container -->
+         <div id="main-content">
+          <!-- Dashboard Page -->
+          <div x-show="currentPage === 'dashboard'" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+           <!-- Welcome Card -->
+           <div
+             class="card bg-gradient-to-r from-primary to-secondary text-primary-content col-span-full"
+           >
+             <div class="card-body">
+               <h2 class="card-title">
+                 <i data-lucide="hand-heart" class="w-6 h-6"></i>
+                 Welcome back!
+               </h2>
+               <p>Your development admin dashboard is ready to go.</p>
+             </div>
+           </div>
 
-            <!-- Stats Cards -->
-            <div class="card bg-base-100 shadow-xl">
-              <div class="card-body">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-base-content/60">Total Projects</p>
-                    <p class="text-3xl font-bold">12</p>
-                  </div>
-                  <i data-lucide="folder" class="w-10 h-10 text-primary"></i>
-                </div>
-              </div>
-            </div>
+           <!-- Stats Cards -->
+           <div class="card bg-base-100 shadow-xl">
+             <div class="card-body">
+               <div class="flex items-center justify-between">
+                 <div>
+                   <p class="text-base-content/60">Total Projects</p>
+                   <p class="text-3xl font-bold">12</p>
+                 </div>
+                 <i data-lucide="folder" class="w-10 h-10 text-primary"></i>
+               </div>
+             </div>
+           </div>
 
-            <div class="card bg-base-100 shadow-xl">
-              <div class="card-body">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-base-content/60">Active Tasks</p>
-                    <p class="text-3xl font-bold">8</p>
-                  </div>
-                  <i
-                    data-lucide="check-circle"
-                    class="w-10 h-10 text-success"
-                  ></i>
-                </div>
-              </div>
-            </div>
+           <div class="card bg-base-100 shadow-xl">
+             <div class="card-body">
+               <div class="flex items-center justify-between">
+                 <div>
+                   <p class="text-base-content/60">Active Tasks</p>
+                   <p class="text-3xl font-bold">8</p>
+                 </div>
+                 <i
+                   data-lucide="check-circle"
+                   class="w-10 h-10 text-success"
+                 ></i>
+               </div>
+             </div>
+           </div>
 
-            <div class="card bg-base-100 shadow-xl">
-              <div class="card-body">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <p class="text-base-content/60">Issues</p>
-                    <p class="text-3xl font-bold">3</p>
-                  </div>
-                  <i
-                    data-lucide="alert-circle"
-                    class="w-10 h-10 text-warning"
-                  ></i>
-                </div>
-              </div>
-            </div>
+           <div class="card bg-base-100 shadow-xl">
+             <div class="card-body">
+               <div class="flex items-center justify-between">
+                 <div>
+                   <p class="text-base-content/60">Issues</p>
+                   <p class="text-3xl font-bold">3</p>
+                 </div>
+                 <i
+                   data-lucide="alert-circle"
+                   class="w-10 h-10 text-warning"
+                 ></i>
+               </div>
+             </div>
+           </div>
 
-            <!-- Recent Activity -->
-            <div class="card bg-base-100 shadow-xl col-span-full lg:col-span-2">
-              <div class="card-body">
-                <h3 class="card-title">
-                  <i data-lucide="activity" class="w-5 h-5"></i>
-                  Recent Activity
-                </h3>
-                <div class="space-y-4 mt-4">
-                  <div class="flex items-center space-x-3">
-                    <div class="avatar placeholder">
-                      <div
-                        class="w-10 h-10 bg-primary text-primary-content rounded-full"
-                      >
-                        <i data-lucide="git-commit" class="w-5 h-5"></i>
+          </div>
+
+          <!-- Profile Page -->
+          <div x-show="currentPage === 'profile'" x-cloak>
+            <div class="max-w-4xl mx-auto space-y-6">
+              <!-- Profile Header -->
+              <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                  <div class="flex flex-col md:flex-row items-center gap-6">
+                       <div class="avatar">
+                         <div class="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                           <img :src="getUserAvatar()" alt="Profile Avatar" />
+                         </div>
+                       </div>
+                    <div class="text-center md:text-left">
+                       <h1 class="text-3xl font-bold" x-text="getUserDisplayName()"></h1>
+                      <p class="text-base-content/70 text-lg" x-text="user?.email"></p>
+                      <div class="flex flex-wrap gap-2 mt-3">
+                        <span class="badge badge-primary">Developer</span>
                       </div>
                     </div>
-                    <div class="flex-1">
-                      <p class="font-medium">
-                        New commit pushed to main branch
-                      </p>
-                      <p class="text-sm text-base-content/60">2 hours ago</p>
-                    </div>
-                  </div>
-                  <div class="flex items-center space-x-3">
-                    <div class="avatar placeholder">
-                      <div
-                        class="w-10 h-10 bg-success text-success-content rounded-full"
-                      >
-                        <i data-lucide="check-circle" class="w-5 h-5"></i>
-                      </div>
-                    </div>
-                    <div class="flex-1">
-                      <p class="font-medium">
-                        Task completed: Update documentation
-                      </p>
-                      <p class="text-sm text-base-content/60">4 hours ago</p>
-                    </div>
-                  </div>
-                  <div class="flex items-center space-x-3">
-                    <div class="avatar placeholder">
-                      <div
-                        class="w-10 h-10 bg-warning text-warning-content rounded-full"
-                      >
-                        <i data-lucide="alert-triangle" class="w-5 h-5"></i>
-                      </div>
-                    </div>
-                    <div class="flex-1">
-                      <p class="font-medium">
-                        New issue reported: Login timeout
-                      </p>
-                      <p class="text-sm text-base-content/60">6 hours ago</p>
+                    <div class="ml-auto">
+                      <button class="btn btn-primary" disabled title="Edit functionality coming soon">
+                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                        Edit Profile
+                      </button>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <!-- Quick Actions -->
-            <div class="card bg-base-100 shadow-xl">
-              <div class="card-body">
-                <h3 class="card-title">
-                  <i data-lucide="zap" class="w-5 h-5"></i>
-                  Quick Actions
-                </h3>
-                <div class="space-y-2 mt-4">
-                  <button class="btn btn-sm btn-outline btn-block">
-                    <i data-lucide="plus" class="w-4 h-4"></i>
-                    New Project
-                  </button>
-                  <button class="btn btn-sm btn-outline btn-block">
-                    <i data-lucide="upload" class="w-4 h-4"></i>
-                    Deploy
-                  </button>
-                  <button class="btn btn-sm btn-outline btn-block">
-                    <i data-lucide="settings" class="w-4 h-4"></i>
-                    Settings
-                  </button>
+              <!-- Profile Details Grid -->
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Personal Information -->
+                <div class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <h2 class="card-title">
+                      <i data-lucide="user" class="w-5 h-5"></i>
+                      Personal Information
+                    </h2>
+                    <div class="space-y-4">
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Full Name</span>
+                        </label>
+                         <div class="bg-base-200 p-3 rounded-lg" x-text="getUserFullName() || 'Not provided'"></div>
+                      </div>
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Email</span>
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">
+                          <span x-text="user?.email"></span>
+                          <span class="badge badge-success badge-sm" x-show="user?.email_confirmed_at">Verified</span>
+                          <span class="badge badge-warning badge-sm" x-show="!user?.email_confirmed_at">Unverified</span>
+                        </div>
+                      </div>
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Username</span>
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg" x-text="user?.username || 'Not set'"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Account Information -->
+                <div class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <h2 class="card-title">
+                      <i data-lucide="settings" class="w-5 h-5"></i>
+                      Account Information
+                    </h2>
+                    <div class="space-y-4">
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">User ID</span>
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg font-mono text-sm" x-text="user?.id"></div>
+                      </div>
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Joined</span>
+                        </label>
+                         <div class="bg-base-200 p-3 rounded-lg" x-text="formatDate(user?.created_at)"></div>
+                      </div>
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Last Sign In</span>
+                        </label>
+                         <div class="bg-base-200 p-3 rounded-lg" x-text="formatDate(user?.last_sign_in_at)"></div>
+                      </div>
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Authentication Provider</span>
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">
+                          <span x-text="user?.app_metadata?.provider || 'email'"></span>
+                          <i data-lucide="shield-check" class="w-4 h-4 text-success"></i>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <!-- Onboarding Page -->
+          <div x-show="currentPage === 'onboarding'" x-cloak>
+            <div class="max-w-4xl mx-auto space-y-8">
+              <!-- Welcome Header -->
+              <div class="text-center space-y-4">
+                <div class="avatar">
+                  <div class="w-20 h-20 rounded-full bg-gradient-to-r from-primary to-secondary flex items-center justify-center">
+                    <i data-lucide="user-check" class="w-10 h-10 text-primary-content"></i>
+                  </div>
+                </div>
+                 <h1 class="text-4xl font-bold text-primary" x-text="'Welcome to Dev Admin, ' + getUserDisplayName() + '!'"></h1>
+                <p class="text-lg text-base-content/70 max-w-2xl mx-auto">
+                  Let's get you set up and ready to manage your development environment.
+                  This onboarding guide will help you understand the key features and get started quickly.
+                </p>
+              </div>
+
+              <!-- Progress Indicator -->
+              <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                  <h2 class="card-title">
+                    <i data-lucide="target" class="w-5 h-5"></i>
+                    Your Setup Progress
+                  </h2>
+                  <div class="space-y-4">
+                    <div class="flex items-center gap-4">
+                      <div class="flex-1">
+                        <div class="flex justify-between text-sm mb-1">
+                          <span>Profile Setup</span>
+                          <span>100%</span>
+                        </div>
+                        <progress class="progress progress-primary w-full" value="100" max="100"></progress>
+                      </div>
+                      <i data-lucide="check-circle" class="w-6 h-6 text-success"></i>
+                    </div>
+                    <div class="flex items-center gap-4">
+                      <div class="flex-1">
+                        <div class="flex justify-between text-sm mb-1">
+                          <span>Authentication</span>
+                          <span>100%</span>
+                        </div>
+                        <progress class="progress progress-primary w-full" value="100" max="100"></progress>
+                      </div>
+                      <i data-lucide="check-circle" class="w-6 h-6 text-success"></i>
+                    </div>
+                    <div class="flex items-center gap-4">
+                      <div class="flex-1">
+                        <div class="flex justify-between text-sm mb-1">
+                          <span>Dashboard Exploration</span>
+                          <span x-text="currentPage === 'dashboard' ? '100%' : '25%'"></span>
+                        </div>
+                        <progress class="progress progress-primary w-full" :value="currentPage === 'dashboard' ? 100 : 25" max="100"></progress>
+                      </div>
+                      <i data-lucide="check-circle" class="w-6 h-6 text-success" x-show="currentPage === 'dashboard'"></i>
+                      <i data-lucide="circle" class="w-6 h-6 text-base-content/50" x-show="currentPage !== 'dashboard'"></i>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+
+              <!-- Footer Note -->
+              <div class="text-center text-base-content/60">
+                <p>Need help? Check the browser console for detailed logs or contact your administrator.</p>
+              </div>
+            </div>
+          </div>
+         </div>
         </div>
       </div>
     </div>
 
     <script>
-      document.addEventListener("alpine:init", () => {
-        Alpine.data("devAdmin", () => ({
-          currentView: "loading",
-          loadingMessage: "Initializing...",
-          configLoaded: false,
-          authLoading: false,
+      // Define Alpine component data
+      window.devAdminData = () => ({
+        currentView: 'loading',
+        currentPage: 'dashboard',
+        loadingMessage: 'Initializing...',
+        configLoaded: false,
+        authLoading: false,
 
-          config: {
-            supabaseUrl: "",
-            supabaseKey: "",
-            backendUrl: "",
-            sentryDsn: "",
-            sentryEnvironment: "development",
-            sentryEnabled: true
-          },
+        config: {
+          supabaseUrl: "",
+          supabaseKey: "",
+          backendUrl: "",
+          sentryDsn: "",
+          sentryEnvironment: "development",
+          sentryEnabled: true
+        },
 
-          auth: {
-            email: "",
-            password: "",
-            isSignUp: false,
-            errors: {}
-          },
+        auth: {
+          email: "",
+          password: "",
+          isSignUp: false,
+          errors: {}
+        },
 
-          user: null,
-          supabase: null,
+        user: null,
+        supabase: null,
+        darkMode: false,
+        toast: {
+          show: false,
+          message: "",
+          class: "",
+          icon: "info"
+        },
 
-          darkMode: false,
-          toast: {
-            show: false,
-            message: "",
-            class: "",
-            icon: "info"
-          },
+        async init() {
+          console.log("Initializing Dev Admin Dashboard...");
+          console.log("Page URL:", window.location.href);
+          console.log("User Agent:", navigator.userAgent);
 
-          async init() {
-            console.log("Initializing Dev Admin Dashboard...");
-            console.log("Page URL:", window.location.href);
-            console.log("User Agent:", navigator.userAgent);
+          try {
+            this.initTheme();
+            await this.$nextTick();
 
-            try {
-              this.initTheme();
-              await this.$nextTick();
-
-              if (typeof lucide !== "undefined" && lucide.createIcons) {
-                lucide.createIcons();
-              }
-
-              await this.loadInitialData();
-            } catch (error) {
-              console.error("Failed to initialize:", error);
-              console.error("Error stack:", error.stack);
-              this.showToast(
-                "Initialization failed: " + error.message,
-                "error"
-              );
-              this.currentView = "auth";
+            if (typeof lucide !== "undefined" && lucide.createIcons) {
+              lucide.createIcons();
             }
-          },
 
-          async loadInitialData() {
-            try {
-              await this.loadConfig();
+            await this.loadInitialData();
+          } catch (error) {
+            console.error("Failed to initialize:", error);
+            console.error("Error stack:", error.stack);
+            this.showToast("Initialization failed: " + error.message, "error");
+            this.currentView = "auth";
+          }
+        },
 
-              if (this.configLoaded) {
-                await this.initializeApp();
-              } else {
-                throw new Error("Configuration not loaded");
-              }
-            } catch (error) {
-              console.error("Config loading failed:", error.message);
+        async loadInitialData() {
+          try {
+            await this.loadConfig();
 
-              // Fallback: Continue with default config
-              console.log("Using fallback configuration...");
-              this.configLoaded = true;
-              this.config = {
-                supabaseUrl: null,
-                supabaseKey: null,
-                backendUrl: "",
-                sentryDsn: "",
-                sentryEnvironment: "development",
-                sentryEnabled: false
-              };
-
-              this.showToast("Using default configuration", "warning");
+            if (this.configLoaded) {
               await this.initializeApp();
+            } else {
+              throw new Error("Configuration not loaded");
             }
-          },
+          } catch (error) {
+            console.error("Config loading failed:", error.message);
+            console.log("Using fallback configuration...");
+            this.configLoaded = true;
+            this.config = {
+              supabaseUrl: null,
+              supabaseKey: null,
+              backendUrl: "",
+              sentryDsn: "",
+              sentryEnvironment: "development",
+              sentryEnabled: false
+            };
+            this.showToast("Using default configuration", "warning");
+            await this.initializeApp();
+          }
+        },
 
-          async loadConfig() {
-            try {
-              console.log("Attempting to load config from /dev/settings...");
-              console.log("Current URL:", window.location.href);
-
-              // Test basic server connectivity first
-              try {
-                const testResponse = await fetch("/", { method: "HEAD" });
-                console.log("Server connectivity test:", testResponse.status);
-              } catch (connectError) {
-                console.warn(
-                  "Server connectivity test failed:",
-                  connectError.message
-                );
-              }
-
-              const response = await fetch("/dev/settings", {
-                method: "GET",
-                headers: {
-                  "Content-Type": "application/json",
-                  Accept: "application/json"
-                }
-              });
-
-              console.log("Response status:", response.status);
-              console.log("Response ok:", response.ok);
-
-              if (!response.ok) {
-                console.error(
-                  "Bad response:",
-                  response.status,
-                  response.statusText
-                );
-                throw new Error(
-                  `HTTP ${response.status}: ${response.statusText}`
-                );
-              }
-
-              const data = await response.json();
-              console.log("Raw response data:", data);
-
-              if (data && data.data) {
-                this.config = { ...this.config, ...data.data };
-                this.configLoaded = true;
-                console.log("Configuration loaded successfully:", this.config);
-              } else {
-                console.error("Invalid response format - missing data field");
-                throw new Error("Invalid configuration response format");
-              }
-            } catch (error) {
-              console.error("Failed to load configuration:", error);
-              console.error("Error type:", error.constructor.name);
-              console.error("Error message:", error.message);
-              this.configLoaded = false;
-              throw error;
-            }
-          },
-
-          async initializeApp() {
-            if (!this.configLoaded) {
-              throw new Error("Cannot initialize app without configuration");
-            }
-
-            this.loadingMessage = "Setting up services...";
+        async loadConfig() {
+          try {
+            console.log("Attempting to load config from /dev/settings...");
+            console.log("Current URL:", window.location.href);
 
             try {
-              // Initialize Sentry
-              if (this.config.sentryEnabled && this.config.sentryDsn) {
-                this.initSentry();
-              }
+              const testResponse = await fetch("/", { method: "HEAD" });
+              console.log("Server connectivity test:", testResponse.status);
+            } catch (connectError) {
+              console.warn("Server connectivity test failed:", connectError.message);
+            }
 
-              // Initialize Supabase
-              if (this.config.supabaseUrl && this.config.supabaseKey) {
-                const supabaseInitialized = this.initSupabase();
-                if (supabaseInitialized) {
-                  await this.checkSession();
-                } else {
-                  this.currentView = "auth";
-                  return;
-                }
+            const response = await fetch("/dev/settings", {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json"
+              }
+            });
+
+            console.log("Response status:", response.status);
+            console.log("Response ok:", response.ok);
+
+            if (!response.ok) {
+              console.error("Bad response:", response.status, response.statusText);
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log("Raw response data:", data);
+
+            if (data && data.data) {
+              this.config = { ...this.config, ...data.data };
+              this.configLoaded = true;
+              console.log("Configuration loaded successfully:", this.config);
+            } else {
+              console.error("Invalid response format - missing data field");
+              throw new Error("Invalid configuration response format");
+            }
+          } catch (error) {
+            console.error("Failed to load configuration:", error);
+            console.error("Error type:", error.constructor.name);
+            console.error("Error message:", error.message);
+            this.configLoaded = false;
+            throw error;
+          }
+        },
+
+        async initializeApp() {
+          if (!this.configLoaded) {
+            throw new Error("Cannot initialize app without configuration");
+          }
+
+          this.loadingMessage = "Setting up services...";
+
+          try {
+            if (this.config.sentryEnabled && this.config.sentryDsn) {
+              this.initSentry();
+            }
+
+            if (this.config.supabaseUrl && this.config.supabaseKey) {
+              const supabaseInitialized = this.initSupabase();
+              if (supabaseInitialized) {
+                await this.checkSession();
               } else {
-                this.showToast("Supabase not configured", "warning");
                 this.currentView = "auth";
                 return;
               }
-
-              // Setup HTMX
-              this.setupHTMX();
-
-              console.log("Application initialization completed");
-            } catch (error) {
-              console.error("App initialization failed:", error);
-              this.showToast(
-                "Application setup failed: " + error.message,
-                "error"
-              );
+            } else {
+              this.showToast("Supabase not configured", "warning");
               this.currentView = "auth";
-            }
-          },
-
-          initSupabase() {
-            try {
-              this.supabase = supabase.createClient(
-                this.config.supabaseUrl,
-                this.config.supabaseKey
-              );
-
-              this.supabase.auth.onAuthStateChange((event, session) => {
-                this.handleAuthStateChange(event, session);
-              });
-
-              return true;
-            } catch (error) {
-              console.error("Supabase initialization failed:", error.message);
-              return false;
-            }
-          },
-
-          // 初始化 Sentry
-          initSentry() {
-            if (!this.config.sentryDsn) {
-              console.log("Sentry DSN not configured");
               return;
             }
 
-            try {
-              Sentry.init({
-                dsn: this.config.sentryDsn,
-                environment: this.config.sentryEnvironment,
-                tracesSampleRate:
-                  this.config.sentryEnvironment === "production" ? 0.1 : 1.0
-              });
-              console.log("Sentry initialized successfully");
-            } catch (error) {
-              console.error("Sentry initialization failed:", error);
-            }
-          },
+            console.log("Application initialization completed");
+          } catch (error) {
+            console.error("App initialization failed:", error);
+            this.showToast("Application setup failed: " + error.message, "error");
+            this.currentView = "auth";
+          }
+        },
 
-          // 设置 HTMX
-          setupHTMX() {
-            // HTMX configuration is now handled globally in DOMContentLoaded
-            // Only set up request headers here
+        initSupabase() {
+          try {
+            this.supabase = supabase.createClient(
+              this.config.supabaseUrl,
+              this.config.supabaseKey
+            );
 
-            // 设置默认请求头
-            document.body.addEventListener("htmx:configRequest", evt => {
-              evt.detail.headers["Content-Type"] = "application/json";
-              evt.detail.headers["Accept"] = "application/json";
-
-              // 添加认证头
-              if (this.user && this.supabase) {
-                this.supabase.auth
-                  .getSession()
-                  .then(({ data: { session } }) => {
-                    if (session) {
-                      evt.detail.headers[
-                        "Authorization"
-                      ] = `Bearer ${session.access_token}`;
-                    }
-                  });
-              }
+            this.supabase.auth.onAuthStateChange((event, session) => {
+              this.handleAuthStateChange(event, session);
             });
 
-            console.log("HTMX request headers configured");
-          },
+            return true;
+          } catch (error) {
+            console.error("Supabase initialization failed:", error.message);
+            return false;
+          }
+        },
 
-          async checkSession() {
-            if (!this.supabase) {
-              this.currentView = "auth";
-              return;
-            }
+        initSentry() {
+          if (!this.config.sentryDsn) {
+            console.log("Sentry DSN not configured");
+            return;
+          }
 
-            try {
-              const {
-                data: { session },
-                error
-              } = await this.supabase.auth.getSession();
+          try {
+            Sentry.init({
+              dsn: this.config.sentryDsn,
+              environment: this.config.sentryEnvironment,
+              tracesSampleRate: this.config.sentryEnvironment === "production" ? 0.1 : 1.0
+            });
+            console.log("Sentry initialized successfully");
+          } catch (error) {
+            console.error("Sentry initialization failed:", error);
+          }
+        },
 
-              if (error) throw error;
+        async checkSession() {
+          if (!this.supabase) {
+            this.currentView = "auth";
+            return;
+          }
 
-              if (session && session.user) {
-                this.user = session.user;
-                this.currentView = "app";
-                
-                // Notify backend and handle onboarding navigation
-                this.notifyBackendLogin().catch(error => {
-                  console.warn("Backend login notification failed:", error);
-                  // Fallback to loading dashboard if backend call fails
-                  this.loadDashboard();
-                });
-              } else {
-                this.currentView = "auth";
-              }
-            } catch (error) {
-              console.error("Session check failed:", error.message);
-              this.showToast("Session check failed: " + error.message, "error");
-              this.currentView = "auth";
-            }
-          },
+          try {
+            const { data: { session }, error } = await this.supabase.auth.getSession();
+            if (error) throw error;
 
-          // 认证状态变化处理
-          handleAuthStateChange(event, session) {
-            if (event === "SIGNED_IN" && session && session.user) {
-              console.log(
-                "User signed in via auth state change:",
-                session.user.email
-              );
+            if (session && session.user) {
               this.user = session.user;
               this.currentView = "app";
-              this.showToast("Login successful!", "success");
-              
-              // Notify backend and handle onboarding navigation
-              this.notifyBackendLogin().catch(error => {
-                console.warn("Backend login notification failed:", error);
-                // Fallback to loading dashboard if backend call fails
-                this.loadDashboard();
-              });
-            } else if (event === "SIGNED_OUT") {
-              console.log("User signed out via auth state change");
-              this.user = null;
+              this.currentPage = "dashboard";
+            } else {
               this.currentView = "auth";
-              this.notifyBackendLogout();
             }
-          },
+          } catch (error) {
+            console.error("Session check failed:", error.message);
+            this.showToast("Session check failed: " + error.message, "error");
+            this.currentView = "auth";
+          }
+        },
 
-          // OAuth 登录
-          async signInWithOAuth(provider) {
-            if (!this.supabase) {
-              this.showToast("Authentication not configured", "warning");
-              return;
-            }
-
-            console.log(`Attempting ${provider} OAuth login...`);
-            this.authLoading = true;
-
-            try {
-              const { error } = await this.supabase.auth.signInWithOAuth({
-                provider,
-                options: { redirectTo: window.location.href }
-              });
-
-              if (error) throw error;
-            } catch (error) {
-              console.error(`${provider} login failed:`, error);
-              this.showToast(
-                `${provider} login failed: ${error.message}`,
-                "error"
-              );
-            } finally {
-              this.authLoading = false;
-            }
-          },
-
-          // 邮箱登录/注册处理
-          async handleEmailSubmit() {
-            this.clearAuthErrors();
-
-            // 验证
-            if (!this.auth.email) {
-              this.auth.errors.email = "Email is required";
-              return;
-            }
-            if (!this.auth.password) {
-              this.auth.errors.password = "Password is required";
-              return;
-            }
-
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(this.auth.email)) {
-              this.auth.errors.email = "Invalid email format";
-              return;
-            }
-
-            if (!this.supabase) {
-              this.showToast("Authentication not configured", "warning");
-              return;
-            }
-
-            this.authLoading = true;
-
-            try {
-              if (this.auth.isSignUp) {
-                await this.signUpWithEmail();
-              } else {
-                await this.signInWithEmail();
-              }
-            } finally {
-              this.authLoading = false;
-            }
-          },
-
-          // 邮箱登录
-          async signInWithEmail() {
-            console.log("Attempting email login...");
-
-            try {
-              const {
-                data,
-                error
-              } = await this.supabase.auth.signInWithPassword({
-                email: this.auth.email,
-                password: this.auth.password
-              });
-
-              if (error) throw error;
-
-              console.log("Email login successful:", data.user.email);
-              this.user = data.user;
-              this.currentView = "app";
-              this.showToast("Login successful!", "success");
-              this.clearAuthForm();
-              
-              // Notify backend and handle onboarding navigation
-              this.notifyBackendLogin().catch(error => {
-                console.warn("Backend login notification failed:", error);
-                // Fallback to loading dashboard if backend call fails
-                this.loadDashboard();
-              });
-            } catch (error) {
-              console.error("Email login failed:", error);
-              this.showToast("Login failed: " + error.message, "error");
-            }
-          },
-
-          // 邮箱注册
-          async signUpWithEmail() {
-            console.log("Attempting email signup...");
-
-            try {
-              const { error } = await this.supabase.auth.signUp({
-                email: this.auth.email,
-                password: this.auth.password
-              });
-
-              if (error) throw error;
-
-              this.showToast(
-                "Account created! Please check your email for verification.",
-                "success"
-              );
-              this.clearAuthForm();
-            } catch (error) {
-              console.error("Email signup failed:", error);
-              this.showToast("Sign up failed: " + error.message, "error");
-            }
-          },
-
-          // 登出
-          async signOut() {
-            console.log("User signing out...");
-
-            let backendLogoutSuccess = true;
-            let supabaseLogoutSuccess = true;
-            let backendError = null;
-            let supabaseError = null;
-
-            // Notify backend but don't wait for success
-            try {
-              await this.notifyBackendLogout();
-            } catch (error) {
-              console.warn("Backend logout notification failed:", error);
-              backendLogoutSuccess = false;
-              backendError = error;
-            }
-
-            // Handle Supabase logout
-            try {
-              if (this.supabase) {
-                const { error } = await this.supabase.auth.signOut();
-                if (error) throw error;
-              }
-            } catch (error) {
-              console.error("Supabase logout failed:", error);
-              supabaseLogoutSuccess = false;
-              supabaseError = error;
-            }
-
-            // Show appropriate toast based on results
-            if (backendLogoutSuccess && supabaseLogoutSuccess) {
-              this.showToast("Logged out successfully", "success");
-            } else if (!backendLogoutSuccess && !supabaseLogoutSuccess) {
-              this.showToast("Logout failed: Backend and authentication errors", "error");
-            } else if (!backendLogoutSuccess) {
-              this.showToast("Partial logout: Backend notification failed", "warning");
-            } else if (!supabaseLogoutSuccess) {
-              this.showToast("Logout failed: " + supabaseError.message, "error");
-            }
-
-            // Always navigate to login page regardless of API response
+        handleAuthStateChange(event, session) {
+          if (event === "SIGNED_IN" && session && session.user) {
+            console.log("User signed in via auth state change:", session.user.email);
+            this.user = session.user;
+            this.currentView = "app";
+            this.showToast("Login successful!", "success");
+            this.currentPage = "dashboard";
+          } else if (event === "SIGNED_OUT") {
+            console.log("User signed out via auth state change");
             this.user = null;
             this.currentView = "auth";
-          },
+          }
+        },
 
-          // 加载仪表板内容
-          loadDashboard() {
-            console.log("Loading dashboard content...");
-            // 使用 HTMX 加载仪表板内容
-            htmx
-              .ajax("GET", "/auth/dashboard", {
-                target: "#main-content",
-                swap: "innerHTML"
-              })
-              .then(() => {
-                console.log("Dashboard loaded successfully");
-                this.$nextTick(() => {
-                  if (typeof lucide !== "undefined" && lucide.createIcons) {
-                    lucide.createIcons();
-                  }
-                });
-              })
-              .catch(error => {
-                console.error("Failed to load dashboard:", error);
-                this.showToast("Failed to load dashboard", "error");
-              });
-          },
+        async signInWithOAuth(provider) {
+          if (!this.supabase) {
+            this.showToast("Authentication not configured", "warning");
+            return;
+          }
 
-          // 页面加载
-          loadPage(page) {
-            console.log("Loading page:", page);
+          console.log(`Attempting ${provider} OAuth login...`);
+          this.authLoading = true;
 
-            const endpoints = {
-              dashboard: "/auth/dashboard",
-              profile: "/auth/profile",
-              onboarding: "/auth/onboarding"
-            };
+          try {
+            const { error } = await this.supabase.auth.signInWithOAuth({
+              provider,
+              options: { redirectTo: window.location.href }
+            });
+            if (error) throw error;
+          } catch (error) {
+            console.error(`${provider} login failed:`, error);
+            this.showToast(`${provider} login failed: ${error.message}`, "error");
+          } finally {
+            this.authLoading = false;
+          }
+        },
 
-            const endpoint = endpoints[page];
-            if (!endpoint) {
-              this.showToast("Page not found: " + page, "error");
-              return;
-            }
+        async handleEmailSubmit() {
+          this.clearAuthErrors();
 
-            // 使用 HTMX 加载内容
-            htmx
-              .ajax("GET", endpoint, {
-                target: "#main-content",
-                swap: "innerHTML"
-              })
-              .then(() => {
-                console.log("Page loaded successfully:", page);
-                this.$nextTick(() => {
-                  if (typeof lucide !== "undefined" && lucide.createIcons) {
-                    lucide.createIcons();
-                  }
-                });
-              })
-              .catch(error => {
-                console.error("Failed to load page:", error);
-                this.showToast("Failed to load page: " + page, "error");
-              });
-          },
+          if (!this.auth.email) {
+            this.auth.errors.email = "Email is required";
+            return;
+          }
+          if (!this.auth.password) {
+            this.auth.errors.password = "Password is required";
+            return;
+          }
 
-          // 后端通知 - only called after config is loaded
-          async notifyBackendLogin() {
-            if (!this.configLoaded || !this.config.backendUrl) {
-              console.log(
-                "Backend URL not configured or config not loaded, skipping login notification"
-              );
-              return;
-            }
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(this.auth.email)) {
+            this.auth.errors.email = "Invalid email format";
+            return;
+          }
 
-            try {
-              const response = await this.apiCall("/auth/login", "GET");
-              console.log("Backend notified of login:", response);
-              
-              // Handle onboarding status from enhanced API response
-              if (response && response.data) {
-                const { onboarding_complete, user_id } = response.data;
-                console.log(`User ${user_id} onboarding status: ${onboarding_complete}`);
-                
-                // Navigate based on onboarding status
-                this.handleOnboardingNavigation(onboarding_complete);
-              }
-              
-              return response;
-            } catch (error) {
-              console.warn("Failed to notify backend of login:", error);
-              throw error;
-            }
-          },
+          if (!this.supabase) {
+            this.showToast("Authentication not configured", "warning");
+            return;
+          }
 
-          async notifyBackendLogout() {
-            if (!this.configLoaded || !this.config.backendUrl) {
-              console.log(
-                "Backend URL not configured or config not loaded, skipping logout notification"
-              );
-              return;
-            }
+          this.authLoading = true;
 
-            try {
-              const response = await this.apiCall("/auth/logout", "GET");
-              console.log("Backend notified of logout:", response);
-              
-              // Handle logout status from enhanced API response
-              if (response && response.data) {
-                const { logout_status, user_id } = response.data;
-                console.log(`User ${user_id} logout status: ${logout_status}`);
-                
-                if (logout_status === "processing") {
-                  this.showToast("Logout processing in background", "info");
-                }
-              }
-              
-              return response;
-            } catch (error) {
-              console.warn("Failed to notify backend of logout:", error);
-              throw error;
-            }
-          },
-
-          // Handle navigation based on onboarding status
-          handleOnboardingNavigation(onboarding_complete) {
-            console.log("Handling onboarding navigation:", onboarding_complete);
-            
-            if (onboarding_complete) {
-              // User has completed onboarding - load dashboard
-              console.log("User has completed onboarding, loading dashboard");
-              this.loadDashboard();
+          try {
+            if (this.auth.isSignUp) {
+              await this.signUpWithEmail();
             } else {
-              // User needs to complete onboarding - load onboarding page
-              console.log("User needs to complete onboarding, loading onboarding page");
-              this.loadPage('onboarding');
+              await this.signInWithEmail();
             }
-          },
+          } finally {
+            this.authLoading = false;
+          }
+        },
 
-          // API 调用辅助方法 - only works after config is loaded
-          async apiCall(endpoint, method = "GET", body = null) {
-            if (!this.configLoaded) {
-              throw new Error(
-                "Configuration not loaded - cannot make API calls"
-              );
-            }
+        async signInWithEmail() {
+          console.log("Attempting email login...");
 
-            if (!this.config.backendUrl) {
-              throw new Error("Backend URL not configured");
-            }
-
-            const headers = {
-              "Content-Type": "application/json",
-              Accept: "application/json"
-            };
-
-            // 添加认证头
-            if (this.supabase && this.user) {
-              try {
-                const {
-                  data: { session }
-                } = await this.supabase.auth.getSession();
-                if (session) {
-                  headers["Authorization"] = `Bearer ${session.access_token}`;
-                }
-              } catch (error) {
-                console.warn("Failed to get session for API call:", error);
-              }
-            }
-
-            const options = {
-              method,
-              headers
-            };
-
-            if (body && method !== "GET") {
-              options.body = JSON.stringify(body);
-            }
-
-            console.log(
-              `Making API call: ${method} ${this.config.backendUrl}${endpoint}`
-            );
-            const response = await fetch(
-              `${this.config.backendUrl}${endpoint}`,
-              options
-            );
-
-            if (!response.ok) {
-              throw new Error(
-                `HTTP ${response.status}: ${response.statusText}`
-              );
-            }
-
-            return await response.json();
-          },
-
-          // UI 辅助方法
-          showToast(message, type = "info") {
-            const toastTypes = {
-              success: { icon: "check-circle", class: "alert-success" },
-              error: { icon: "x-circle", class: "alert-error" },
-              warning: { icon: "alert-triangle", class: "alert-warning" },
-              info: { icon: "info", class: "alert-info" }
-            };
-
-            const config = toastTypes[type] || toastTypes.info;
-
-            this.toast = {
-              show: true,
-              message,
-              class: config.class,
-              icon: config.icon
-            };
-
-            this.$nextTick(() => {
-              if (typeof lucide !== "undefined" && lucide.createIcons) {
-                lucide.createIcons();
-              }
+          try {
+            const { data, error } = await this.supabase.auth.signInWithPassword({
+              email: this.auth.email,
+              password: this.auth.password
             });
 
-            // 自动隐藏
-            setTimeout(() => {
-              this.toast.show = false;
-            }, 5000);
-          },
+            if (error) throw error;
 
-          toggleSignUp() {
-            this.auth.isSignUp = !this.auth.isSignUp;
-            this.clearAuthErrors();
-            this.$nextTick(() => {
-              if (typeof lucide !== "undefined" && lucide.createIcons) {
-                lucide.createIcons();
-              }
+            console.log("Email login successful:", data.user.email);
+            this.user = data.user;
+            this.currentView = "app";
+            this.showToast("Login successful!", "success");
+            this.clearAuthForm();
+            this.currentPage = "dashboard";
+          } catch (error) {
+            console.error("Email login failed:", error);
+            this.showToast("Login failed: " + error.message, "error");
+          }
+        },
+
+        async signUpWithEmail() {
+          console.log("Attempting email signup...");
+
+          try {
+            const { error } = await this.supabase.auth.signUp({
+              email: this.auth.email,
+              password: this.auth.password
             });
-          },
 
-          clearAuthForm() {
-            this.auth.email = "";
-            this.auth.password = "";
-            this.clearAuthErrors();
-          },
+            if (error) throw error;
 
-          clearAuthErrors() {
-            this.auth.errors = {};
-          },
+            this.showToast("Account created! Please check your email for verification.", "success");
+            this.clearAuthForm();
+          } catch (error) {
+            console.error("Email signup failed:", error);
+            this.showToast("Sign up failed: " + error.message, "error");
+          }
+        },
 
-          getUserInitials() {
-            if (!this.user || !this.user.email) return "??";
-            return this.user.email
-              .split("@")[0]
-              .substring(0, 2)
-              .toUpperCase();
-          },
+        async signOut() {
+          console.log("User signing out...");
 
-          // 主题管理
-          initTheme() {
-            try {
-              const savedTheme = localStorage.getItem("theme") || "light";
-              this.darkMode = savedTheme === "dark";
-              document.documentElement.setAttribute("data-theme", savedTheme);
-            } catch (error) {
-              console.warn("localStorage not available, using default theme");
-              this.darkMode = false;
+          try {
+            if (this.supabase) {
+              const { error } = await this.supabase.auth.signOut();
+              if (error) throw error;
             }
-          },
+            this.showToast("Logged out successfully", "success");
+          } catch (error) {
+            console.error("Supabase logout failed:", error);
+            this.showToast("Logout failed: " + error.message, "error");
+          }
 
-          toggleTheme() {
-            const theme = this.darkMode ? "dark" : "light";
-            document.documentElement.setAttribute("data-theme", theme);
+          this.user = null;
+          this.currentView = "auth";
+        },
 
-            try {
-              localStorage.setItem("theme", theme);
-            } catch (error) {
-              console.warn(
-                "localStorage not available, theme preference not saved"
-              );
+        showToast(message, type = "info") {
+          const toastTypes = {
+            success: { icon: "check-circle", class: "alert-success" },
+            error: { icon: "x-circle", class: "alert-error" },
+            warning: { icon: "alert-triangle", class: "alert-warning" },
+            info: { icon: "info", class: "alert-info" }
+          };
+
+          const config = toastTypes[type] || toastTypes.info;
+
+          this.toast = {
+            show: true,
+            message,
+            class: config.class,
+            icon: config.icon
+          };
+
+          this.$nextTick(() => {
+            if (typeof lucide !== "undefined" && lucide.createIcons) {
+              lucide.createIcons();
+            }
+          });
+
+          setTimeout(() => {
+            this.toast.show = false;
+          }, 5000);
+        },
+
+        toggleSignUp() {
+          this.auth.isSignUp = !this.auth.isSignUp;
+          this.clearAuthErrors();
+          this.$nextTick(() => {
+            if (typeof lucide !== "undefined" && lucide.createIcons) {
+              lucide.createIcons();
+            }
+          });
+        },
+
+        clearAuthForm() {
+          this.auth.email = "";
+          this.auth.password = "";
+          this.clearAuthErrors();
+        },
+
+        clearAuthErrors() {
+          this.auth.errors = {};
+        },
+
+        getUserInitials() {
+          if (!this.user || !this.user.email) return "??";
+          return this.user.email.split("@")[0].substring(0, 2).toUpperCase();
+        },
+
+        getUserDisplayName() {
+          if (!this.user) return "Developer";
+          return this.user.user_metadata?.full_name ||
+                 this.user.user_metadata?.name ||
+                 this.user.email?.split('@')[0] ||
+                 "Developer";
+        },
+
+        getUserFullName() {
+          if (!this.user) return null;
+          return this.user.user_metadata?.full_name || this.user.user_metadata?.name;
+        },
+
+        getUserAvatar() {
+          if (!this.user) return "https://ui-avatars.com/api/?name=Developer";
+          return this.user.user_metadata?.avatar_url ||
+                 `https://ui-avatars.com/api/?name=${encodeURIComponent(this.user.email)}`;
+        },
+
+        formatDate(dateString) {
+          if (!dateString) return "Unknown";
+          try {
+            return new Date(dateString).toLocaleDateString();
+          } catch (e) {
+            return "Invalid Date";
+          }
+        },
+
+        initTheme() {
+          try {
+            const savedTheme = localStorage.getItem("theme") || "light";
+            this.darkMode = savedTheme === "dark";
+            document.documentElement.setAttribute("data-theme", savedTheme);
+          } catch (error) {
+            console.warn("localStorage not available, using default theme");
+            this.darkMode = false;
+          }
+        },
+
+        toggleTheme() {
+          const theme = this.darkMode ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", theme);
+
+          try {
+            localStorage.setItem("theme", theme);
+          } catch (error) {
+            console.warn("localStorage not available, theme preference not saved");
+          }
+        },
+
+        handleMenuClick(event, page) {
+          console.log('Menu click:', page);
+          this.currentPage = page;
+
+          // Close dropdown immediately
+          const dropdown = event.target.closest('.dropdown');
+          if (dropdown) {
+            const trigger = dropdown.querySelector('[tabindex="0"]');
+            if (trigger) {
+              trigger.blur();
+              // Also remove focus and close dropdown by clicking outside
+              document.activeElement.blur();
             }
           }
-        }));
+
+          // Additional cleanup to ensure dropdown closes
+          setTimeout(() => {
+            document.body.click();
+          }, 50);
+        }
       });
 
-      console.log("Alpine initialized with devAdmin component");
-
-      // HTMX Configuration
+      // Initialize on page load
       document.addEventListener("DOMContentLoaded", () => {
-        htmx.config.defaultSwapStyle = "innerHTML";
-        htmx.config.requestClass = "loading";
-        htmx.config.timeout = 10000;
-
-        // Simple HTMX error handling
-        document.body.addEventListener("htmx:responseError", evt => {
-          console.error("HTMX response error:", evt.detail);
-        });
-
-        // Re-create icons after HTMX requests
-        document.body.addEventListener("htmx:afterRequest", () => {
-          if (typeof lucide !== "undefined" && lucide.createIcons) {
-            lucide.createIcons();
-          }
-        });
+        console.log("Page loaded");
+        if (typeof lucide !== "undefined" && lucide.createIcons) {
+          lucide.createIcons();
+        }
       });
 
-      // 全局错误处理
+      // Global error handling
       window.addEventListener("error", e => {
         console.error("Global error:", e.error);
         if (typeof Sentry !== "undefined") {
@@ -1222,5 +1030,8 @@
         e.preventDefault();
       });
     </script>
+
+    <!-- Alpine.js -->
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
   </body>
 </html>
