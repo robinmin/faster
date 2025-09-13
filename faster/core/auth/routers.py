@@ -1,12 +1,9 @@
-from enum import Enum
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
-from fastapi.responses import RedirectResponse
-
+from ..config import Settings
 from ..logger import get_logger
 from ..models import AppResponseDict
 from ..redisex import blacklist_delete
-from ..utilities import is_api_call
 from .middlewares import get_current_user
 from .models import UserProfileData
 from .services import AuthService
@@ -18,195 +15,53 @@ url_prefix = "/auth"
 router = APIRouter(prefix=url_prefix, tags=["auth"])
 
 
-class AuthURL(Enum):
-    LOGIN = url_prefix + "/login"
-    LOGOUT = url_prefix + "/logout"
-    ONBOARDING = url_prefix + "/onboarding"
-    DASHBOARD = url_prefix + "/dashboard"
-    PROFILE = url_prefix + "/profile"
+# class AuthURL(Enum):
+#     ONBOARDING = url_prefix + "/onboarding"
+#     DASHBOARD = url_prefix + "/dashboard"
+#     PROFILE = url_prefix + "/profile"
 
 
-# TODO: This should be injected as a dependency
+# Initialize settings and auth service
+settings = Settings()
+jwks_url = settings.supabase_jwks_url
+if not jwks_url and settings.supabase_url:
+    jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
+
 auth_service = AuthService(
-    jwt_secret="",  # Not used in this service instance
-    supabase_url="",  # Not used in this service instance
-    supabase_anon_key="",  # Not used in this service instance
-    supabase_service_key="",  # Not used in this service instance
-    supabase_jwks_url="",  # Not used in this service instance
-    supabase_audience="",  # Not used in this service instance
+    jwt_secret=settings.jwt_secret_key or "",
+    algorithms=settings.jwt_algorithm.split(",") if settings.jwt_algorithm else None,
+    expiry_minutes=settings.jwt_expiry_minutes,
+    supabase_url=settings.supabase_url or "",
+    supabase_anon_key=settings.supabase_anon_key or "",
+    supabase_service_key=settings.supabase_service_key or "",
+    supabase_jwks_url=jwks_url or "",
+    supabase_audience=settings.supabase_audience or "",
+    auto_refresh_jwks=settings.auto_refresh_jwks,
 )
 
 
-@router.get("/login", include_in_schema=False, response_model=None)
-async def login(
-    request: Request, background_tasks: BackgroundTasks, user: UserProfileData | None = Depends(get_current_user)
-) -> RedirectResponse | AppResponseDict:
-    """
-    Enhanced login callback with optimized performance and immediate response.
-
-    This endpoint handles user authentication callbacks and provides immediate feedback
-    while processing heavy operations in the background for optimal user experience.
-
-    Key Functions:
-    - Extract and validate JWT token from request (handled by middleware)
-    - Immediately remove valid token from blacklist for security
-    - Check onboarding status and return immediate response to client
-    - Process user database operations in background (24h update check)
-    - Redirect users based on onboarding completion status
-    """
-
-    # Supabase will redirect with a 'code' in the query parameters
-    code = request.query_params.get("code")
-    logger.info(f"Received Supabase code: {code}")
-
-    resp_url = AuthURL.LOGIN.value
-    reesp_msg = ""
-    resp_code = status.HTTP_200_OK
-
-    has_profile = False  # Default value to avoid unbound variable
-
-    if user:
-        try:
-            # Immediately remove token from blacklist for valid user
-            token = extract_bearer_token_from_request(request)
-            if token:
-                _ = await blacklist_delete(token)
-                logger.debug(f"Removed token from blacklist for user {user.id}")
-
-            # Check onboarding status immediately
-            has_profile = await auth_service.check_user_onboarding_complete(user.id)
-
-            # Check if user needs database update before adding background task
-            if await auth_service.should_update_user_in_db(user):
-                # Add background task to update user info in database
-                background_tasks.add_task(auth_service.background_update_user_info, token, user.id)
-                logger.debug(f"Added background task to update user info for {user.id}")
-
-            if has_profile:
-                # Existing user with profile - redirect to dashboard
-                resp_url = AuthURL.DASHBOARD.value
-                reesp_msg = "Welcome back, my friend!"
-                resp_code = status.HTTP_303_SEE_OTHER
-            else:
-                # New user without profile - redirect to onboarding
-                resp_url = AuthURL.ONBOARDING.value
-                reesp_msg = "Welcome! Please complete your profile setup."
-                resp_code = status.HTTP_303_SEE_OTHER
-
-        except Exception as e:
-            logger.error(f"Error processing user login: {e}")
-            # If there's an error processing login, redirect to login page
-            resp_url = AuthURL.LOGIN.value
-            reesp_msg = "Login processing failed. Please try again."
-            resp_code = status.HTTP_303_SEE_OTHER
-    else:
-        # Non-authenticated users go to a landing page or login page
-        resp_url = AuthURL.LOGIN.value
-        reesp_msg = "Hi, Please login first."
-        resp_code = status.HTTP_303_SEE_OTHER
-
-    # response to API call or avoid to redirect to itself
-    if is_api_call(request) or resp_url == request.url.path:
-        response_data = {"url": resp_url, "status_code": resp_code}
-
-        # Add onboarding completion status for authenticated users
-        if user:
-            response_data["onboarding_complete"] = has_profile
-            response_data["user_id"] = user.id
-
-        return AppResponseDict(status="success", message=reesp_msg, data=response_data)
-
-    return RedirectResponse(url=resp_url, status_code=resp_code)
-
-
-@router.get("/logout", include_in_schema=False, response_model=None)
-async def logout(
-    request: Request, background_tasks: BackgroundTasks, user: UserProfileData | None = Depends(get_current_user)
-) -> RedirectResponse | AppResponseDict:
-    """
-    Enhanced logout endpoint with optimized performance and immediate response.
-
-    This endpoint handles user logout operations and provides immediate feedback
-    while processing security operations in the background for optimal user experience.
-
-    Key Functions:
-    - Extract JWT token from request for background processing
-    - Provide immediate logout response to user
-    - Process token blacklisting and cleanup in background
-    - Handle both authenticated and non-authenticated logout attempts
-
-    """
-
-    resp_url = AuthURL.LOGIN.value
-    reesp_msg = ""
-    resp_code = status.HTTP_200_OK
-
-    if user:
-        try:
-            # Extract token for background processing
-            token = extract_bearer_token_from_request(request)
-
-            # Add background task to process logout operations
-            background_tasks.add_task(auth_service.background_process_logout, token, user)
-            logger.debug(f"Added background task to process logout for {user.id}")
-
-            # Provide immediate response
-            reesp_msg = "Hope you come back soon!"
-            logger.info(f"User logout initiated successfully: {user.id}")
-
-        except Exception as e:
-            logger.error(f"Error initiating logout for user {user.id}: {e}")
-            reesp_msg = "Logout completed, but there was an issue processing your request."
-    else:
-        resp_url = AuthURL.LOGIN.value
-        reesp_msg = "Hi, Please login first."
-
-    # Enhanced response for API calls
-    if is_api_call(request):
-        response_data = {"url": resp_url, "status_code": resp_code}
-
-        # Add user info for authenticated users
-        if user:
-            response_data["user_id"] = user.id
-            response_data["logout_status"] = "processing"
-
-        return AppResponseDict(status="success", message=reesp_msg, data=response_data)
-
-    return RedirectResponse(url=resp_url, status_code=resp_code)
-
-
 @router.get("/onboarding", include_in_schema=False, response_model=None)
-async def onboarding(request: Request) -> RedirectResponse | AppResponseDict:
+async def onboarding(request: Request, user: UserProfileData | None = Depends(get_current_user)) -> AppResponseDict:
     """
     Onboarding page for new users.
     Redirects existing users to the dashboard.
     """
-    user: UserProfileData | None = await get_current_user(request)
-
     if not user:
-        # If user is not authenticated, redirect to login
-        resp_url = AuthURL.LOGIN.value
-        if is_api_call(request):
-            return AppResponseDict(
-                status="redirect",
-                message="Hi, Please login first.",
-                data={"url": resp_url, "status_code": status.HTTP_303_SEE_OTHER},
-            )
-        return RedirectResponse(url=resp_url, status_code=status.HTTP_303_SEE_OTHER)
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
 
     # User is authenticated, check onboarding status
     has_profile = await auth_service.check_user_onboarding_complete(user.id)
 
     if has_profile:
-        # User already has a profile, redirect to dashboard
-        resp_url = AuthURL.DASHBOARD.value
-        if is_api_call(request):
-            return AppResponseDict(
-                status="redirect",
-                message="Welcome back, my friend!",
-                data={"url": resp_url, "status_code": status.HTTP_303_SEE_OTHER},
-            )
-        return RedirectResponse(url=resp_url, status_code=status.HTTP_303_SEE_OTHER)
+        return AppResponseDict(
+            status="redirect",
+            message="Welcome back, my friend!",
+            data={"user_id": user.id},
+        )
 
     # New user without profile - show onboarding content
     return AppResponseDict(
@@ -217,23 +72,28 @@ async def onboarding(request: Request) -> RedirectResponse | AppResponseDict:
 
 
 @router.get("/dashboard", include_in_schema=False, response_model=None)
-async def dashboard(request: Request) -> RedirectResponse | AppResponseDict:
+async def dashboard(request: Request, user: UserProfileData | None = Depends(get_current_user)) -> AppResponseDict:
     """
     Dashboard page for existing users.
     Redirects non-authenticated users to the login page.
     """
-    user: UserProfileData | None = await get_current_user(request)
-
     if not user:
-        # If user is not authenticated, redirect to login
-        return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
 
     # Check if user has completed onboarding
     has_profile = await auth_service.check_user_onboarding_complete(user.id)
 
     if not has_profile:
         # User hasn't completed onboarding, redirect to onboarding
-        return RedirectResponse(url=AuthURL.ONBOARDING.value, status_code=status.HTTP_303_SEE_OTHER)
+        return AppResponseDict(
+            status="failed",
+            message="Onboarding required. Please complete your profile setup.",
+            data={"user_id": user.id},
+        )
 
     # Authenticated users with profiles go to the dashboard
     return AppResponseDict(
@@ -241,35 +101,232 @@ async def dashboard(request: Request) -> RedirectResponse | AppResponseDict:
     )
 
 
+@router.post("/callback/{event}", include_in_schema=False, response_model=None)
+async def on_callback(
+    event: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: UserProfileData | None = Depends(get_current_user),
+) -> AppResponseDict:
+    """
+    Centralized callback endpoint for handling authenticated Supabase auth state change events.
+
+    Handles the following events:
+    - SIGNED_IN: Emitted each time a user session is confirmed or re-established
+    - SIGNED_OUT: Emitted when the user signs out
+    - TOKEN_REFRESHED: Emitted each time a new access and refresh token are fetched
+    - USER_UPDATED: Emitted each time the supabase.auth.updateUser() method finishes successfully
+    - PASSWORD_RECOVERY: Emitted instead of the SIGNED_IN event when the user lands on a page that includes a password recovery link
+
+    This endpoint requires authentication and handles events that occur during an active session.
+    """
+
+    if not user:
+        logger.warning(f"Callback endpoint accessed without authentication for event: {event}")
+        return AppResponseDict(
+            status="failed", message="Authentication required for callback endpoint", data={"event": event}
+        )
+
+    logger.info(f"Received auth callback event: {event}, user: {user.id}")
+
+    # Route to specific event handlers
+    try:
+        if event == "SIGNED_IN":
+            result = await _handle_signed_in(request, background_tasks, user)
+        elif event == "SIGNED_OUT":
+            result = await _handle_signed_out(request, background_tasks, user)
+        elif event == "TOKEN_REFRESHED":
+            result = await _handle_token_refreshed(request, user)
+        elif event == "USER_UPDATED":
+            result = await _handle_user_updated(request, background_tasks, user)
+        elif event == "PASSWORD_RECOVERY":
+            result = await _handle_password_recovery()
+        else:
+            logger.warning(f"Invalid auth event received: {event}")
+            result = AppResponseDict(
+                status="failed",
+                message=f"Invalid event type: {event}",
+                data={
+                    "valid_events": ["SIGNED_IN", "SIGNED_OUT", "TOKEN_REFRESHED", "USER_UPDATED", "PASSWORD_RECOVERY"]
+                },
+            )
+        # Future events can be added here with additional elif clauses
+    except Exception as e:
+        logger.error(f"Error processing event {event}: {e}")
+        result = AppResponseDict(status="failed", message=f"Error processing event {event}", data={"error": str(e)})
+
+    return result
+
+
+@router.post("/notification/{event}", include_in_schema=False, response_model=None, tags=["public"])
+async def on_notification(
+    event: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> AppResponseDict:
+    """
+    Public notification endpoint for handling Supabase auth state change events that don't require authentication.
+
+    Handles the following events:
+    - INITIAL_SESSION: Emitted right after the Supabase client is constructed
+
+    This endpoint is public and doesn't require authentication, making it suitable for events
+    that occur before a user session is established.
+    """
+
+    logger.info(f"Received public auth notification event: {event}")
+
+    # Route to specific event handlers
+    try:
+        if event == "INITIAL_SESSION":
+            result = await _handle_initial_session()
+        else:
+            logger.warning(f"Invalid or unauthorized event received: {event}")
+            result = AppResponseDict(
+                status="failed",
+                message=f"Event {event} not allowed on public endpoint",
+                data={"valid_events": ["INITIAL_SESSION"]},
+            )
+        # Future events can be added here with additional elif clauses
+    except Exception as e:
+        logger.error(f"Error processing event {event}: {e}")
+        result = AppResponseDict(status="failed", message=f"Error processing event {event}", data={"error": str(e)})
+
+    return result
+
+
+async def _handle_initial_session() -> AppResponseDict:
+    """Handle initial session loading for public endpoint (no authentication required)."""
+    logger.info("Initial session loaded (public endpoint)")
+
+    return AppResponseDict(
+        status="success",
+        message="Initial session processed",
+        data={"event": "INITIAL_SESSION", "user_id": None},
+    )
+
+
+async def _handle_signed_in(
+    request: Request, background_tasks: BackgroundTasks, user: UserProfileData
+) -> AppResponseDict:
+    """Handle user sign in."""
+
+    # Immediately remove token from blacklist for valid user
+    token = extract_bearer_token_from_request(request)
+    if token:
+        _ = await blacklist_delete(token)
+        logger.debug(f"Removed token from blacklist for user {user.id}")
+
+    # Check if user needs database update
+    if await auth_service.should_update_user_in_db(user):
+        background_tasks.add_task(auth_service.background_update_user_info, token, user.id)
+        logger.debug(f"Added background task to update user info for {user.id}")
+
+    logger.info(f"User signed in successfully: {user.id}")
+    return AppResponseDict(
+        status="success", message="User signed in successfully", data={"event": "SIGNED_IN", "user_id": user.id}
+    )
+
+
+async def _handle_signed_out(
+    request: Request, background_tasks: BackgroundTasks, user: UserProfileData
+) -> AppResponseDict:
+    """Handle user sign out."""
+    # Extract token for background processing
+    token = extract_bearer_token_from_request(request)
+    background_tasks.add_task(auth_service.background_process_logout, token, user)
+    logger.debug(f"Added background task to process logout for {user.id}")
+    logger.info(f"User logout initiated successfully: {user.id}")
+
+    return AppResponseDict(
+        status="success",
+        message="User logout processed",
+        data={"event": "SIGNED_OUT", "user_id": user.id},
+    )
+
+
+async def _handle_token_refreshed(request: Request, user: UserProfileData) -> AppResponseDict:
+    """Handle token refresh."""
+
+    # Remove the new token from blacklist to ensure it's valid
+    token = extract_bearer_token_from_request(request)
+    if token:
+        _ = await blacklist_delete(token)
+        logger.debug(f"Removed refreshed token from blacklist for user {user.id}")
+
+    logger.info(f"Token refreshed for user: {user.id}")
+
+    return AppResponseDict(
+        status="success",
+        message="Token refresh processed",
+        data={"event": "TOKEN_REFRESHED", "user_id": user.id},
+    )
+
+
+async def _handle_user_updated(
+    request: Request, background_tasks: BackgroundTasks, user: UserProfileData
+) -> AppResponseDict:
+    """Handle user profile updates."""
+    logger.info(f"User profile updated: {user.id}")
+    token = extract_bearer_token_from_request(request)
+    background_tasks.add_task(auth_service.background_update_user_info, token, user.id)
+
+    return AppResponseDict(
+        status="success",
+        message="User update processed",
+        data={"event": "USER_UPDATED", "user_id": user.id},
+    )
+
+
+async def _handle_password_recovery() -> AppResponseDict:
+    """Handle password recovery."""
+    logger.info("Password recovery event received")
+    return AppResponseDict(status="success", message="Password recovery processed", data={"event": "PASSWORD_RECOVERY"})
+
+
 @router.get("/profile", include_in_schema=False, response_model=None)
-async def profile(request: Request) -> RedirectResponse | AppResponseDict:
+async def profile(request: Request, user: UserProfileData | None = Depends(get_current_user)) -> AppResponseDict:
     """
     User profile page.
     Only accessible to logged-in users.
+
+    Shows comprehensive user profile information including:
+    - Profile Header: Avatar, display name, email
+    - Personal Info: Full name, bio, location
+    - Account Settings: Email, password reset, MFA status
+    - Preferences: Theme, language, notifications
+    - Danger Zone: Account deletion, sign out options
     """
-    user: UserProfileData | None = await get_current_user(request)
 
     if not user:
-        # If user is not authenticated, redirect to login
-        return RedirectResponse(url=AuthURL.LOGIN.value, status_code=status.HTTP_303_SEE_OTHER)
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
 
-    # Check if user has completed onboarding
-    has_profile = await auth_service.check_user_onboarding_complete(user.id)
+    # Extract user metadata for additional profile information
+    user_metadata = user.user_metadata or {}
+    app_metadata = getattr(user, "app_metadata", {}) or {}
 
-    if not has_profile:
-        # User hasn't completed onboarding, redirect to onboarding
-        return RedirectResponse(url=AuthURL.ONBOARDING.value, status_code=status.HTTP_303_SEE_OTHER)
+    # Build comprehensive profile response
+    profile_data = {
+        "id": user.id,
+        "email": user.email,
+        "username": user_metadata.get("username"),
+        "roles": getattr(request.state, "roles", []),
+        "avatar_url": user_metadata.get("avatar_url") or app_metadata.get("avatar_url"),
+        "email_confirmed_at": user.email_confirmed_at,
+        "created_at": user.created_at,
+        "last_sign_in_at": user.last_sign_in_at,
+        "confirmed_at": getattr(user, "confirmed_at", None),
+        "updated_at": getattr(user, "updated_at", None),
+        "user_metadata": user_metadata,  # Keep for backward compatibility
+        "app_metadata": app_metadata,
+    }
 
-    # Authenticated users with profiles can view their profile
     return AppResponseDict(
         status="success",
-        message="User profile",
-        data={
-            "id": user.id,
-            "email": user.email,
-            "email_confirmed_at": user.email_confirmed_at,
-            "created_at": user.created_at,
-            "last_sign_in_at": user.last_sign_in_at,
-            "user_metadata": user.user_metadata,
-        },
+        message="User profile retrieved successfully",
+        data=profile_data,
     )
