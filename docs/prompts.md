@@ -664,3 +664,48 @@ robin
 My frontend web application has been broken by another LLM. This web application is defined in file @faster/resources/dev-admin.html. You can use MCP playwright to access it via http://127.0.0.1:8000/dev/admin.
 
 Currently, it is stucked at the loading page, help to find the root cause and fix it. Meanwhile, there also have some web console errors, you need to fix all of them too.
+
+
+supabase.js:1 Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key.
+
+- The theme toggle is still not working properly. Try to fix it.
+- Meanwhile, after I refresh the web page, I noticed some web console warning like this, figure out what happend and whether need to fix. If yes, fix it.
+
+
+### Wrong type on sys:map:role
+
+By design, one tag should be mapped to multiple roles, or you can say, in sys_map, one left value can be mapped to many right values. That's say: in sysmap_get/sysmap_set in file @faster/core/redisex.py, we used hash to implement it was totally wrong(hgetall/hget/hset). We should asjust the key from 'sys:map:{category}' to 'sys:map:{category}:{left_value}', them use set to store all their right values(sadd/smembers)
+
+- Help to re-implement sysmap_get/sysmap_set.
+- Adjust the relevant code in other files.
+- adjust and fix the unit tests.
+- make sure all code will pass both `make lint` and `make test`.
+
+
+## Enhance the client's centralized API call to server side.
+
+#### Curreent issue
+The call to '/dev/app_state' is not work well, as it forget to bring access token/Bearer token. The root cause is we do not have a cemtralized API proxy in the client with verylimited white list. Only the APIs in the white list do not need to bring the token when call them. Here comes the white list so far:
+- /auth/notification/{event}
+- /.well-known/appspecific/com.chrome.devtools.json
+- /dev/admin
+- /dev/settings
+- /custom
+
+#### Your goal
+- Re-implement a API service/proxy to centralized manage all APIs with pre-defined white list.
+- Use MCP playwright to access it via http://127.0.0.1:8000/dev/admin to verify you change is work properly.
+
+
+One another issue in @faster/resources/dev-admin.html : Despite we already got the thing done to retrieve back the data from server side on URL
+'/dev/app_state', but fogot the use this response data to render the the virtual page  'App State'. We need to show the 'data' part of the response data at the place of the box currently shown 'No App State Data
+No application state data available at the moment.'.
+
+Help to design a way to show them well,
+as the components of the 'data' part is very dynamicly, we shoudl design it more genericly.
+
+Fix this one.
+
+
+Let's do some change on page 'App State' in file @faster/resources/dev-admin.html:
+- Replace current section of 'No Data State' with a mockup-code daisy UI componeent to show the 'data' part of the response data of request '/dev/app_state'
