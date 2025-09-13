@@ -46,346 +46,6 @@ class TestAuthRouters:
         )
 
     @pytest.mark.asyncio
-    async def test_login_endpoint_authenticated_user_with_profile(self, client: TestClient) -> None:
-        """Test login endpoint for authenticated user with completed profile."""
-        # Mock the get_current_user dependency to return a user
-        mock_user = self.create_mock_user()
-
-        # Override the app's dependency to return our mock user
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = mock_user
-
-            # Mock the auth_service.process_user_login to avoid database initialization issues
-            with patch(
-                "faster.core.auth.routers.auth_service.process_user_login", new_callable=AsyncMock
-            ) as mock_process_login:
-                mock_process_login.return_value = AsyncMock()
-
-                # Mock the auth_service.check_user_onboarding_complete to return True
-                with patch(
-                    "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-                ) as mock_check_onboarding:
-                    mock_check_onboarding.return_value = True
-
-                    # Mock is_api_call to return False to trigger redirect
-                    with patch("faster.core.auth.routers.is_api_call", return_value=False):
-                        # Make a request to the endpoint
-                        response = client.get("/auth/login")
-
-                        # For authenticated users with profile, they should be redirected to dashboard
-                        # But if there's a self-redirect prevention issue, they might get JSON response
-                        if response.status_code == status.HTTP_200_OK:
-                            # Self-redirect prevention kicked in or is_api_call returned True
-                            assert response.headers["content-type"] == "application/json"
-                            data = response.json()
-                            # Check that it contains dashboard-related content
-                            assert "dashboard" in data["message"].lower() or "welcome" in data["message"].lower()
-                        else:
-                            # Normal redirect
-                            assert response.status_code == status.HTTP_303_SEE_OTHER
-                            assert response.headers["location"] == "/auth/dashboard"
-
-    @pytest.mark.asyncio
-    async def test_login_endpoint_authenticated_user_without_profile(self, client: TestClient) -> None:
-        """Test login endpoint for authenticated user without completed profile."""
-        # Mock the get_current_user dependency to return a user
-        mock_user = self.create_mock_user()
-
-        # Override the app's dependency to return our mock user
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = mock_user
-
-            # Mock the auth_service.process_user_login to avoid database initialization issues
-            with patch(
-                "faster.core.auth.routers.auth_service.process_user_login", new_callable=AsyncMock
-            ) as mock_process_login:
-                mock_process_login.return_value = AsyncMock()
-
-                # Mock the auth_service.check_user_onboarding_complete to return False
-                with patch(
-                    "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-                ) as mock_check_onboarding:
-                    mock_check_onboarding.return_value = False
-
-                    # Mock is_api_call to return True to get JSON response
-                    with patch("faster.core.auth.routers.is_api_call", return_value=True):
-                        # Make a request to the endpoint
-                        response = client.get("/auth/login")
-
-                    # Check that it's a JSON response with onboarding message
-                    assert response.status_code == status.HTTP_200_OK
-                    assert response.headers["content-type"] == "application/json"
-
-                    # Parse the JSON response
-                    data = response.json()
-
-                # Check the response structure
-                assert "status" in data
-                assert data["status"] == "success"
-                assert "message" in data
-                assert "Welcome! Please complete your profile setup." in data["message"]
-                assert "data" in data
-                assert isinstance(data["data"], dict)
-                # For users without profile, data contains redirect info
-                assert "url" in data["data"]
-                assert "status_code" in data["data"]
-
-    @pytest.mark.asyncio
-    async def test_login_endpoint_non_authenticated_user(self, client: TestClient) -> None:
-        """Test login endpoint for non-authenticated user."""
-
-        # Override the app's dependency to return None (no authenticated user)
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return None
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = None
-
-            # Mock is_api_call to return False
-            with patch("faster.core.auth.routers.is_api_call", return_value=False):
-                # Make a request to the endpoint
-                response = client.get("/auth/login")
-
-                # Check that it's a JSON response (due to self-redirect prevention)
-                assert response.status_code == status.HTTP_200_OK
-                assert response.headers["content-type"] == "application/json"
-
-                # Parse the JSON response
-                data = response.json()
-
-                # Check the response structure
-                assert "status" in data
-                assert data["status"] == "success"
-                assert "message" in data
-                assert data["message"] == "Hi, Please login first."
-                assert "data" in data
-                assert isinstance(data["data"], dict)
-                assert data["data"]["url"] == "/auth/login"
-                assert data["data"]["status_code"] == status.HTTP_303_SEE_OTHER
-
-    @pytest.mark.asyncio
-    async def test_login_endpoint_with_code_parameter(self, client: TestClient) -> None:
-        """Test login endpoint with Supabase code parameter."""
-        # Mock the get_current_user dependency to return a user
-        mock_user = self.create_mock_user()
-
-        # Override the app's dependency to return our mock user
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = mock_user
-
-            # Mock the auth_service.process_user_login to avoid database initialization issues
-            with patch(
-                "faster.core.auth.routers.auth_service.process_user_login", new_callable=AsyncMock
-            ) as mock_process_login:
-                mock_process_login.return_value = AsyncMock()
-
-                # Mock the auth_service.check_user_onboarding_complete to return True
-                with patch(
-                    "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-                ) as mock_check_onboarding:
-                    mock_check_onboarding.return_value = True
-
-                    # Mock is_api_call to return True to get JSON response
-                    with patch("faster.core.auth.routers.is_api_call", return_value=True):
-                        # Make a request to the endpoint with code parameter
-                        response = client.get("/auth/login?code=abc123")
-
-                    # Check that it's a JSON response with dashboard message
-                    assert response.status_code == status.HTTP_200_OK
-                    assert response.headers["content-type"] == "application/json"
-
-                    # Parse the JSON response
-                    data = response.json()
-
-                    # Check the response structure
-                    assert "status" in data
-                    assert data["status"] == "success"
-                    assert "message" in data
-                    assert "Welcome back, my friend!" in data["message"]
-                assert "data" in data
-                assert isinstance(data["data"], dict)
-                # For users with profile, data contains redirect info
-                assert "url" in data["data"]
-                assert "status_code" in data["data"]
-
-    @pytest.mark.asyncio
-    async def test_login_endpoint_api_call(self, client: TestClient) -> None:
-        """Test login endpoint for API calls."""
-        # Mock the get_current_user dependency to return a user
-        mock_user = self.create_mock_user()
-
-        # Override the app's dependency to return our mock user
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = mock_user
-
-            # Mock the auth_service.process_user_login to avoid database initialization issues
-            with patch(
-                "faster.core.auth.routers.auth_service.process_user_login", new_callable=AsyncMock
-            ) as mock_process_login:
-                mock_process_login.return_value = AsyncMock()
-
-                # Mock the auth_service.check_user_onboarding_complete to return True
-                with patch(
-                    "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-                ) as mock_check_onboarding:
-                    mock_check_onboarding.return_value = True
-
-                    # Mock is_api_call to return True
-                    with patch("faster.core.auth.routers.is_api_call", return_value=True):
-                        # Make a request to the endpoint
-                        response = client.get("/auth/login")
-
-                        # Check that it's a JSON response for API calls
-                        assert response.status_code == status.HTTP_200_OK
-                        assert response.headers["content-type"] == "application/json"
-
-                        # Parse the JSON response
-                        data = response.json()
-
-                        # Check the response structure
-                        assert "status" in data
-                        assert data["status"] == "success"
-                        assert "message" in data
-                        assert "data" in data
-                        assert isinstance(data["data"], dict)
-                        assert data["data"]["url"] == "/auth/dashboard"
-                    assert data["data"]["status_code"] == status.HTTP_303_SEE_OTHER
-
-    @pytest.mark.asyncio
-    async def test_logout_endpoint_authenticated_user(self, client: TestClient) -> None:
-        """Test logout endpoint for authenticated user."""
-        # Mock the get_current_user dependency to return a user
-        mock_user = self.create_mock_user()
-
-        # Override the app's dependency to return our mock user
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = mock_user
-
-            # Make a request to the endpoint
-            response = client.get("/auth/logout")
-
-            # Check the response - the current implementation has a bug where it returns 200 OK for redirects
-            # but we'll test for the actual behavior
-            if response.status_code == status.HTTP_200_OK:
-                # Could be either a JSON response or a redirect with incorrect status code
-                if "content-type" in response.headers and response.headers["content-type"] == "application/json":
-                    # JSON response
-                    data = response.json()
-                    assert "status" in data
-                    assert "message" in data
-                    assert "Hope you come back soon!" in data["message"]
-                else:
-                    # Redirect response with incorrect status code
-                    assert "location" in response.headers
-                    assert response.headers["location"] == "/auth/login"
-            elif response.status_code == status.HTTP_303_SEE_OTHER:
-                # Correct redirect response
-                assert response.headers["location"] == "/auth/login"
-            else:
-                # Unexpected status code
-                assert False, f"Unexpected status code: {response.status_code}"  # noqa: B011
-
-    @pytest.mark.asyncio
-    async def test_logout_endpoint_non_authenticated_user(self, client: TestClient) -> None:
-        """Test logout endpoint for non-authenticated user."""
-
-        # Override the app's dependency to return None (no authenticated user)
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return None
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = None
-
-            # Make a request to the endpoint
-            response = client.get("/auth/logout")
-
-            # Check the response - the current implementation has a bug where it returns 200 OK for redirects
-            # but we'll test for the actual behavior
-            if response.status_code == status.HTTP_200_OK:
-                # Could be either a JSON response or a redirect with incorrect status code
-                if "content-type" in response.headers and response.headers["content-type"] == "application/json":
-                    # JSON response
-                    data = response.json()
-                    assert "status" in data
-                    assert "message" in data
-                    assert "Hi, Please login first." in data["message"]
-                else:
-                    # Redirect response with incorrect status code
-                    assert "location" in response.headers
-                    assert response.headers["location"] == "/auth/login"
-            elif response.status_code == status.HTTP_303_SEE_OTHER:
-                # Correct redirect response
-                assert response.headers["location"] == "/auth/login"
-            else:
-                # Unexpected status code
-                assert False, f"Unexpected status code: {response.status_code}"  # noqa: B011
-
-    @pytest.mark.asyncio
-    async def test_logout_endpoint_api_call(self, client: TestClient) -> None:
-        """Test logout endpoint for API calls."""
-        # Mock the get_current_user dependency to return a user
-        mock_user = self.create_mock_user()
-
-        # Override the app's dependency to return our mock user
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = mock_user
-
-            # Mock is_api_call to return True
-            with patch("faster.core.auth.routers.is_api_call", return_value=True):
-                # Make a request to the endpoint
-                response = client.get("/auth/logout")
-
-                # Check that it's a JSON response for API calls
-                assert response.status_code == status.HTTP_200_OK
-                assert response.headers["content-type"] == "application/json"
-
-                # Parse the JSON response
-                data = response.json()
-
-                # Check the response structure
-                assert "status" in data
-                assert data["status"] == "success"
-                assert "message" in data
-                assert "data" in data
-                assert isinstance(data["data"], dict)
-                assert data["data"]["url"] == "/auth/login"
-                assert data["data"]["status_code"] == status.HTTP_200_OK
-
-    @pytest.mark.asyncio
     async def test_onboarding_endpoint_authenticated_user_with_profile(self, client: TestClient) -> None:
         """Test onboarding endpoint for authenticated user with completed profile."""
         # Mock the get_current_user dependency to return a user
@@ -406,27 +66,24 @@ class TestAuthRouters:
             ) as mock_check_onboarding:
                 mock_check_onboarding.return_value = True
 
-                # Mock is_api_call to return True to get JSON response
-                with patch("faster.core.auth.routers.is_api_call", return_value=True):
-                    # Make a request to the endpoint
-                    response = client.get("/auth/onboarding")
+                # Make a request to the endpoint
+                response = client.get("/auth/onboarding")
 
-                    # Check that it's a JSON response with redirect information
-                    assert response.status_code == status.HTTP_200_OK
-                    assert response.headers["content-type"] == "application/json"
+                # Check that it's a JSON response
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
 
-                    # Parse the JSON response
-                    data = response.json()
+                # Parse the JSON response
+                data = response.json()
 
-                    # Check the response structure
-                    assert "status" in data
-                    assert data["status"] == "redirect"
-                    assert "message" in data
-                    assert "Welcome back, my friend!" in data["message"]
-                    assert "data" in data
-                    assert isinstance(data["data"], dict)
-                    assert data["data"]["url"] == "/auth/dashboard"
-                    assert data["data"]["status_code"] == status.HTTP_303_SEE_OTHER
+                # Check the response structure
+                assert "status" in data
+                assert data["status"] == "redirect"
+                assert "message" in data
+                assert "Welcome back, my friend!" in data["message"]
+                assert "data" in data
+                assert isinstance(data["data"], dict)
+                assert data["data"]["user_id"] == "user-123"
 
     @pytest.mark.asyncio
     async def test_onboarding_endpoint_authenticated_user_without_profile(self, client: TestClient) -> None:
@@ -481,61 +138,23 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = None
 
-            # Mock is_api_call to return True to get JSON response
-            with patch("faster.core.auth.routers.is_api_call", return_value=True):
-                # Make a request to the endpoint
-                response = client.get("/auth/onboarding")
+            # Make a request to the endpoint
+            response = client.get("/auth/onboarding")
 
-                # Check that it's a JSON response with redirect information
-                assert response.status_code == status.HTTP_200_OK
-                assert response.headers["content-type"] == "application/json"
+            # Check that it's a JSON response
+            assert response.status_code == status.HTTP_200_OK
+            assert response.headers["content-type"] == "application/json"
 
-                # Parse the JSON response
-                data = response.json()
+            # Parse the JSON response
+            data = response.json()
 
-                # Check the response structure
-                assert "status" in data
-                assert data["status"] == "redirect"
-                assert "message" in data
-                assert "Hi, Please login first." in data["message"]
-                assert "data" in data
-                assert isinstance(data["data"], dict)
-                assert data["data"]["url"] == "/auth/login"
-                assert data["data"]["status_code"] == status.HTTP_303_SEE_OTHER
-
-    @pytest.mark.asyncio
-    async def test_onboarding_endpoint_api_call_non_authenticated(self, client: TestClient) -> None:
-        """Test onboarding endpoint for API calls from non-authenticated users."""
-
-        # Override the app's dependency to return None (no authenticated user)
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return None
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
-            mock_get_user.return_value = None
-
-            # Mock is_api_call to return True
-            with patch("faster.core.auth.routers.is_api_call", return_value=True):
-                # Make a request to the endpoint
-                response = client.get("/auth/onboarding")
-
-                # Check that it's a JSON response for API calls
-                assert response.status_code == status.HTTP_200_OK
-                assert response.headers["content-type"] == "application/json"
-
-                # Parse the JSON response
-                data = response.json()
-
-                # Check the response structure
-                assert "status" in data
-                assert data["status"] == "redirect"
-                assert "message" in data
-                assert "data" in data
-                assert isinstance(data["data"], dict)
-                assert data["data"]["url"] == "/auth/login"
-                assert data["data"]["status_code"] == status.HTTP_303_SEE_OTHER
+            # Check the response structure
+            assert "status" in data
+            assert data["status"] == "failed"
+            assert "message" in data
+            assert "Authentication required. Please login first." in data["message"]
+            assert "data" in data
+            assert data["data"] == {}
 
     @pytest.mark.asyncio
     async def test_dashboard_endpoint_authenticated_user_with_profile(self, client: TestClient) -> None:
@@ -601,19 +220,16 @@ class TestAuthRouters:
                 # Make a request to the endpoint
                 response = client.get("/auth/dashboard")
 
-                # Check that it's either a redirect response or a JSON response
-                if response.status_code == status.HTTP_303_SEE_OTHER:
-                    # Redirect response
-                    assert response.headers["location"] == "/auth/onboarding"
-                else:
-                    # JSON response
-                    assert response.status_code == status.HTTP_200_OK
-                    assert response.headers["content-type"] == "application/json"
-                    data = response.json()
-                    assert "status" in data
-                    assert "message" in data
-                    # Should contain onboarding-related content
-                    assert "onboarding" in data["message"].lower() or "profile" in data["message"].lower()
+                # Check that it's a JSON response
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
+                data = response.json()
+                assert "status" in data
+                assert data["status"] == "failed"
+                assert "message" in data
+                assert "Onboarding required. Please complete your profile setup." in data["message"]
+                assert "data" in data
+                assert data["data"]["user_id"] == "user-123"
 
     @pytest.mark.asyncio
     async def test_dashboard_endpoint_non_authenticated_user(self, client: TestClient) -> None:
@@ -631,10 +247,17 @@ class TestAuthRouters:
             # Make a request to the endpoint
             response = client.get("/auth/dashboard")
 
-            # Check that it's a redirect response
-            assert response.status_code == status.HTTP_303_SEE_OTHER
-            # Redirect response
-            assert response.headers["location"] == "/"
+            # Check that it's a JSON response
+            assert response.status_code == status.HTTP_200_OK
+            assert response.headers["content-type"] == "application/json"
+
+            data = response.json()
+            assert "status" in data
+            assert data["status"] == "failed"
+            assert "message" in data
+            assert "Authentication required. Please login first." in data["message"]
+            assert "data" in data
+            assert data["data"] == {}
 
     @pytest.mark.asyncio
     async def test_profile_endpoint_authenticated_user_with_profile(self, client: TestClient) -> None:
@@ -673,12 +296,38 @@ class TestAuthRouters:
                 assert "message" in data
                 assert "data" in data
                 assert isinstance(data["data"], dict)
+
+                # Check basic user information
                 assert data["data"]["id"] == "user-123"
                 assert data["data"]["email"] == "test@example.com"
                 assert data["data"]["email_confirmed_at"] is None
                 assert "2023-01-01T00:00:00" in str(data["data"]["created_at"])
                 assert data["data"]["last_sign_in_at"] is None
+
+                # Check new fields from the updated profile endpoint
+                assert "username" in data["data"]
+                assert "roles" in data["data"]
+                assert "avatar_url" in data["data"]
+                assert "confirmed_at" in data["data"]
+                assert "updated_at" in data["data"]
+                assert "app_metadata" in data["data"]
+
+                # Check metadata fields
                 assert data["data"]["user_metadata"] == {}
+                assert data["data"]["app_metadata"] == {}
+
+                # Check roles (should be empty list since request.state.roles is not set in test)
+                assert data["data"]["roles"] == []
+
+                # Check that username is None (since user_metadata is empty)
+                assert data["data"]["username"] is None
+
+                # Check that avatar_url is None (since no avatar in metadata)
+                assert data["data"]["avatar_url"] is None
+
+                # Check confirmed_at and updated_at (should match created_at from mock user)
+                assert data["data"]["confirmed_at"] is None  # Not set in mock user
+                assert "2023-01-01T00:00:00" in str(data["data"]["updated_at"])
 
     @pytest.mark.asyncio
     async def test_profile_endpoint_authenticated_user_without_profile(self, client: TestClient) -> None:
@@ -734,16 +383,477 @@ class TestAuthRouters:
             # Make a request to the endpoint
             response = client.get("/auth/profile")
 
-            # Check that it's either a redirect response or a JSON response
-            if response.status_code == status.HTTP_303_SEE_OTHER:
-                # Redirect response
-                assert response.headers["location"] == "/auth/login"
-            else:
-                # JSON response
+            # Should return JSON response with failed status
+            assert response.status_code == status.HTTP_200_OK
+            assert response.headers["content-type"] == "application/json"
+            data = response.json()
+            assert "status" in data
+            assert data["status"] == "failed"
+            assert "message" in data
+            assert "Authentication required" in data["message"]
+            assert "data" in data
+            assert data["data"] == {}
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_signed_in_event(self, client: TestClient) -> None:
+        """Test callback endpoint for SIGNED_IN event with authenticated user."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            with (
+                patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
+                patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
+                patch(
+                    "faster.core.auth.routers.auth_service.should_update_user_in_db", new_callable=AsyncMock
+                ) as mock_should_update,
+            ):
+                mock_blacklist_delete.return_value = None
+                mock_should_update.return_value = False
+
+                # Test SIGNED_IN event
+                response = client.post("/auth/callback/SIGNED_IN")
+
+                # Check that it's a JSON response
                 assert response.status_code == status.HTTP_200_OK
                 assert response.headers["content-type"] == "application/json"
+
+                # Parse the JSON response
                 data = response.json()
+
+                # Check the response structure
                 assert "status" in data
+                assert data["status"] == "success"
                 assert "message" in data
-                # Should contain login-related content
-                assert "login" in data["message"].lower() or "authenticate" in data["message"].lower()
+                assert "User signed in successfully" in data["message"]
+                assert "data" in data
+                assert isinstance(data["data"], dict)
+                assert data["data"]["event"] == "SIGNED_IN"
+                assert data["data"]["user_id"] == "user-123"
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_signed_out_event(self, client: TestClient) -> None:
+        """Test callback endpoint for SIGNED_OUT event with authenticated user."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            with (
+                patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
+                patch(
+                    "faster.core.auth.routers.auth_service.background_process_logout", new_callable=AsyncMock
+                ) as mock_bg_logout,
+            ):
+                mock_bg_logout.return_value = None
+
+                # Test SIGNED_OUT event
+                response = client.post("/auth/callback/SIGNED_OUT")
+
+                # Check that it's a JSON response
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
+
+                # Parse the JSON response
+                data = response.json()
+
+                # Check the response structure
+                assert "status" in data
+                assert data["status"] == "success"
+                assert "message" in data
+                assert "User logout processed" in data["message"]
+                assert "data" in data
+                assert isinstance(data["data"], dict)
+                assert data["data"]["event"] == "SIGNED_OUT"
+                assert data["data"]["user_id"] == "user-123"
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_token_refreshed_event(self, client: TestClient) -> None:
+        """Test callback endpoint for TOKEN_REFRESHED event with authenticated user."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            with (
+                patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
+                patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
+            ):
+                mock_blacklist_delete.return_value = None
+
+                # Test TOKEN_REFRESHED event
+                response = client.post("/auth/callback/TOKEN_REFRESHED")
+
+                # Check that it's a JSON response
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
+
+                # Parse the JSON response
+                data = response.json()
+
+                # Check the response structure
+                assert "status" in data
+                assert data["status"] == "success"
+                assert "message" in data
+                assert "Token refresh processed" in data["message"]
+                assert "data" in data
+                assert isinstance(data["data"], dict)
+                assert data["data"]["event"] == "TOKEN_REFRESHED"
+                assert data["data"]["user_id"] == "user-123"
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_user_updated_event(self, client: TestClient) -> None:
+        """Test callback endpoint for USER_UPDATED event with authenticated user."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            with (
+                patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
+                patch(
+                    "faster.core.auth.routers.auth_service.background_update_user_info", new_callable=AsyncMock
+                ) as mock_bg_update,
+            ):
+                mock_bg_update.return_value = None
+
+                # Test USER_UPDATED event
+                response = client.post("/auth/callback/USER_UPDATED")
+
+                # Check that it's a JSON response
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
+
+                # Parse the JSON response
+                data = response.json()
+
+                # Check the response structure
+                assert "status" in data
+                assert data["status"] == "success"
+                assert "message" in data
+                assert "User update processed" in data["message"]
+                assert "data" in data
+                assert isinstance(data["data"], dict)
+                assert data["data"]["event"] == "USER_UPDATED"
+                assert data["data"]["user_id"] == "user-123"
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_password_recovery_event(self, client: TestClient) -> None:
+        """Test callback endpoint for PASSWORD_RECOVERY event with authenticated user."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            # Test PASSWORD_RECOVERY event
+            response = client.post("/auth/callback/PASSWORD_RECOVERY")
+
+            # Check that it's a JSON response
+            assert response.status_code == status.HTTP_200_OK
+            assert response.headers["content-type"] == "application/json"
+
+            # Parse the JSON response
+            data = response.json()
+
+            # Check the response structure
+            assert "status" in data
+            assert data["status"] == "success"
+            assert "message" in data
+            assert "Password recovery processed" in data["message"]
+            assert "data" in data
+            assert isinstance(data["data"], dict)
+            assert data["data"]["event"] == "PASSWORD_RECOVERY"
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_invalid_event(self, client: TestClient) -> None:
+        """Test callback endpoint for invalid event."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            # Test invalid event
+            response = client.post("/auth/callback/INVALID_EVENT")
+
+            # Check that it's a JSON response with error
+            assert response.status_code == status.HTTP_200_OK
+            assert response.headers["content-type"] == "application/json"
+
+            # Parse the JSON response
+            data = response.json()
+
+            # Check the response structure
+            assert "status" in data
+            assert data["status"] == "failed"
+            assert "message" in data
+            assert "Invalid event type: INVALID_EVENT" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_non_authenticated_user(self, client: TestClient) -> None:
+        """Test callback endpoint for non-authenticated user."""
+
+        # Override the app's dependency to return None (no authenticated user)
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return None
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = None
+
+            # Test SIGNED_IN event without authentication
+            response = client.post("/auth/callback/SIGNED_IN")
+
+            # Should return 200 with failed status because authentication is required
+            assert response.status_code == status.HTTP_200_OK
+            assert response.headers["content-type"] == "application/json"
+
+            data = response.json()
+            assert data["status"] == "failed"
+            assert "Authentication required" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_service_exception_handling(self, client: TestClient) -> None:
+        """Test callback endpoint handles service exceptions gracefully."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            with (
+                patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
+                patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
+            ):
+                # Make blacklist_delete raise an exception
+                mock_blacklist_delete.side_effect = Exception("Redis connection failed")
+
+                # Test SIGNED_IN event with service exception
+                response = client.post("/auth/callback/SIGNED_IN")
+
+                # Should return 200 with failed status due to exception
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
+
+                data = response.json()
+                assert data["status"] == "failed"
+                assert "Error processing event SIGNED_IN" in data["message"]
+                assert "Redis connection failed" in data["data"]["error"]
+
+    @pytest.mark.asyncio
+    async def test_notification_endpoint_service_exception_handling(self, client: TestClient) -> None:
+        """Test notification endpoint handles exceptions gracefully."""
+        # Test INITIAL_SESSION event with mocked exception
+        with patch("faster.core.auth.routers._handle_initial_session", new_callable=AsyncMock) as mock_handler:
+            mock_handler.side_effect = Exception("Database connection failed")
+
+            response = client.post("/auth/notification/INITIAL_SESSION")
+
+            # Should return 200 with failed status due to exception
+            assert response.status_code == status.HTTP_200_OK
+            assert response.headers["content-type"] == "application/json"
+
+            data = response.json()
+            assert data["status"] == "failed"
+            assert "Error processing event INITIAL_SESSION" in data["message"]
+            assert "Database connection failed" in data["data"]["error"]
+
+    @pytest.mark.asyncio
+    async def test_public_notification_endpoint_valid_event(self, client: TestClient) -> None:
+        """Test public notification endpoint for valid event."""
+        # Test INITIAL_SESSION event (the only one allowed on public endpoint)
+        response = client.post("/auth/notification/INITIAL_SESSION")
+
+        # Check that it's a JSON response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "application/json"
+
+        # Parse the JSON response
+        data = response.json()
+
+        # Check the response structure
+        assert "status" in data
+        assert data["status"] == "success"
+        assert "message" in data
+        assert "data" in data
+        assert isinstance(data["data"], dict)
+        assert data["data"]["event"] == "INITIAL_SESSION"
+        assert data["data"]["user_id"] is None  # Public endpoint doesn't have user
+
+    @pytest.mark.asyncio
+    async def test_public_notification_endpoint_invalid_event(self, client: TestClient) -> None:
+        """Test public notification endpoint for invalid event."""
+        # Test SIGNED_IN event (not allowed on public endpoint)
+        response = client.post("/auth/notification/SIGNED_IN")
+
+        # Check that it's a JSON response with error
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "application/json"
+
+        # Parse the JSON response
+        data = response.json()
+
+        # Check the response structure
+        assert "status" in data
+        assert data["status"] == "failed"
+        assert "message" in data
+        assert "Event SIGNED_IN not allowed on public endpoint" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_public_notification_endpoint_unauthorized_event(self, client: TestClient) -> None:
+        """Test public notification endpoint for event that requires authentication."""
+        # Test TOKEN_REFRESHED event (not allowed on public endpoint)
+        response = client.post("/auth/notification/TOKEN_REFRESHED")
+
+        # Check that it's a JSON response with error
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "application/json"
+
+        # Parse the JSON response
+        data = response.json()
+
+        # Check the response structure
+        assert "status" in data
+        assert data["status"] == "failed"
+        assert "message" in data
+        assert "Event TOKEN_REFRESHED not allowed on public endpoint" in data["message"]
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_empty_event_parameter(self, client: TestClient) -> None:
+        """Test callback endpoint with empty event parameter."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            # Test with empty event parameter
+            response = client.post("/auth/callback/")
+
+            # Should return 404 as the route doesn't match
+            assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_notification_endpoint_get_request(self, client: TestClient) -> None:
+        """Test notification endpoint rejects GET requests."""
+        # Test GET request to POST-only endpoint
+        response = client.get("/auth/notification/INITIAL_SESSION")
+
+        # Should return 405 Method Not Allowed
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_get_request(self, client: TestClient) -> None:
+        """Test callback endpoint rejects GET requests."""
+        # Test GET request to POST-only endpoint
+        response = client.get("/auth/callback/SIGNED_IN")
+
+        # Should return 405 Method Not Allowed
+        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+
+    @pytest.mark.asyncio
+    async def test_onboarding_endpoint_with_user_metadata(self, client: TestClient) -> None:
+        """Test onboarding endpoint with user having metadata."""
+        # Create mock user with metadata
+        mock_user = UserProfileData(
+            id="user-123",
+            email="test@example.com",
+            email_confirmed_at=None,
+            phone=None,
+            created_at=datetime(2023, 1, 1),
+            updated_at=datetime(2023, 1, 1),
+            last_sign_in_at=None,
+            app_metadata={"avatar_url": "https://example.com/avatar.jpg"},
+            user_metadata={"username": "testuser", "full_name": "Test User"},
+            aud="test",
+            role="authenticated",
+        )
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            # Mock the auth_service.check_user_onboarding_complete to return False
+            with patch(
+                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
+            ) as mock_check_onboarding:
+                mock_check_onboarding.return_value = False
+
+                # Make a request to the endpoint
+                response = client.get("/auth/onboarding")
+
+                # Check that it's a JSON response
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
+
+                # Parse the JSON response
+                data = response.json()
+
+                # Check the response structure
+                assert "status" in data
+                assert data["status"] == "success"
+                assert "message" in data
+                assert "data" in data
+                assert isinstance(data["data"], dict)
+                assert data["data"]["user_id"] == "user-123"
+                assert data["data"]["email"] == "test@example.com"
