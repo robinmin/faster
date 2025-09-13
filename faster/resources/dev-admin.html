@@ -5,406 +5,470 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dev Admin Dashboard</title>
 
-    <!-- Tailwind CSS + DaisyUI -->
+    <!-- External Dependencies -->
     <link
       href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css"
       rel="stylesheet"
       type="text/css"
     />
     <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-
-    <!-- Sentry Error Tracking -->
     <script
       src="https://js.sentry-cdn.com/d2a200c0751f88c697a50ea7adb176e8.min.js"
       crossorigin="anonymous"
     ></script>
 
     <style>
+      /* Core Styles */
       [x-cloak] {
         display: none !important;
       }
 
-      /* Active menu item styling */
-      .dropdown-content .active {
+      /* Component Styles */
+      .dropdown-content .menu-item-active {
         background-color: hsl(var(--p) / 0.1);
         color: hsl(var(--p));
         font-weight: 600;
       }
 
-      /* Page transition animation */
-      #main-content {
-        transition: opacity 0.3s ease-in-out;
+      .page-transition {
+        transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
       }
 
-      #main-content.fade-in {
-        animation: fadeIn 0.3s ease-in;
+      .page-enter {
+        opacity: 0;
+        transform: translateY(-10px);
       }
 
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-          transform: translateY(-10px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      .page-enter-active {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      /* Loading States */
+      .loading-overlay {
+        background-color: hsl(var(--b1) / 0.9);
+        backdrop-filter: blur(4px);
       }
     </style>
   </head>
 
-  <body class="bg-base-100 min-h-screen" x-data="devAdminData()">
-    <!-- Toast Container -->
-    <div class="toast toast-end z-50" x-show="toast.show" x-transition>
-      <div class="alert" :class="toast.class">
-        <i :data-lucide="toast.icon" class="w-5 h-5"></i>
-        <span x-text="toast.message"></span>
+  <body class="bg-base-100 min-h-screen" x-data="devAdminApp()" x-init="init()">
+    <!-- Global Components -->
+    <div
+      x-data="toastManager()"
+      x-show="$store.toast.show"
+      x-transition
+      class="toast toast-end z-50"
+      role="alert"
+      aria-live="polite"
+    >
+      <div class="alert" :class="$store.toast.class">
+        <i
+          :data-lucide="$store.toast.icon"
+          class="w-5 h-5"
+          aria-hidden="true"
+        ></i>
+        <span x-text="$store.toast.message"></span>
       </div>
     </div>
 
     <!-- Loading Screen -->
     <div
-      x-show="currentView === 'loading'"
-      class="flex items-center justify-center min-h-screen"
+      x-show="$store.app.currentView === 'loading'"
+      class="loading-overlay fixed inset-0 flex items-center justify-center"
       x-cloak
     >
       <div class="text-center">
-        <div class="loading loading-spinner loading-lg text-primary"></div>
-        <p class="mt-4 text-base-content" x-text="loadingMessage"></p>
+        <div
+          class="loading loading-spinner loading-lg text-primary"
+          aria-label="Loading"
+        ></div>
+        <p class="mt-4 text-base-content" x-text="$store.app.loadingMessage">
+          Initializing...
+        </p>
       </div>
     </div>
 
-    <!-- Authentication Container -->
+    <!-- Authentication View -->
     <div
-      x-show="currentView === 'auth'"
+      x-show="$store.app.currentView === 'auth'"
       class="min-h-screen bg-base-200 flex items-center justify-center p-4"
       x-cloak
     >
       <div class="card w-full max-w-md bg-base-100 shadow-xl">
         <div class="card-body">
-          <h2 class="card-title text-center justify-center mb-6">
-            <i data-lucide="shield-check" class="w-6 h-6 text-primary"></i>
-            Dev Admin Login
-          </h2>
+          <header class="text-center mb-6">
+            <h1 class="card-title justify-center">
+              <i
+                data-lucide="shield-check"
+                class="w-6 h-6 text-primary"
+                aria-hidden="true"
+              ></i>
+              Dev Admin Login
+            </h1>
+          </header>
 
-          <!-- OAuth Login Buttons -->
-          <div class="space-y-3 mb-4">
-             <button
-               @click="signInWithOAuth('google')"
-               :disabled="authLoading"
-               class="btn btn-outline btn-block"
-             >
-              <svg class="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              Continue with Google
-            </button>
-
-             <button
-               @click="signInWithOAuth('github')"
-               :disabled="authLoading"
-               class="btn btn-outline btn-block"
-             >
-              <i data-lucide="github" class="w-5 h-5"></i>
-              Continue with GitHub
-            </button>
-          </div>
-
-          <div class="divider">OR</div>
-
-          <!-- Email/Password Form -->
-           <form @submit.prevent="handleEmailSubmit" class="space-y-4">
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text">Email</span>
-              </label>
-              <input
-                x-model="auth.email"
-                type="email"
-                placeholder="Enter your email"
-                class="input input-bordered"
-                :class="{ 'input-error': auth.errors.email }"
-                required
-                autocomplete="email"
-              />
-              <div class="label" x-show="auth.errors.email">
-                <span
-                  class="label-text-alt text-error"
-                  x-text="auth.errors.email"
-                ></span>
-              </div>
-            </div>
-
-            <div class="form-control">
-              <label class="label">
-                <span class="label-text">Password</span>
-              </label>
-              <input
-                x-model="auth.password"
-                type="password"
-                placeholder="Enter your password"
-                class="input input-bordered"
-                :class="{ 'input-error': auth.errors.password }"
-                required
-                autocomplete="current-password"
-              />
-              <div class="label" x-show="auth.errors.password">
-                <span
-                  class="label-text-alt text-error"
-                  x-text="auth.errors.password"
-                ></span>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              :disabled="authLoading"
-              class="btn btn-primary btn-block"
-              :class="{ 'loading': authLoading }"
-            >
-              <template x-if="!authLoading">
-                <i
-                  :data-lucide="auth.isSignUp ? 'user-plus' : 'log-in'"
-                  class="w-5 h-5"
-                ></i>
+          <div x-data="authComponent()">
+            <!-- OAuth Login Options -->
+            <div class="space-y-3 mb-4">
+              <template x-for="provider in oauthProviders" :key="provider.id">
+                <button
+                  @click="signInWithOAuth(provider.id)"
+                  :disabled="$store.auth.loading"
+                  class="btn btn-outline btn-block"
+                  :aria-label="`Continue with ${provider.name}`"
+                >
+                  <i
+                    :data-lucide="provider.icon"
+                    class="w-5 h-5"
+                    aria-hidden="true"
+                  ></i>
+                  <span x-text="`Continue with ${provider.name}`"></span>
+                </button>
               </template>
-              <span x-text="auth.isSignUp ? 'Sign Up' : 'Sign In'"></span>
-            </button>
-          </form>
+            </div>
 
-          <!-- Sign Up Toggle -->
-          <div class="text-center mt-4">
-             <button @click="toggleSignUp" class="link link-primary text-sm">
-              <span
-                x-text="auth.isSignUp ? 'Already have an account? Sign in' : 'Need an account? Sign up'"
-              ></span>
-            </button>
+            <div class="divider">OR</div>
+
+            <!-- Email/Password Form -->
+            <form @submit.prevent="handleEmailSubmit" class="space-y-4">
+              <div class="form-control">
+                <label class="label" for="email-input">
+                  <span class="label-text">Email</span>
+                </label>
+                <input
+                  id="email-input"
+                  x-model="formData.email"
+                  type="email"
+                  placeholder="Enter your email"
+                  class="input input-bordered"
+                  :class="{ 'input-error': formErrors.email }"
+                  required
+                  autocomplete="email"
+                  :disabled="$store.auth.loading"
+                />
+                <div class="label" x-show="formErrors.email">
+                  <span
+                    class="label-text-alt text-error"
+                    x-text="formErrors.email"
+                  ></span>
+                </div>
+              </div>
+
+              <div class="form-control">
+                <label class="label" for="password-input">
+                  <span class="label-text">Password</span>
+                </label>
+                <input
+                  id="password-input"
+                  x-model="formData.password"
+                  type="password"
+                  placeholder="Enter your password"
+                  class="input input-bordered"
+                  :class="{ 'input-error': formErrors.password }"
+                  required
+                  autocomplete="current-password"
+                  :disabled="$store.auth.loading"
+                />
+                <div class="label" x-show="formErrors.password">
+                  <span
+                    class="label-text-alt text-error"
+                    x-text="formErrors.password"
+                  ></span>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                :disabled="$store.auth.loading"
+                class="btn btn-primary btn-block"
+                :class="{ 'loading': $store.auth.loading }"
+              >
+                <template x-if="!$store.auth.loading">
+                  <i
+                    :data-lucide="isSignUp ? 'user-plus' : 'log-in'"
+                    class="w-5 h-5"
+                    aria-hidden="true"
+                  ></i>
+                </template>
+                <span x-text="isSignUp ? 'Sign Up' : 'Sign In'"></span>
+              </button>
+            </form>
+
+            <!-- Sign Up Toggle -->
+            <div class="text-center mt-4">
+              <button @click="toggleSignUp()" class="link link-primary text-sm">
+                <span
+                  x-text="isSignUp ? 'Already have an account? Sign in' : 'Need an account? Sign up'"
+                ></span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-   <!-- Main Application Container -->
-   <div x-show="currentView === 'app'" class="min-h-screen" x-cloak>
-     <!-- Navigation Header -->
-     <div class="navbar bg-base-100 shadow-lg">
-       <div class="navbar-start">
-         <h1 class="text-xl font-bold text-primary">
-           <i data-lucide="code" class="w-6 h-6 inline mr-2"></i>
-           Dev Admin
-         </h1>
-       </div>
+    <!-- Main Application -->
+    <div x-show="$store.app.currentView === 'app'" class="min-h-screen" x-cloak>
+      <!-- Navigation Header -->
+      <nav
+        class="navbar bg-base-100 shadow-lg"
+        role="navigation"
+        aria-label="Main navigation"
+      >
+        <div class="navbar-start">
+          <h1 class="text-xl font-bold text-primary">
+            <i
+              data-lucide="code"
+              class="w-6 h-6 inline mr-2"
+              aria-hidden="true"
+            ></i>
+            <span class="sr-only">Dev Admin Dashboard</span>
+            Dev Admin
+          </h1>
+        </div>
 
-       <div class="navbar-end">
-         <!-- Theme Toggler -->
-         <label class="swap swap-rotate mr-2">
-            <input type="checkbox" @change="toggleTheme" x-model="darkMode" />
-           <i data-lucide="sun" class="swap-on w-5 h-5"></i>
-           <i data-lucide="moon" class="swap-off w-5 h-5"></i>
-         </label>
+        <div class="navbar-end">
+          <!-- Theme Toggle -->
+          <div class="mr-2" x-data="themeToggle()" x-init="init()">
+            <button
+              @click="toggle()"
+              class="btn btn-ghost btn-circle"
+              title="Toggle theme"
+              aria-label="Toggle between light and dark theme"
+            >
+              <i
+                :data-lucide="isDark ? 'sun' : 'moon'"
+                class="w-5 h-5"
+                aria-hidden="true"
+              ></i>
+            </button>
+          </div>
 
-         <div class="dropdown dropdown-end">
-           <div
-             tabindex="0"
-             role="button"
-             class="btn btn-ghost btn-circle avatar placeholder"
-           >
-             <div class="w-10 rounded-full bg-neutral text-neutral-content">
-               <img
-                 x-show="user && user.user_metadata && user.user_metadata.avatar_url"
-                 :src="user && user.user_metadata ? user.user_metadata.avatar_url : ''"
-                 class="rounded-full"
-                 alt="User Avatar"
-               />
+          <!-- User Menu -->
+          <div class="dropdown dropdown-end" x-data="userMenu()">
+            <div
+              tabindex="0"
+              role="button"
+              class="btn btn-ghost btn-circle avatar placeholder"
+              aria-label="User menu"
+            >
+              <div class="w-10 rounded-full bg-neutral text-neutral-content">
+                <img
+                  x-show="hasAvatar()"
+                  :src="getAvatarUrl()"
+                  class="rounded-full"
+                  alt="User Avatar"
+                  loading="lazy"
+                />
                 <span
-                  x-show="!user || !user.user_metadata || !user.user_metadata.avatar_url"
+                  x-show="!hasAvatar()"
                   class="text-xl"
-                  x-text="getUserInitials()"
+                  x-text="getInitials()"
+                  aria-label="User initials"
                 ></span>
-             </div>
-           </div>
+              </div>
+            </div>
+
             <ul
               tabindex="0"
               class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52"
+              role="menu"
             >
-                <li>
-                  <a @click.prevent="handleMenuClick($event, 'dashboard')" href="#" :class="currentPage === 'dashboard' ? 'active' : ''">
-                    <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
-                    Dashboard
+              <template x-for="item in menuItems" :key="item.id">
+                <li role="none">
+                  <a
+                    @click.prevent="selectMenuItem(item)"
+                    href="#"
+                    :class="item.id === $store.app.currentPage ? 'menu-item-active' : ''"
+                    role="menuitem"
+                    :aria-current="item.id === $store.app.currentPage ? 'page' : null"
+                  >
+                    <i
+                      :data-lucide="item.icon"
+                      class="w-4 h-4"
+                      aria-hidden="true"
+                    ></i>
+                    <span x-text="item.label"></span>
                   </a>
                 </li>
-                <li>
-                  <a @click.prevent="handleMenuClick($event, 'onboarding')" href="#" :class="currentPage === 'onboarding' ? 'active' : ''">
-                    <i data-lucide="user-check" class="w-4 h-4"></i>
-                    Onboarding
-                  </a>
-                </li>
-                <li>
-                  <a @click.prevent="handleMenuClick($event, 'profile')" href="#" :class="currentPage === 'profile' ? 'active' : ''">
-                    <i data-lucide="user" class="w-4 h-4"></i>
-                    Profile
-                  </a>
-                </li>
-              <li>
-                <hr class="my-2" />
-              </li>
-              <li>
-                 <button @click="signOut" class="text-error flex items-center w-full text-left px-4 py-2 hover:bg-base-200" hx-disable>
-                  <i data-lucide="log-out" class="w-4 h-4 mr-2"></i>
+              </template>
+              <li role="none"><hr class="my-2" /></li>
+              <li role="none">
+                <button
+                  @click="signOut()"
+                  class="text-error flex items-center w-full text-left px-4 py-2 hover:bg-base-200"
+                  role="menuitem"
+                >
+                  <i
+                    data-lucide="log-out"
+                    class="w-4 h-4 mr-2"
+                    aria-hidden="true"
+                  ></i>
                   Logout
                 </button>
               </li>
             </ul>
-         </div>
-       </div>
-     </div>
+          </div>
+        </div>
+      </nav>
 
-      <!-- Main Content Area -->
-      <div class="container mx-auto p-4">
-         <!-- Virtual Pages Container -->
-         <div id="main-content">
+      <!-- Main Content -->
+      <main class="container mx-auto p-4" x-data="pageManager()">
+        <div
+          class="page-transition"
+          :class="{ 'page-enter': isTransitioning, 'page-enter-active': !isTransitioning }"
+        >
           <!-- Dashboard Page -->
-          <div x-show="currentPage === 'dashboard'" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-           <!-- Welcome Card -->
-           <div
-             class="card bg-gradient-to-r from-primary to-secondary text-primary-content col-span-full"
-           >
-             <div class="card-body">
-               <h2 class="card-title">
-                 <i data-lucide="hand-heart" class="w-6 h-6"></i>
-                 Welcome back!
-               </h2>
-               <p>Your development admin dashboard is ready to go.</p>
-             </div>
-           </div>
+          <div
+            x-show="$store.app.currentPage === 'dashboard'"
+            x-data="dashboardPage()"
+          >
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <!-- Welcome Card -->
+              <div
+                class="card bg-gradient-to-r from-primary to-secondary text-primary-content col-span-full"
+              >
+                <div class="card-body">
+                  <h2 class="card-title">
+                    <i
+                      data-lucide="hand-heart"
+                      class="w-6 h-6"
+                      aria-hidden="true"
+                    ></i>
+                    <span
+                      x-text="`Welcome back, ${getUserDisplayName()}!`"
+                    ></span>
+                  </h2>
+                  <p>Your development admin dashboard is ready to go.</p>
+                </div>
+              </div>
 
-           <!-- Stats Cards -->
-           <div class="card bg-base-100 shadow-xl">
-             <div class="card-body">
-               <div class="flex items-center justify-between">
-                 <div>
-                   <p class="text-base-content/60">Total Projects</p>
-                   <p class="text-3xl font-bold">12</p>
-                 </div>
-                 <i data-lucide="folder" class="w-10 h-10 text-primary"></i>
-               </div>
-             </div>
-           </div>
-
-           <div class="card bg-base-100 shadow-xl">
-             <div class="card-body">
-               <div class="flex items-center justify-between">
-                 <div>
-                   <p class="text-base-content/60">Active Tasks</p>
-                   <p class="text-3xl font-bold">8</p>
-                 </div>
-                 <i
-                   data-lucide="check-circle"
-                   class="w-10 h-10 text-success"
-                 ></i>
-               </div>
-             </div>
-           </div>
-
-           <div class="card bg-base-100 shadow-xl">
-             <div class="card-body">
-               <div class="flex items-center justify-between">
-                 <div>
-                   <p class="text-base-content/60">Issues</p>
-                   <p class="text-3xl font-bold">3</p>
-                 </div>
-                 <i
-                   data-lucide="alert-circle"
-                   class="w-10 h-10 text-warning"
-                 ></i>
-               </div>
-             </div>
-           </div>
-
+              <!-- Dynamic Stats Cards -->
+              <template x-for="stat in stats" :key="stat.id">
+                <div class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <p class="text-base-content/60" x-text="stat.label"></p>
+                        <p class="text-3xl font-bold" x-text="stat.value"></p>
+                      </div>
+                      <i
+                        :data-lucide="stat.icon"
+                        :class="`w-10 h-10 text-${stat.color}`"
+                        aria-hidden="true"
+                      ></i>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
           </div>
 
           <!-- Profile Page -->
-          <div x-show="currentPage === 'profile'" x-cloak>
+          <div
+            x-show="$store.app.currentPage === 'profile'"
+            x-data="profilePage()"
+            x-cloak
+          >
             <div class="max-w-4xl mx-auto space-y-6">
               <!-- Profile Header -->
               <div class="card bg-base-100 shadow-xl">
                 <div class="card-body">
                   <div class="flex flex-col md:flex-row items-center gap-6">
-                       <div class="avatar">
-                         <div class="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
-                           <img :src="getUserAvatar()" alt="Profile Avatar" />
-                         </div>
-                       </div>
-                    <div class="text-center md:text-left">
-                       <h1 class="text-3xl font-bold" x-text="getUserDisplayName()"></h1>
-                      <p class="text-base-content/70 text-lg" x-text="user?.email"></p>
-                      <div class="flex flex-wrap gap-2 mt-3">
-                        <span class="badge badge-primary">Developer</span>
+                    <div class="avatar">
+                      <div
+                        class="w-24 h-24 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2"
+                      >
+                        <img
+                          :src="getUserAvatarUrl()"
+                          :alt="`${getUserDisplayName()}'s avatar`"
+                          loading="lazy"
+                        />
                       </div>
                     </div>
-                    <div class="ml-auto">
-                      <button class="btn btn-primary" disabled title="Edit functionality coming soon">
-                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                    <div class="text-center md:text-left flex-1">
+                      <h1
+                        class="text-3xl font-bold"
+                        x-text="getUserDisplayName()"
+                      ></h1>
+                      <p
+                        class="text-base-content/70 text-lg"
+                        x-text="getUserEmail()"
+                      ></p>
+                      <div class="flex flex-wrap gap-2 mt-3">
+                        <template x-for="role in getUserRoles()" :key="role">
+                          <span
+                            class="badge badge-primary"
+                            x-text="formatRole(role)"
+                          ></span>
+                        </template>
+                        <span
+                          x-show="!getUserRoles().length"
+                          class="badge badge-neutral"
+                          >No roles assigned</span
+                        >
+                      </div>
+                    </div>
+                    <div>
+                      <button
+                        class="btn btn-primary"
+                        disabled
+                        title="Edit functionality coming soon"
+                        aria-describedby="edit-tooltip"
+                      >
+                        <i
+                          data-lucide="edit-3"
+                          class="w-4 h-4"
+                          aria-hidden="true"
+                        ></i>
                         Edit Profile
                       </button>
+                      <div id="edit-tooltip" class="sr-only">
+                        Edit functionality coming soon
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Profile Details Grid -->
+              <!-- Profile Information Grid -->
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <!-- Personal Information -->
                 <div class="card bg-base-100 shadow-xl">
                   <div class="card-body">
                     <h2 class="card-title">
-                      <i data-lucide="user" class="w-5 h-5"></i>
+                      <i
+                        data-lucide="user"
+                        class="w-5 h-5"
+                        aria-hidden="true"
+                      ></i>
                       Personal Information
                     </h2>
                     <div class="space-y-4">
-                      <div class="form-control">
-                        <label class="label">
-                          <span class="label-text font-semibold">Full Name</span>
-                        </label>
-                         <div class="bg-base-200 p-3 rounded-lg" x-text="getUserFullName() || 'Not provided'"></div>
-                      </div>
-                      <div class="form-control">
-                        <label class="label">
-                          <span class="label-text font-semibold">Email</span>
-                        </label>
-                        <div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">
-                          <span x-text="user?.email"></span>
-                          <span class="badge badge-success badge-sm" x-show="user?.email_confirmed_at">Verified</span>
-                          <span class="badge badge-warning badge-sm" x-show="!user?.email_confirmed_at">Unverified</span>
+                      <template x-for="field in personalFields" :key="field.id">
+                        <div class="form-control">
+                          <label class="label">
+                            <span
+                              class="label-text font-semibold"
+                              x-text="field.label"
+                            ></span>
+                          </label>
+                          <div
+                            class="bg-base-200 p-3 rounded-lg flex items-center gap-2"
+                          >
+                            <span x-text="field.value || 'Not provided'"></span>
+                            <template x-if="field.badge">
+                              <span
+                                :class="`badge badge-${field.badge.type} badge-sm`"
+                                x-text="field.badge.text"
+                              ></span>
+                            </template>
+                          </div>
                         </div>
-                      </div>
-                      <div class="form-control">
-                        <label class="label">
-                          <span class="label-text font-semibold">Username</span>
-                        </label>
-                        <div class="bg-base-200 p-3 rounded-lg" x-text="user?.username || 'Not set'"></div>
-                      </div>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -413,37 +477,36 @@
                 <div class="card bg-base-100 shadow-xl">
                   <div class="card-body">
                     <h2 class="card-title">
-                      <i data-lucide="settings" class="w-5 h-5"></i>
+                      <i
+                        data-lucide="settings"
+                        class="w-5 h-5"
+                        aria-hidden="true"
+                      ></i>
                       Account Information
                     </h2>
                     <div class="space-y-4">
-                      <div class="form-control">
-                        <label class="label">
-                          <span class="label-text font-semibold">User ID</span>
-                        </label>
-                        <div class="bg-base-200 p-3 rounded-lg font-mono text-sm" x-text="user?.id"></div>
-                      </div>
-                      <div class="form-control">
-                        <label class="label">
-                          <span class="label-text font-semibold">Joined</span>
-                        </label>
-                         <div class="bg-base-200 p-3 rounded-lg" x-text="formatDate(user?.created_at)"></div>
-                      </div>
-                      <div class="form-control">
-                        <label class="label">
-                          <span class="label-text font-semibold">Last Sign In</span>
-                        </label>
-                         <div class="bg-base-200 p-3 rounded-lg" x-text="formatDate(user?.last_sign_in_at)"></div>
-                      </div>
-                      <div class="form-control">
-                        <label class="label">
-                          <span class="label-text font-semibold">Authentication Provider</span>
-                        </label>
-                        <div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">
-                          <span x-text="user?.app_metadata?.provider || 'email'"></span>
-                          <i data-lucide="shield-check" class="w-4 h-4 text-success"></i>
+                      <template x-for="field in accountFields" :key="field.id">
+                        <div class="form-control">
+                          <label class="label">
+                            <span
+                              class="label-text font-semibold"
+                              x-text="field.label"
+                            ></span>
+                          </label>
+                          <div
+                            :class="field.mono ? 'bg-base-200 p-3 rounded-lg font-mono text-sm' : 'bg-base-200 p-3 rounded-lg flex items-center gap-2'"
+                          >
+                            <span x-text="field.value"></span>
+                            <template x-if="field.icon">
+                              <i
+                                :data-lucide="field.icon"
+                                class="w-4 h-4 text-success"
+                                aria-hidden="true"
+                              ></i>
+                            </template>
+                          </div>
                         </div>
-                      </div>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -451,20 +514,179 @@
             </div>
           </div>
 
+          <!-- App State Page -->
+          <div
+            x-show="$store.app.currentPage === 'app-state'"
+            x-data="appStatePage()"
+            x-cloak
+          >
+            <div class="max-w-6xl mx-auto space-y-6">
+              <!-- App State Header -->
+              <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                  <div class="flex items-center gap-4">
+                    <div class="avatar">
+                      <div
+                        class="w-16 h-16 rounded-full bg-gradient-to-r from-info to-success flex items-center justify-center"
+                      >
+                        <i
+                          data-lucide="settings"
+                          class="w-8 h-8 text-info-content"
+                          aria-hidden="true"
+                        ></i>
+                      </div>
+                    </div>
+                    <div class="flex-1">
+                      <h1
+                        class="text-3xl font-bold"
+                        x-text="getPageTitle()"
+                      ></h1>
+                      <p
+                        class="text-base-content/70 text-lg"
+                        x-text="getPageDescription()"
+                      ></p>
+                    </div>
+                    <div>
+                      <button
+                        @click="refreshData()"
+                        class="btn btn-primary"
+                        :class="{ 'loading': isLoading }"
+                        :disabled="isLoading"
+                      >
+                        <i
+                          data-lucide="refresh-cw"
+                          class="w-4 h-4"
+                          aria-hidden="true"
+                        ></i>
+                        <span x-show="!isLoading">Refresh</span>
+                        <span x-show="isLoading">Loading...</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- App State Data Display -->
+              <div
+                x-show="appStateData && Object.keys(appStateData).length > 0"
+                class="card bg-base-100 shadow-xl"
+              >
+                <div class="card-body">
+                  <h3 class="card-title">
+                    <i
+                      data-lucide="code"
+                      class="w-5 h-5"
+                      aria-hidden="true"
+                    ></i>
+                    Application State Data
+                  </h3>
+                  <div
+                    class="mockup-code bg-base-200 text-sm max-h-96 overflow-y-auto"
+                  >
+                    <pre
+                      class="text-left whitespace-pre-wrap"
+                      x-text="formatAppStateData()"
+                    ></pre>
+                  </div>
+                  <div class="card-actions justify-end mt-4">
+                    <button
+                      @click="refreshData()"
+                      class="btn btn-primary btn-sm"
+                      :class="{ 'loading': isLoading }"
+                      :disabled="isLoading"
+                    >
+                      <i
+                        data-lucide="refresh-cw"
+                        class="w-4 h-4"
+                        aria-hidden="true"
+                      ></i>
+                      <span x-show="!isLoading">Refresh</span>
+                      <span x-show="isLoading">Loading...</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- No Data State -->
+              <div
+                x-show="!appStateData || Object.keys(appStateData).length === 0"
+                class="card bg-base-100 shadow-xl"
+              >
+                <div class="card-body text-center py-12">
+                  <div class="avatar mb-4">
+                    <div
+                      class="w-16 h-16 rounded-full bg-base-200 flex items-center justify-center"
+                    >
+                      <i
+                        data-lucide="database"
+                        class="w-8 h-8 text-base-content/50"
+                        aria-hidden="true"
+                      ></i>
+                    </div>
+                  </div>
+                  <h3 class="text-xl font-semibold mb-2">No App State Data</h3>
+                  <p class="text-base-content/70 mb-4">
+                    <span x-show="!isLoading"
+                      >No application state data available at the moment.</span
+                    >
+                    <span x-show="isLoading">Loading application state...</span>
+                  </p>
+                  <button
+                    @click="refreshData()"
+                    class="btn btn-primary"
+                    :class="{ 'loading': isLoading }"
+                    :disabled="isLoading"
+                  >
+                    <span x-show="!isLoading">Try Again</span>
+                    <span x-show="isLoading">Loading...</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Error State -->
+              <div x-show="errorMessage" class="alert alert-error">
+                <i
+                  data-lucide="alert-circle"
+                  class="w-5 h-5"
+                  aria-hidden="true"
+                ></i>
+                <div>
+                  <h3 class="font-bold">Error Loading App State</h3>
+                  <div class="text-xs" x-text="errorMessage"></div>
+                </div>
+                <button @click="refreshData()" class="btn btn-sm">Retry</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Onboarding Page -->
-          <div x-show="currentPage === 'onboarding'" x-cloak>
+          <div
+            x-show="$store.app.currentPage === 'onboarding'"
+            x-data="onboardingPage()"
+            x-cloak
+          >
             <div class="max-w-4xl mx-auto space-y-8">
               <!-- Welcome Header -->
               <div class="text-center space-y-4">
                 <div class="avatar">
-                  <div class="w-20 h-20 rounded-full bg-gradient-to-r from-primary to-secondary flex items-center justify-center">
-                    <i data-lucide="user-check" class="w-10 h-10 text-primary-content"></i>
+                  <div
+                    class="w-20 h-20 rounded-full bg-gradient-to-r from-primary to-secondary flex items-center justify-center"
+                  >
+                    <i
+                      data-lucide="user-check"
+                      class="w-10 h-10 text-primary-content"
+                      aria-hidden="true"
+                    ></i>
                   </div>
                 </div>
-                 <h1 class="text-4xl font-bold text-primary" x-text="'Welcome to Dev Admin, ' + getUserDisplayName() + '!'"></h1>
+                <h1
+                  class="text-4xl font-bold text-primary"
+                  x-text="getHeadlineMessage()"
+                ></h1>
                 <p class="text-lg text-base-content/70 max-w-2xl mx-auto">
-                  Let's get you set up and ready to manage your development environment.
-                  This onboarding guide will help you understand the key features and get started quickly.
+                  Let's get you set up and ready to manage your development
+                  environment. This onboarding guide will help you understand
+                  the key features and get started quickly.
                 </p>
               </div>
 
@@ -472,485 +694,121 @@
               <div class="card bg-base-100 shadow-xl">
                 <div class="card-body">
                   <h2 class="card-title">
-                    <i data-lucide="target" class="w-5 h-5"></i>
+                    <i
+                      data-lucide="target"
+                      class="w-5 h-5"
+                      aria-hidden="true"
+                    ></i>
                     Your Setup Progress
                   </h2>
-                  <div class="space-y-4">
-                    <div class="flex items-center gap-4">
-                      <div class="flex-1">
-                        <div class="flex justify-between text-sm mb-1">
-                          <span>Profile Setup</span>
-                          <span>100%</span>
+                  <div
+                    class="space-y-4"
+                    role="group"
+                    aria-label="Setup progress"
+                  >
+                    <template x-for="step in progressSteps" :key="step.id">
+                      <div class="flex items-center gap-4">
+                        <div class="flex-1">
+                          <div class="flex justify-between text-sm mb-1">
+                            <span x-text="step.label"></span>
+                            <span x-text="`${step.progress}%`"></span>
+                          </div>
+                          <progress
+                            class="progress progress-primary w-full"
+                            :value="step.progress"
+                            max="100"
+                            :aria-label="`${step.label}: ${step.progress}% complete`"
+                          ></progress>
                         </div>
-                        <progress class="progress progress-primary w-full" value="100" max="100"></progress>
+                        <i
+                          :data-lucide="step.progress === 100 ? 'check-circle' : 'circle'"
+                          :class="step.progress === 100 ? 'w-6 h-6 text-success' : 'w-6 h-6 text-base-content/50'"
+                          aria-hidden="true"
+                        ></i>
                       </div>
-                      <i data-lucide="check-circle" class="w-6 h-6 text-success"></i>
-                    </div>
-                    <div class="flex items-center gap-4">
-                      <div class="flex-1">
-                        <div class="flex justify-between text-sm mb-1">
-                          <span>Authentication</span>
-                          <span>100%</span>
-                        </div>
-                        <progress class="progress progress-primary w-full" value="100" max="100"></progress>
-                      </div>
-                      <i data-lucide="check-circle" class="w-6 h-6 text-success"></i>
-                    </div>
-                    <div class="flex items-center gap-4">
-                      <div class="flex-1">
-                        <div class="flex justify-between text-sm mb-1">
-                          <span>Dashboard Exploration</span>
-                          <span x-text="currentPage === 'dashboard' ? '100%' : '25%'"></span>
-                        </div>
-                        <progress class="progress progress-primary w-full" :value="currentPage === 'dashboard' ? 100 : 25" max="100"></progress>
-                      </div>
-                      <i data-lucide="check-circle" class="w-6 h-6 text-success" x-show="currentPage === 'dashboard'"></i>
-                      <i data-lucide="circle" class="w-6 h-6 text-base-content/50" x-show="currentPage !== 'dashboard'"></i>
-                    </div>
+                    </template>
                   </div>
                 </div>
               </div>
 
-
-              <!-- Footer Note -->
-              <div class="text-center text-base-content/60">
-                <p>Need help? Check the browser console for detailed logs or contact your administrator.</p>
-              </div>
+              <!-- Help Footer -->
+              <footer class="text-center text-base-content/60">
+                <p>
+                  Need help? Check the browser console for detailed logs or
+                  contact your administrator.
+                </p>
+              </footer>
             </div>
           </div>
-         </div>
         </div>
-      </div>
+      </main>
     </div>
 
+    <!-- JavaScript Application -->
     <script>
-      // Define Alpine component data
-      window.devAdminData = () => ({
-        currentView: 'loading',
-        currentPage: 'dashboard',
-        loadingMessage: 'Initializing...',
-        configLoaded: false,
-        authLoading: false,
+      // Application Constants
+      const APP_CONFIG = {
+        TOAST_DURATION: 5000,
+        API_TIMEOUT: 10000,
+        RETRY_ATTEMPTS: 3,
+        THEME_STORAGE_KEY: "dev-admin-theme",
+        ENDPOINTS: {
+          CONFIG: "/dev/settings",
+          HEALTH: "/"
+        }
+      };
 
-        config: {
-          supabaseUrl: "",
-          supabaseKey: "",
-          backendUrl: "",
-          sentryDsn: "",
-          sentryEnvironment: "development",
-          sentryEnabled: true
-        },
+      const TOAST_TYPES = {
+        success: { icon: "check-circle", class: "alert-success" },
+        error: { icon: "x-circle", class: "alert-error" },
+        warning: { icon: "alert-triangle", class: "alert-warning" },
+        info: { icon: "info", class: "alert-info" }
+      };
 
-        auth: {
-          email: "",
-          password: "",
-          isSignUp: false,
-          errors: {}
-        },
+      // Global Store
+      document.addEventListener("alpine:init", () => {
+        Alpine.store("app", {
+          currentView: "loading",
+          currentPage: "dashboard",
+          loadingMessage: "Initializing...",
+          user: null,
+          config: null,
+          supabase: null,
+          pageData: {}
+        });
 
-        user: null,
-        supabase: null,
-        darkMode: false,
-        toast: {
+        Alpine.store("auth", {
+          loading: false
+        });
+
+        Alpine.store("toast", {
           show: false,
           message: "",
           class: "",
           icon: "info"
+        });
+      });
+
+      // Utility Functions
+      const utils = {
+        async withTimeout(promise, ms = APP_CONFIG.API_TIMEOUT) {
+          const timeout = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Operation timed out")), ms)
+          );
+          return Promise.race([promise, timeout]);
         },
 
-        async init() {
-          console.log("Initializing Dev Admin Dashboard...");
-          console.log("Page URL:", window.location.href);
-          console.log("User Agent:", navigator.userAgent);
-
-          try {
-            this.initTheme();
-            await this.$nextTick();
-
-            if (typeof lucide !== "undefined" && lucide.createIcons) {
-              lucide.createIcons();
-            }
-
-            await this.loadInitialData();
-          } catch (error) {
-            console.error("Failed to initialize:", error);
-            console.error("Error stack:", error.stack);
-            this.showToast("Initialization failed: " + error.message, "error");
-            this.currentView = "auth";
-          }
-        },
-
-        async loadInitialData() {
-          try {
-            await this.loadConfig();
-
-            if (this.configLoaded) {
-              await this.initializeApp();
-            } else {
-              throw new Error("Configuration not loaded");
-            }
-          } catch (error) {
-            console.error("Config loading failed:", error.message);
-            console.log("Using fallback configuration...");
-            this.configLoaded = true;
-            this.config = {
-              supabaseUrl: null,
-              supabaseKey: null,
-              backendUrl: "",
-              sentryDsn: "",
-              sentryEnvironment: "development",
-              sentryEnabled: false
-            };
-            this.showToast("Using default configuration", "warning");
-            await this.initializeApp();
-          }
-        },
-
-        async loadConfig() {
-          try {
-            console.log("Attempting to load config from /dev/settings...");
-            console.log("Current URL:", window.location.href);
-
+        async retry(fn, attempts = APP_CONFIG.RETRY_ATTEMPTS) {
+          for (let i = 0; i < attempts; i++) {
             try {
-              const testResponse = await fetch("/", { method: "HEAD" });
-              console.log("Server connectivity test:", testResponse.status);
-            } catch (connectError) {
-              console.warn("Server connectivity test failed:", connectError.message);
+              return await fn();
+            } catch (error) {
+              if (i === attempts - 1) throw error;
+              await new Promise(resolve =>
+                setTimeout(resolve, Math.pow(2, i) * 1000)
+              );
             }
-
-            const response = await fetch("/dev/settings", {
-              method: "GET",
-              headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json"
-              }
-            });
-
-            console.log("Response status:", response.status);
-            console.log("Response ok:", response.ok);
-
-            if (!response.ok) {
-              console.error("Bad response:", response.status, response.statusText);
-              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            console.log("Raw response data:", data);
-
-            if (data && data.data) {
-              this.config = { ...this.config, ...data.data };
-              this.configLoaded = true;
-              console.log("Configuration loaded successfully:", this.config);
-            } else {
-              console.error("Invalid response format - missing data field");
-              throw new Error("Invalid configuration response format");
-            }
-          } catch (error) {
-            console.error("Failed to load configuration:", error);
-            console.error("Error type:", error.constructor.name);
-            console.error("Error message:", error.message);
-            this.configLoaded = false;
-            throw error;
           }
-        },
-
-        async initializeApp() {
-          if (!this.configLoaded) {
-            throw new Error("Cannot initialize app without configuration");
-          }
-
-          this.loadingMessage = "Setting up services...";
-
-          try {
-            if (this.config.sentryEnabled && this.config.sentryDsn) {
-              this.initSentry();
-            }
-
-            if (this.config.supabaseUrl && this.config.supabaseKey) {
-              const supabaseInitialized = this.initSupabase();
-              if (supabaseInitialized) {
-                await this.checkSession();
-              } else {
-                this.currentView = "auth";
-                return;
-              }
-            } else {
-              this.showToast("Supabase not configured", "warning");
-              this.currentView = "auth";
-              return;
-            }
-
-            console.log("Application initialization completed");
-          } catch (error) {
-            console.error("App initialization failed:", error);
-            this.showToast("Application setup failed: " + error.message, "error");
-            this.currentView = "auth";
-          }
-        },
-
-        initSupabase() {
-          try {
-            this.supabase = supabase.createClient(
-              this.config.supabaseUrl,
-              this.config.supabaseKey
-            );
-
-            this.supabase.auth.onAuthStateChange((event, session) => {
-              this.handleAuthStateChange(event, session);
-            });
-
-            return true;
-          } catch (error) {
-            console.error("Supabase initialization failed:", error.message);
-            return false;
-          }
-        },
-
-        initSentry() {
-          if (!this.config.sentryDsn) {
-            console.log("Sentry DSN not configured");
-            return;
-          }
-
-          try {
-            Sentry.init({
-              dsn: this.config.sentryDsn,
-              environment: this.config.sentryEnvironment,
-              tracesSampleRate: this.config.sentryEnvironment === "production" ? 0.1 : 1.0
-            });
-            console.log("Sentry initialized successfully");
-          } catch (error) {
-            console.error("Sentry initialization failed:", error);
-          }
-        },
-
-        async checkSession() {
-          if (!this.supabase) {
-            this.currentView = "auth";
-            return;
-          }
-
-          try {
-            const { data: { session }, error } = await this.supabase.auth.getSession();
-            if (error) throw error;
-
-            if (session && session.user) {
-              this.user = session.user;
-              this.currentView = "app";
-              this.currentPage = "dashboard";
-            } else {
-              this.currentView = "auth";
-            }
-          } catch (error) {
-            console.error("Session check failed:", error.message);
-            this.showToast("Session check failed: " + error.message, "error");
-            this.currentView = "auth";
-          }
-        },
-
-        handleAuthStateChange(event, session) {
-          if (event === "SIGNED_IN" && session && session.user) {
-            console.log("User signed in via auth state change:", session.user.email);
-            this.user = session.user;
-            this.currentView = "app";
-            this.showToast("Login successful!", "success");
-            this.currentPage = "dashboard";
-          } else if (event === "SIGNED_OUT") {
-            console.log("User signed out via auth state change");
-            this.user = null;
-            this.currentView = "auth";
-          }
-        },
-
-        async signInWithOAuth(provider) {
-          if (!this.supabase) {
-            this.showToast("Authentication not configured", "warning");
-            return;
-          }
-
-          console.log(`Attempting ${provider} OAuth login...`);
-          this.authLoading = true;
-
-          try {
-            const { error } = await this.supabase.auth.signInWithOAuth({
-              provider,
-              options: { redirectTo: window.location.href }
-            });
-            if (error) throw error;
-          } catch (error) {
-            console.error(`${provider} login failed:`, error);
-            this.showToast(`${provider} login failed: ${error.message}`, "error");
-          } finally {
-            this.authLoading = false;
-          }
-        },
-
-        async handleEmailSubmit() {
-          this.clearAuthErrors();
-
-          if (!this.auth.email) {
-            this.auth.errors.email = "Email is required";
-            return;
-          }
-          if (!this.auth.password) {
-            this.auth.errors.password = "Password is required";
-            return;
-          }
-
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(this.auth.email)) {
-            this.auth.errors.email = "Invalid email format";
-            return;
-          }
-
-          if (!this.supabase) {
-            this.showToast("Authentication not configured", "warning");
-            return;
-          }
-
-          this.authLoading = true;
-
-          try {
-            if (this.auth.isSignUp) {
-              await this.signUpWithEmail();
-            } else {
-              await this.signInWithEmail();
-            }
-          } finally {
-            this.authLoading = false;
-          }
-        },
-
-        async signInWithEmail() {
-          console.log("Attempting email login...");
-
-          try {
-            const { data, error } = await this.supabase.auth.signInWithPassword({
-              email: this.auth.email,
-              password: this.auth.password
-            });
-
-            if (error) throw error;
-
-            console.log("Email login successful:", data.user.email);
-            this.user = data.user;
-            this.currentView = "app";
-            this.showToast("Login successful!", "success");
-            this.clearAuthForm();
-            this.currentPage = "dashboard";
-          } catch (error) {
-            console.error("Email login failed:", error);
-            this.showToast("Login failed: " + error.message, "error");
-          }
-        },
-
-        async signUpWithEmail() {
-          console.log("Attempting email signup...");
-
-          try {
-            const { error } = await this.supabase.auth.signUp({
-              email: this.auth.email,
-              password: this.auth.password
-            });
-
-            if (error) throw error;
-
-            this.showToast("Account created! Please check your email for verification.", "success");
-            this.clearAuthForm();
-          } catch (error) {
-            console.error("Email signup failed:", error);
-            this.showToast("Sign up failed: " + error.message, "error");
-          }
-        },
-
-        async signOut() {
-          console.log("User signing out...");
-
-          try {
-            if (this.supabase) {
-              const { error } = await this.supabase.auth.signOut();
-              if (error) throw error;
-            }
-            this.showToast("Logged out successfully", "success");
-          } catch (error) {
-            console.error("Supabase logout failed:", error);
-            this.showToast("Logout failed: " + error.message, "error");
-          }
-
-          this.user = null;
-          this.currentView = "auth";
-        },
-
-        showToast(message, type = "info") {
-          const toastTypes = {
-            success: { icon: "check-circle", class: "alert-success" },
-            error: { icon: "x-circle", class: "alert-error" },
-            warning: { icon: "alert-triangle", class: "alert-warning" },
-            info: { icon: "info", class: "alert-info" }
-          };
-
-          const config = toastTypes[type] || toastTypes.info;
-
-          this.toast = {
-            show: true,
-            message,
-            class: config.class,
-            icon: config.icon
-          };
-
-          this.$nextTick(() => {
-            if (typeof lucide !== "undefined" && lucide.createIcons) {
-              lucide.createIcons();
-            }
-          });
-
-          setTimeout(() => {
-            this.toast.show = false;
-          }, 5000);
-        },
-
-        toggleSignUp() {
-          this.auth.isSignUp = !this.auth.isSignUp;
-          this.clearAuthErrors();
-          this.$nextTick(() => {
-            if (typeof lucide !== "undefined" && lucide.createIcons) {
-              lucide.createIcons();
-            }
-          });
-        },
-
-        clearAuthForm() {
-          this.auth.email = "";
-          this.auth.password = "";
-          this.clearAuthErrors();
-        },
-
-        clearAuthErrors() {
-          this.auth.errors = {};
-        },
-
-        getUserInitials() {
-          if (!this.user || !this.user.email) return "??";
-          return this.user.email.split("@")[0].substring(0, 2).toUpperCase();
-        },
-
-        getUserDisplayName() {
-          if (!this.user) return "Developer";
-          return this.user.user_metadata?.full_name ||
-                 this.user.user_metadata?.name ||
-                 this.user.email?.split('@')[0] ||
-                 "Developer";
-        },
-
-        getUserFullName() {
-          if (!this.user) return null;
-          return this.user.user_metadata?.full_name || this.user.user_metadata?.name;
-        },
-
-        getUserAvatar() {
-          if (!this.user) return "https://ui-avatars.com/api/?name=Developer";
-          return this.user.user_metadata?.avatar_url ||
-                 `https://ui-avatars.com/api/?name=${encodeURIComponent(this.user.email)}`;
         },
 
         formatDate(dateString) {
@@ -962,59 +820,1090 @@
           }
         },
 
-        initTheme() {
-          try {
-            const savedTheme = localStorage.getItem("theme") || "light";
-            this.darkMode = savedTheme === "dark";
-            document.documentElement.setAttribute("data-theme", savedTheme);
-          } catch (error) {
-            console.warn("localStorage not available, using default theme");
-            this.darkMode = false;
-          }
+        getUserInitials(user) {
+          if (!user?.email) return "??";
+          return user.email
+            .split("@")[0]
+            .substring(0, 2)
+            .toUpperCase();
         },
 
-        toggleTheme() {
-          const theme = this.darkMode ? "dark" : "light";
-          document.documentElement.setAttribute("data-theme", theme);
-
-          try {
-            localStorage.setItem("theme", theme);
-          } catch (error) {
-            console.warn("localStorage not available, theme preference not saved");
-          }
+        getUserDisplayName(user) {
+          if (!user) return "Developer";
+          return (
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name ||
+            user.email?.split("@")[0] ||
+            "Developer"
+          );
         },
 
-        handleMenuClick(event, page) {
-          console.log('Menu click:', page);
-          this.currentPage = page;
+        getUserAvatar(user) {
+          if (!user) return "https://ui-avatars.com/api/?name=Developer";
+          return (
+            user.user_metadata?.avatar_url ||
+            `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}`
+          );
+        }
+      };
 
-          // Close dropdown immediately
-          const dropdown = event.target.closest('.dropdown');
-          if (dropdown) {
-            const trigger = dropdown.querySelector('[tabindex="0"]');
-            if (trigger) {
-              trigger.blur();
-              // Also remove focus and close dropdown by clicking outside
-              document.activeElement.blur();
+      // Centralized API Service with Whitelist Management
+      const apiService = {
+        // Whitelist of endpoints that don't require authentication
+        AUTH_WHITELIST: [
+          /^\/auth\/notification\/[^\/]+$/,
+          /^\/\.well-known\/appspecific\/com\.chrome\.devtools\.json$/,
+          /^\/dev\/admin$/,
+          /^\/dev\/settings$/,
+          /^\/custom$/
+        ],
+
+        // Check if endpoint is in whitelist (doesn't require auth)
+        isWhitelisted(endpoint) {
+          return this.AUTH_WHITELIST.some(pattern => pattern.test(endpoint));
+        },
+
+        async call(endpoint, options = {}) {
+          const { method = "GET", data = null, requireAuth } = options;
+
+          const headers = {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          };
+
+          // Determine if auth is required
+          // If requireAuth is explicitly set, use that value
+          // Otherwise, require auth unless endpoint is in whitelist
+          const needsAuth =
+            requireAuth !== undefined
+              ? requireAuth
+              : !this.isWhitelisted(endpoint);
+
+          // Add auth token if required
+          if (needsAuth) {
+            const supabase = Alpine.store("app").supabase;
+
+            // Special handling for SIGNED_OUT event - use pending token if available
+            if (
+              endpoint.includes("/auth/callback/SIGNED_OUT") &&
+              window.pendingSignOutToken
+            ) {
+              headers["Authorization"] = `Bearer ${window.pendingSignOutToken}`;
+              // Clear the pending token after use
+              delete window.pendingSignOutToken;
+            } else if (supabase) {
+              try {
+                const {
+                  data: { session }
+                } = await supabase.auth.getSession();
+                if (session?.access_token) {
+                  headers["Authorization"] = `Bearer ${session.access_token}`;
+                } else {
+                  throw new Error(
+                    "Authentication required but no valid session found"
+                  );
+                }
+              } catch (error) {
+                console.error("Could not get auth token for API call:", error);
+                throw new Error(
+                  `Authentication failed for ${endpoint}: ${error.message}`
+                );
+              }
+            } else {
+              throw new Error(
+                `Authentication required for ${endpoint} but Supabase not initialized`
+              );
             }
           }
 
-          // Additional cleanup to ensure dropdown closes
+          const config = {
+            method,
+            headers
+          };
+
+          if (
+            data &&
+            (method === "POST" || method === "PUT" || method === "PATCH")
+          ) {
+            config.body = JSON.stringify(data);
+          }
+
+          const response = await utils.withTimeout(fetch(endpoint, config));
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          return await response.json();
+        },
+
+        // Specific API methods
+        async getConfig() {
+          // console.log("Loading configuration...");
+          const data = await this.call(APP_CONFIG.ENDPOINTS.CONFIG);
+
+          if (!data?.data) {
+            throw new Error("Invalid configuration response format");
+          }
+
+          return data.data;
+        },
+
+        async getPage(pageId) {
+          // console.log(`Loading ${pageId} page data...`);
+          if (pageId === "app-state") {
+            return await this.call("/dev/app_state");
+          }
+          return await this.call(`/auth/${pageId}`);
+        },
+
+        async notifyAuthEvent(event, eventData = {}) {
+          // console.log(`Notifying backend about auth event: ${event}`);
+
+          // Public events (no auth required): INITIAL_SESSION
+          // Private events (auth required): SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY
+          const publicEvents = ["INITIAL_SESSION"];
+          const isPublicEvent = publicEvents.includes(event);
+
+          const endpoint = isPublicEvent
+            ? `/auth/notification/${event}`
+            : `/auth/callback/${event}`;
+
+          const data = {
+            event: event,
+            timestamp: new Date().toISOString(),
+            ...eventData
+          };
+
+          return await this.call(endpoint, {
+            method: "POST",
+            data: data
+          });
+        }
+      };
+
+      // Services
+      const configService = {
+        async load() {
+          return await apiService.getConfig();
+        },
+
+        getFallbackConfig() {
+          return {
+            supabaseUrl: null,
+            supabaseKey: null,
+            backendUrl: "",
+            sentryDsn: "",
+            sentryEnvironment: "development",
+            sentryEnabled: false
+          };
+        }
+      };
+
+      const authService = {
+        _supabaseClient: null,
+
+        async initSupabase(config) {
+          // Return existing client if already initialized
+          if (this._supabaseClient) {
+            console.log(
+              "Supabase client already initialized, reusing existing instance"
+            );
+            return this._supabaseClient;
+          }
+
+          if (!config.supabaseUrl || !config.supabaseKey) {
+            throw new Error("Supabase configuration missing");
+          }
+
+          // console.log("Creating new Supabase client instance");
+          this._supabaseClient = supabase.createClient(
+            config.supabaseUrl,
+            config.supabaseKey
+          );
+
+          this._supabaseClient.auth.onAuthStateChange((event, session) => {
+            this.handleAuthStateChange(event, session);
+          });
+
+          return this._supabaseClient;
+        },
+
+        async handleAuthStateChange(event, session) {
+          const store = Alpine.store("app");
+          // console.log(`Supabase auth event: ${event}`);
+
+          try {
+            if (event === "SIGNED_IN" && session?.user) {
+              await this._handleSignedIn(session, store);
+            } else if (event === "SIGNED_OUT") {
+              await this._handleSignedOut(store);
+            } else if (event === "TOKEN_REFRESHED" && session) {
+              await this._handleTokenRefreshed(session, store);
+            } else if (event === "USER_UPDATED" && session) {
+              await this._handleUserUpdated(session, store);
+            } else if (event === "PASSWORD_RECOVERY") {
+              await this._handlePasswordRecovery();
+            } else if (event === "INITIAL_SESSION") {
+              await this._handleInitialSession();
+            }
+          } catch (error) {
+            console.error(`Error handling auth event ${event}:`, error);
+            toastService.show(`Auth error: ${error.message}`, "error");
+          }
+        },
+
+        async _handleSignedIn(session, store) {
+          // console.log("User signed in:", session.user.email);
+          store.user = session.user;
+          store.currentView = "app";
+          store.currentPage = "dashboard";
+          toastService.show("Login successful!", "success");
+
+          // Notify backend
+          await apiService.notifyAuthEvent("SIGNED_IN", {
+            session: {
+              user: session.user,
+              access_token: session.access_token
+            }
+          });
+        },
+
+        async _handleSignedOut(store) {
+          // console.log("User signed out");
+
+          // Notify backend first, before clearing store (access token still available)
+          try {
+            await apiService.notifyAuthEvent("SIGNED_OUT");
+          } catch (error) {
+            console.warn("Failed to notify backend about sign out:", error);
+            // Continue with local sign out even if backend notification fails
+          }
+
+          store.user = null;
+          store.currentView = "auth";
+          toastService.show("Signed out successfully", "info");
+        },
+
+        async _handleTokenRefreshed(session, store) {
+          // console.log("Token refreshed");
+          store.user = session.user;
+
+          // Notify backend
+          await apiService.notifyAuthEvent("TOKEN_REFRESHED", {
+            session: {
+              user: session.user,
+              access_token: session.access_token
+            }
+          });
+        },
+
+        async _handleUserUpdated(session, store) {
+          // console.log("User updated");
+          store.user = session.user;
+
+          // Notify backend
+          await apiService.notifyAuthEvent("USER_UPDATED", {
+            session: {
+              user: session.user,
+              access_token: session.access_token
+            }
+          });
+        },
+
+        async _handlePasswordRecovery() {
+          // console.log("Password recovery event");
+          await apiService.notifyAuthEvent("PASSWORD_RECOVERY");
+        },
+
+        async _handleInitialSession() {
+          // console.log("Initial session event");
+          await apiService.notifyAuthEvent("INITIAL_SESSION");
+        },
+
+        async checkSession() {
+          const supabase = Alpine.store("app").supabase;
+          if (!supabase) return false;
+
+          try {
+            const {
+              data: { session },
+              error
+            } = await supabase.auth.getSession();
+            if (error) throw error;
+
+            if (session?.user) {
+              Alpine.store("app").user = session.user;
+              return true;
+            }
+            return false;
+          } catch (error) {
+            console.error("Session check failed:", error);
+            toastService.show(
+              `Session check failed: ${error.message}`,
+              "error"
+            );
+            return false;
+          }
+        }
+      };
+
+      const toastService = {
+        show(message, type = "info") {
+          const config = TOAST_TYPES[type] || TOAST_TYPES.info;
+          const store = Alpine.store("toast");
+
+          store.show = true;
+          store.message = message;
+          store.class = config.class;
+          store.icon = config.icon;
+
+          // Auto-hide
           setTimeout(() => {
-            document.body.click();
-          }, 50);
-        }
-      });
+            store.show = false;
+          }, APP_CONFIG.TOAST_DURATION);
 
-      // Initialize on page load
-      document.addEventListener("DOMContentLoaded", () => {
-        console.log("Page loaded");
-        if (typeof lucide !== "undefined" && lucide.createIcons) {
-          lucide.createIcons();
-        }
-      });
+          // Refresh icons
+          this.refreshIcons();
+        },
 
-      // Global error handling
+        refreshIcons() {
+          requestAnimationFrame(() => {
+            if (typeof lucide !== "undefined" && lucide.createIcons) {
+              lucide.createIcons();
+            }
+          });
+        }
+      };
+
+      // Main Application Component
+      function devAdminApp() {
+        return {
+          initialized: false,
+
+          async init() {
+            if (this.initialized) {
+              // console.log("Application already initialized, skipping...");
+              return;
+            }
+
+            // console.log("Initializing Dev Admin Dashboard...");
+            this.initialized = true;
+
+            try {
+              await this.loadConfiguration();
+              await this.initializeServices();
+              await this.checkAuthentication();
+
+              // console.log("Application initialization completed");
+            } catch (error) {
+              console.error("Initialization failed:", error);
+              this.initialized = false; // Reset on failure
+              toastService.show(
+                `Initialization failed: ${error.message}`,
+                "error"
+              );
+              Alpine.store("app").currentView = "auth";
+            }
+          },
+
+          async loadConfiguration() {
+            Alpine.store("app").loadingMessage = "Loading configuration...";
+
+            try {
+              const config = await utils.retry(() => configService.load());
+              Alpine.store("app").config = config;
+              // console.log("Configuration loaded successfully");
+            } catch (error) {
+              console.warn("Using fallback configuration:", error.message);
+              Alpine.store("app").config = configService.getFallbackConfig();
+              toastService.show("Using default configuration", "warning");
+            }
+          },
+
+          async initializeServices() {
+            const config = Alpine.store("app").config;
+            Alpine.store("app").loadingMessage = "Setting up services...";
+
+            // Initialize Sentry
+            if (config.sentryEnabled && config.sentryDsn) {
+              this.initSentry(config);
+            }
+
+            // Initialize Supabase
+            if (config.supabaseUrl && config.supabaseKey) {
+              try {
+                Alpine.store("app").supabase = await authService.initSupabase(
+                  config
+                );
+              } catch (error) {
+                console.error("Supabase initialization failed:", error);
+                throw error;
+              }
+            } else {
+              toastService.show("Authentication not configured", "warning");
+              Alpine.store("app").currentView = "auth";
+              return;
+            }
+          },
+
+          async checkAuthentication() {
+            Alpine.store("app").loadingMessage = "Checking authentication...";
+
+            const isAuthenticated = await authService.checkSession();
+
+            Alpine.store("app").currentView = isAuthenticated ? "app" : "auth";
+            if (isAuthenticated) {
+              Alpine.store("app").currentPage = "dashboard";
+            }
+          },
+
+          initSentry(config) {
+            if (!config.sentryDsn) return;
+
+            try {
+              Sentry.init({
+                dsn: config.sentryDsn,
+                environment: config.sentryEnvironment,
+                tracesSampleRate:
+                  config.sentryEnvironment === "production" ? 0.1 : 1.0
+              });
+              // console.log("Sentry initialized successfully");
+            } catch (error) {
+              console.error("Sentry initialization failed:", error);
+            }
+          }
+        };
+      }
+
+      // Component Functions
+      function toastManager() {
+        return {
+          // This component uses the global store
+        };
+      }
+
+      function authComponent() {
+        return {
+          formData: { email: "", password: "" },
+          formErrors: {},
+          isSignUp: false,
+
+          oauthProviders: [
+            { id: "google", name: "Google", icon: "chrome" },
+            { id: "github", name: "GitHub", icon: "github" }
+          ],
+
+          async signInWithOAuth(provider) {
+            const supabase = Alpine.store("app").supabase;
+            if (!supabase) {
+              toastService.show("Authentication not configured", "warning");
+              return;
+            }
+
+            console.log(`Attempting ${provider} OAuth login...`);
+            Alpine.store("auth").loading = true;
+
+            try {
+              const { error } = await supabase.auth.signInWithOAuth({
+                provider,
+                options: { redirectTo: window.location.href }
+              });
+              if (error) throw error;
+            } catch (error) {
+              console.error(`${provider} login failed:`, error);
+              toastService.show(
+                `${provider} login failed: ${error.message}`,
+                "error"
+              );
+            } finally {
+              Alpine.store("auth").loading = false;
+            }
+          },
+
+          async handleEmailSubmit() {
+            this.clearErrors();
+
+            if (!this.validateForm()) return;
+
+            const supabase = Alpine.store("app").supabase;
+            if (!supabase) {
+              toastService.show("Authentication not configured", "warning");
+              return;
+            }
+
+            Alpine.store("auth").loading = true;
+
+            try {
+              if (this.isSignUp) {
+                await this.signUp(supabase);
+              } else {
+                await this.signIn(supabase);
+              }
+            } finally {
+              Alpine.store("auth").loading = false;
+            }
+          },
+
+          async signIn(supabase) {
+            console.log("Attempting email login...");
+
+            try {
+              const { data, error } = await supabase.auth.signInWithPassword({
+                email: this.formData.email,
+                password: this.formData.password
+              });
+
+              if (error) throw error;
+
+              // console.log("Email login successful:", data.user.email);
+              this.clearForm();
+            } catch (error) {
+              console.error("Email login failed:", error);
+              toastService.show(`Login failed: ${error.message}`, "error");
+            }
+          },
+
+          async signUp(supabase) {
+            // console.log("Attempting email signup...");
+
+            try {
+              const { error } = await supabase.auth.signUp({
+                email: this.formData.email,
+                password: this.formData.password
+              });
+
+              if (error) throw error;
+
+              toastService.show(
+                "Account created! Please check your email for verification.",
+                "success"
+              );
+              this.clearForm();
+            } catch (error) {
+              console.error("Email signup failed:", error);
+              toastService.show(`Sign up failed: ${error.message}`, "error");
+            }
+          },
+
+          validateForm() {
+            if (!this.formData.email) {
+              this.formErrors.email = "Email is required";
+              return false;
+            }
+
+            if (!this.formData.password) {
+              this.formErrors.password = "Password is required";
+              return false;
+            }
+
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(this.formData.email)) {
+              this.formErrors.email = "Invalid email format";
+              return false;
+            }
+
+            return true;
+          },
+
+          toggleSignUp() {
+            this.isSignUp = !this.isSignUp;
+            this.clearErrors();
+            toastService.refreshIcons();
+          },
+
+          clearForm() {
+            this.formData = { email: "", password: "" };
+            this.clearErrors();
+          },
+
+          clearErrors() {
+            this.formErrors = {};
+          }
+        };
+      }
+
+      function themeToggle() {
+        return {
+          isDark: false,
+          initialized: false,
+
+          init() {
+            if (this.initialized) {
+              // console.log("Theme toggle already initialized, skipping...");
+              return;
+            }
+            this.initialized = true;
+            this.loadTheme();
+
+            // Refresh icons after initialization
+            toastService.refreshIcons();
+          },
+
+          toggle() {
+            this.isDark = !this.isDark;
+            this.saveTheme();
+            this.applyTheme();
+
+            // Refresh icons after theme change
+            toastService.refreshIcons();
+          },
+
+          loadTheme() {
+            try {
+              const savedTheme =
+                localStorage.getItem(APP_CONFIG.THEME_STORAGE_KEY) || "light";
+              this.isDark = savedTheme === "dark";
+              this.applyTheme();
+            } catch (error) {
+              console.warn("localStorage not available, using default theme");
+              this.isDark = false;
+              this.applyTheme();
+            }
+          },
+
+          saveTheme() {
+            try {
+              const theme = this.isDark ? "dark" : "light";
+              localStorage.setItem(APP_CONFIG.THEME_STORAGE_KEY, theme);
+            } catch (error) {
+              console.warn(
+                "localStorage not available, theme preference not saved"
+              );
+            }
+          },
+
+          applyTheme() {
+            const theme = this.isDark ? "dark" : "light";
+            document.documentElement.setAttribute("data-theme", theme);
+
+            // Force a repaint
+            document.documentElement.style.display = "none";
+            document.documentElement.offsetHeight; // Trigger reflow
+            document.documentElement.style.display = "";
+          }
+        };
+      }
+
+      function userMenu() {
+        return {
+          menuItems: [
+            { id: "dashboard", label: "Dashboard", icon: "layout-dashboard" },
+            { id: "onboarding", label: "Onboarding", icon: "user-check" },
+            { id: "profile", label: "Profile", icon: "user" },
+            { id: "app-state", label: "App State", icon: "settings" }
+          ],
+
+          async selectMenuItem(item) {
+            try {
+              // Use centralized API service for page navigation
+              const data = await apiService.getPage(item.id);
+
+              // Update the page
+              Alpine.store("app").currentPage = item.id;
+
+              // Store page data for components to use, including the message
+              Alpine.store("app").pageData = {
+                ...(data.data || {}),
+                message: data.message,
+                status: data.status
+              };
+            } catch (error) {
+              console.error(`Error loading ${item.id} page:`, error);
+              toastService.show(`Error loading ${item.label} page`, "error");
+
+              // Fallback to local navigation
+              Alpine.store("app").currentPage = item.id;
+              Alpine.store("app").pageData = {};
+            }
+
+            this.closeDropdown();
+          },
+
+          closeDropdown() {
+            // Close dropdown immediately
+            document.activeElement.blur();
+
+            // Additional cleanup
+            setTimeout(() => {
+              const dropdownInputs = document.querySelectorAll(
+                '.dropdown input[type="checkbox"]'
+              );
+              dropdownInputs.forEach(input => (input.checked = false));
+            }, 10);
+          },
+
+          async signOut() {
+            if (this.isSigningOut) {
+              // console.log("Sign out already in progress...");
+              return;
+            }
+
+            this.isSigningOut = true;
+            // console.log("User signing out...");
+
+            try {
+              const supabase = Alpine.store("app").supabase;
+              if (supabase) {
+                // Capture current session before sign out (for backend notification)
+                const {
+                  data: { session }
+                } = await supabase.auth.getSession();
+                if (session?.access_token) {
+                  // Store the access token temporarily for the SIGNED_OUT event
+                  window.pendingSignOutToken = session.access_token;
+                }
+
+                // This will trigger the auth state change handler which will handle backend notification
+                const { error } = await supabase.auth.signOut();
+                if (error) throw error;
+              } else {
+                // Fallback if no supabase
+                Alpine.store("app").user = null;
+                Alpine.store("app").currentView = "auth";
+                toastService.show("Signed out successfully", "info");
+              }
+            } catch (error) {
+              console.error("Logout failed:", error);
+              toastService.show(`Logout failed: ${error.message}`, "error");
+            } finally {
+              this.isSigningOut = false;
+            }
+          },
+
+          isSigningOut: false,
+
+          hasAvatar() {
+            const user = Alpine.store("app").user;
+            return user?.user_metadata?.avatar_url;
+          },
+
+          getAvatarUrl() {
+            return utils.getUserAvatar(Alpine.store("app").user);
+          },
+
+          getInitials() {
+            return utils.getUserInitials(Alpine.store("app").user);
+          }
+        };
+      }
+
+      function pageManager() {
+        return {
+          isTransitioning: false,
+          initialized: false,
+
+          init() {
+            if (this.initialized) {
+              // console.log("Page manager already initialized, skipping...");
+              return;
+            }
+            this.initialized = true;
+
+            this.$watch("$store.app.currentPage", () => {
+              this.handlePageTransition();
+            });
+          },
+
+          handlePageTransition() {
+            this.isTransitioning = true;
+            setTimeout(() => {
+              this.isTransitioning = false;
+              toastService.refreshIcons();
+            }, 50);
+          }
+        };
+      }
+
+      function dashboardPage() {
+        return {
+          stats: [
+            {
+              id: "projects",
+              label: "Total Projects",
+              value: "12",
+              icon: "folder",
+              color: "primary"
+            },
+            {
+              id: "tasks",
+              label: "Active Tasks",
+              value: "8",
+              icon: "check-circle",
+              color: "success"
+            },
+            {
+              id: "issues",
+              label: "Issues",
+              value: "3",
+              icon: "alert-circle",
+              color: "warning"
+            }
+          ],
+
+          getUserDisplayName() {
+            return utils.getUserDisplayName(Alpine.store("app").user);
+          }
+        };
+      }
+
+      function profilePage() {
+        return {
+          personalFields: [],
+          accountFields: [],
+          initialized: false,
+
+          init() {
+            if (this.initialized) {
+              // console.log("Profile page already initialized, skipping...");
+              return;
+            }
+            this.initialized = true;
+
+            this.updateFields();
+
+            // Watch for page data changes
+            this.$watch("$store.app.pageData", () => {
+              this.updateFields();
+            });
+          },
+
+          updateFields() {
+            const user = Alpine.store("app").user;
+            const pageData = Alpine.store("app").pageData;
+
+            // Use backend profile data if available, fallback to user data
+            const profileData = pageData || user;
+
+            this.personalFields = [
+              {
+                id: "fullName",
+                label: "Full Name",
+                value:
+                  profileData?.user_metadata?.full_name ||
+                  profileData?.user_metadata?.name ||
+                  profileData?.username ||
+                  "Not provided"
+              },
+              {
+                id: "email",
+                label: "Email",
+                value: profileData?.email || "Not provided",
+                badge: profileData?.email_confirmed_at
+                  ? { type: "success", text: "Verified" }
+                  : { type: "warning", text: "Unverified" }
+              },
+              {
+                id: "username",
+                label: "Username",
+                value: profileData?.username || "Not provided"
+              }
+            ];
+
+            this.accountFields = [
+              {
+                id: "userId",
+                label: "User ID",
+                value: profileData?.id || "Unknown",
+                mono: true
+              },
+              {
+                id: "joined",
+                label: "Joined",
+                value: utils.formatDate(profileData?.created_at) || "Unknown"
+              },
+              {
+                id: "lastSignIn",
+                label: "Last Sign In",
+                value:
+                  utils.formatDate(profileData?.last_sign_in_at) || "Unknown"
+              },
+              {
+                id: "provider",
+                label: "Authentication Provider",
+                value: profileData?.app_metadata?.provider || "email",
+                icon: "shield-check"
+              }
+            ];
+          },
+
+          getUserDisplayName() {
+            return utils.getUserDisplayName(Alpine.store("app").user);
+          },
+
+          getUserEmail() {
+            return Alpine.store("app").user?.email || "";
+          },
+
+          getUserAvatarUrl() {
+            return utils.getUserAvatar(Alpine.store("app").user);
+          },
+
+          getUserRoles() {
+            const pageData = Alpine.store("app").pageData;
+            const user = Alpine.store("app").user;
+
+            // Use backend profile data if available, fallback to user data
+            const profileData = pageData || user;
+
+            // Return roles array, default to empty array if not available
+            return profileData?.roles || [];
+          },
+
+          formatRole(role) {
+            if (!role) return "";
+
+            // Return role as-is without case conversion
+            return role;
+          }
+        };
+      }
+
+      function appStatePage() {
+        return {
+          appStateData: null,
+          isLoading: false,
+          errorMessage: "",
+          initialized: false,
+
+          init() {
+            if (this.initialized) {
+              // console.log("App State page already initialized, skipping...");
+              return;
+            }
+            this.initialized = true;
+
+            // Watch for page data changes
+            this.$watch("$store.app.pageData", newData => {
+              this.updateAppStateData(newData);
+            });
+
+            // Initial data update
+            this.updateAppStateData(Alpine.store("app").pageData);
+          },
+
+          updateAppStateData(pageData) {
+            this.errorMessage = "";
+
+            if (pageData && pageData.status === "success" && pageData.data) {
+              this.appStateData = pageData.data;
+            } else if (pageData && pageData.status === "http error") {
+              this.errorMessage =
+                pageData.message || "Failed to load app state data";
+              this.appStateData = null;
+            } else {
+              this.appStateData = null;
+            }
+          },
+
+          async refreshData() {
+            if (this.isLoading) return;
+
+            this.isLoading = true;
+            this.errorMessage = "";
+
+            try {
+              const data = await apiService.call("/dev/app_state");
+
+              // Update the store
+              Alpine.store("app").pageData = {
+                message: data.message,
+                status: data.status,
+                ...data.data
+              };
+
+              toastService.show("App state refreshed successfully", "success");
+            } catch (error) {
+              console.error("Error refreshing app state:", error);
+              this.errorMessage =
+                error.message || "Failed to refresh app state data";
+              toastService.show("Failed to refresh app state", "error");
+            } finally {
+              this.isLoading = false;
+            }
+          },
+
+          getPageTitle() {
+            const pageData = Alpine.store("app").pageData;
+            return pageData?.message || "Application State";
+          },
+
+          getPageDescription() {
+            return "Real-time application state and configuration data";
+          },
+
+          formatAppStateData() {
+            if (!this.appStateData) return "";
+            try {
+              return JSON.stringify(this.appStateData, null, 2);
+            } catch (e) {
+              return "Error formatting data";
+            }
+          }
+        };
+      }
+
+      function onboardingPage() {
+        return {
+          progressSteps: [
+            { id: "profile", label: "Profile Setup", progress: 100 },
+            { id: "auth", label: "Authentication", progress: 100 },
+            { id: "dashboard", label: "Dashboard Exploration", progress: 25 }
+          ],
+          initialized: false,
+          headlineMessage: "",
+
+          init() {
+            if (this.initialized) {
+              // console.log("Onboarding page already initialized, skipping...");
+              return;
+            }
+            this.initialized = true;
+
+            // Update headline when page data changes
+            this.$watch("$store.app.pageData", newData => {
+              this.updateHeadlineMessage();
+            });
+
+            this.$watch("$store.app.currentPage", page => {
+              // Update dashboard exploration progress
+              const dashboardStep = this.progressSteps.find(
+                s => s.id === "dashboard"
+              );
+              if (dashboardStep) {
+                dashboardStep.progress = page === "dashboard" ? 100 : 25;
+              }
+
+              // Update headline when switching to onboarding page
+              if (page === "onboarding") {
+                this.updateHeadlineMessage();
+              }
+            });
+
+            // Initial headline update
+            this.updateHeadlineMessage();
+          },
+
+          updateHeadlineMessage() {
+            const pageData = Alpine.store("app").pageData;
+            if (pageData && pageData.message) {
+              this.headlineMessage = pageData.message;
+            } else {
+              this.headlineMessage = "";
+            }
+          },
+
+          getHeadlineMessage() {
+            return this.headlineMessage || "";
+          },
+
+          getUserDisplayName() {
+            return utils.getUserDisplayName(Alpine.store("app").user);
+          }
+        };
+      }
+
+      // Global Error Handling
       window.addEventListener("error", e => {
         console.error("Global error:", e.error);
         if (typeof Sentry !== "undefined") {
@@ -1028,6 +1917,12 @@
           Sentry.captureException(e.reason);
         }
         e.preventDefault();
+      });
+
+      // Initialize icons when DOM is ready
+      document.addEventListener("DOMContentLoaded", () => {
+        // console.log("Page loaded");
+        toastService.refreshIcons();
       });
     </script>
 
