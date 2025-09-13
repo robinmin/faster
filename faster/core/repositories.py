@@ -65,9 +65,10 @@ class AppRepository(BaseRepository):
         left: str | None = None,
         right: str | None = None,
         in_used_only: bool = True,
-    ) -> dict[str, dict[str, Any]]:
+    ) -> dict[str, dict[str, list[str]]]:
         """
-        Load SYS_MAP as {category: {left: right}} dictionary structure.
+        Load SYS_MAP as {category: {left: [right1, right2, ...]}} dictionary structure.
+        Each left value can map to multiple right values.
 
         Args:
             category: Filter by category name (optional)
@@ -76,7 +77,7 @@ class AppRepository(BaseRepository):
             in_used_only: Only return active records (default: True)
 
         Returns:
-            Nested dictionary: {category: {left_value: right_value}}
+            Nested dictionary: {category: {left_value: [right_value1, right_value2, ...]}}
             Empty dict if no records found
 
         Raises:
@@ -84,8 +85,8 @@ class AppRepository(BaseRepository):
 
         Example:
             >>> repo = AppRepository()
-            >>> data = await repo.get_sys_map(category="user_settings")
-            >>> print(data)  # {"user_settings": {"theme": "dark", "lang": "en"}}
+            >>> data = await repo.get_sys_map(category="tag_role")
+            >>> print(data)  # {"tag_role": {"admin": ["read", "write"], "user": ["read"]}}
         """
         try:
             async with self.session(readonly=True) as session:
@@ -108,27 +109,30 @@ class AppRepository(BaseRepository):
                 result = await session.exec(query)
                 rows: Sequence[SysMap] = result.all()
 
-                data: dict[str, dict[str, Any]] = {}
+                data: dict[str, dict[str, list[str]]] = {}
                 for sys_map in rows:
                     if sys_map.category not in data:
                         data[sys_map.category] = {}
-                    data[sys_map.category][sys_map.left_value] = sys_map.right_value
+                    if sys_map.left_value not in data[sys_map.category]:
+                        data[sys_map.category][sys_map.left_value] = []
+                    data[sys_map.category][sys_map.left_value].append(sys_map.right_value)
 
                 return data
         except Exception as e:
             logger.error(f"Failed to get sys_map: {e}", extra={"category": category, "left": left, "right": right})
             raise DBError(f"Failed to retrieve system map data: {e}") from e
 
-    async def set_sys_map(self, category: str, values: dict[str, str]) -> bool:
+    async def set_sys_map(self, category: str, values: dict[str, list[str]]) -> bool:
         """
         Save/update SYS_MAP entries for a category using soft-delete pattern.
+        Each left value can map to multiple right values.
 
         First marks all existing entries as inactive (in_used=0), then creates/updates
         the provided entries as active (in_used=1).
 
         Args:
             category: Category name (required, non-empty string)
-            values: Dictionary of {left_value: right_value} pairs (required, non-empty)
+            values: Dictionary of {left_value: [right_value1, right_value2, ...]} pairs (required, non-empty)
 
         Returns:
             True if successful, False otherwise
@@ -139,7 +143,7 @@ class AppRepository(BaseRepository):
 
         Example:
             >>> repo = AppRepository()
-            >>> success = await repo.set_sys_map("user_settings", {"theme": "dark", "lang": "en"})
+            >>> success = await repo.set_sys_map("tag_role", {"admin": ["read", "write"], "user": ["read"]})
             >>> print(success)  # True
         """
         # Input validation
@@ -153,16 +157,13 @@ class AppRepository(BaseRepository):
                 # Soft-delete: mark all existing entries as inactive using BaseRepository method
                 _ = await self.soft_delete(self.table_name(SysMap), {"C_CATEGORY": category}, session)
 
-                # Create/update entries with new values
-                for left_value, right_value in values.items():
-                    existing_map = await session.get(SysMap, (category, left_value))
-                    if existing_map:
-                        # Update existing record
-                        existing_map.right_value = right_value
-                        existing_map.in_used = True
-                        existing_map.updated_at = datetime.now()
-                    else:
-                        # Create new record
+                # Create entries for each left_value -> right_value mapping
+                for left_value, right_values in values.items():
+                    if not right_values:  # Skip empty lists
+                        continue
+
+                    for right_value in right_values:
+                        # Create new record for each left-right pair
                         new_map = SysMap(
                             category=category,
                             left_value=left_value,
