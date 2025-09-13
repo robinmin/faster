@@ -66,9 +66,9 @@ class TestAuthServiceRoles:
         """
 
         # Arrange
-        async def sysmap_side_effect(category: str, left: str | None = None) -> dict[str, str]:
+        async def sysmap_side_effect(category: str, left: str | None = None) -> dict[str, list[str]]:
             if left is None:  # Called for lazy initialization
-                return {"protected": '["admin"]', "editor-content": '["editor", "admin"]'}
+                return {"protected": ["admin"], "editor-content": ["editor", "admin"]}
             return {}
 
         mock_sysmap_get = mocker.patch(
