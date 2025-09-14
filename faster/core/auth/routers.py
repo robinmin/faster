@@ -28,15 +28,14 @@ if not jwks_url and settings.supabase_url:
     jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
 
 auth_service = AuthService(
-    jwt_secret=settings.jwt_secret_key or "",
-    algorithms=settings.jwt_algorithm.split(",") if settings.jwt_algorithm else None,
-    expiry_minutes=settings.jwt_expiry_minutes,
     supabase_url=settings.supabase_url or "",
     supabase_anon_key=settings.supabase_anon_key or "",
     supabase_service_key=settings.supabase_service_key or "",
     supabase_jwks_url=jwks_url or "",
     supabase_audience=settings.supabase_audience or "",
     auto_refresh_jwks=settings.auto_refresh_jwks,
+    jwks_cache_ttl_seconds=settings.jwks_cache_ttl_seconds,
+    user_cache_ttl_seconds=settings.user_cache_ttl_seconds,
 )
 
 
