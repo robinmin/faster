@@ -24,26 +24,22 @@ logger = get_logger(__name__)
 class AuthService:
     def __init__(
         self,
-        jwt_secret: str,
-        algorithms: list[str] | None = None,
-        expiry_minutes: int = 60,
         supabase_url: str = "",
         supabase_anon_key: str = "",
         supabase_service_key: str = "",
         supabase_jwks_url: str = "",
-        # supabase_client_id: str = "",
         supabase_audience: str = "",
         auto_refresh_jwks: bool = True,
+        jwks_cache_ttl_seconds: int = 3600,
+        user_cache_ttl_seconds: int = 3600,
     ):
-        self._jwt_secret = jwt_secret
-        self._algorithms = algorithms.split(",") if isinstance(algorithms, str) else (algorithms or ["HS2G"])
-        self._expiry_minutes = expiry_minutes
+        self._jwks_cache_ttl_seconds = jwks_cache_ttl_seconds
+        self._user_cache_ttl_seconds = user_cache_ttl_seconds
 
         self._supabase_url = supabase_url
         self._supabase_anon_key = supabase_anon_key
         self._supabase_service_key = supabase_service_key
         self._supabase_jwks_url = supabase_jwks_url
-        # self._supabase_client_id = supabase_client_id
         self._supabase_audience = supabase_audience
         self._auto_refresh_jwks = auto_refresh_jwks
 
@@ -52,9 +48,8 @@ class AuthService:
             supabase_anon_key=self._supabase_anon_key,
             supabase_service_key=self._supabase_service_key,
             supabase_jwks_url=self._supabase_jwks_url,
-            # supabase_client_id=self._supabase_client_id,
             supabase_audience=self._supabase_audience,
-            cache_ttl=self._expiry_minutes * 60,
+            cache_ttl=self._jwks_cache_ttl_seconds,
             auto_refresh_jwks=self._auto_refresh_jwks,
         )
 
@@ -269,7 +264,7 @@ class AuthService:
                 if from_cache:
                     try:
                         profile_json = db_profile.model_dump_json()
-                        cache_success = await set_user_profile(user_id, profile_json, self._expiry_minutes * 60)
+                        cache_success = await set_user_profile(user_id, profile_json, self._user_cache_ttl_seconds)
                         if cache_success:
                             logger.debug(f"Updated Redis cache with database data for user ID: {user_id}")
                         else:
@@ -305,7 +300,7 @@ class AuthService:
                 if from_cache:
                     try:
                         profile_json = supabase_profile.model_dump_json()
-                        cache_success = await set_user_profile(user_id, profile_json, self._expiry_minutes * 60)
+                        cache_success = await set_user_profile(user_id, profile_json, self._user_cache_ttl_seconds)
                         if cache_success:
                             logger.debug(f"Updated Redis cache with Supabase data for user ID: {user_id}")
                         else:
