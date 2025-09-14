@@ -1,6 +1,4 @@
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from supabase_auth.types import User
 
 ###############################################################################
@@ -9,6 +7,7 @@ from supabase_auth.types import User
 # Use to define all non-database related entities only(NEVER add any business logic).
 #
 ###############################################################################
+
 
 class UserProfileData(User):
     """
@@ -28,16 +27,6 @@ class UserProfileData(User):
     to provide a single, consistent user representation.
     """
 
-
-class AuthUser(BaseModel):
-    """Schema for authenticated user (legacy - consider removing if not used)."""
-
-    email: EmailStr = Field(..., description="User's email address.")
-    id: str
-    token: str
-    raw: dict[str, Any]
-
-    model_config = ConfigDict(from_attributes=True)
 
 ###############################################################################
 # End of models
