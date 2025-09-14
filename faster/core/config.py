@@ -71,9 +71,8 @@ class Settings(BaseSettings):
 
     # Security settings
     auth_enabled: bool = Field(default=True, description="Enable authentication")
-    jwt_secret_key: str | None = Field(default=None, description="JWT secret key")
-    jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
-    jwt_expiry_minutes: int = Field(default=60, description="JWT expiry time in minutes")
+    jwks_cache_ttl_seconds: int = Field(default=3600, description="JWKS cache TTL in seconds")
+    user_cache_ttl_seconds: int = Field(default=3600, description="User profile cache TTL in seconds")
 
     # CORS settings
     cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
@@ -142,7 +141,6 @@ class Settings(BaseSettings):
             # "stripe_secret_key",
             # "stripe_webhook_secret",
             # "stripe_publishable_key",
-            "jwt_secret_key",
         ]
         for field_name in required_fields:
             if getattr(self, field_name) is None:
