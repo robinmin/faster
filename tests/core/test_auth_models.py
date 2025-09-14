@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import ValidationError
 import pytest
 
-from faster.core.auth.models import AuthUser, UserProfileData
+from faster.core.auth.models import UserProfileData
 
 
 class TestUserProfileData:
@@ -366,183 +366,6 @@ class TestUserProfileData:
         assert user.role == "authenticated"
 
 
-class TestAuthUserValidation:
-    """Test AuthUser model validation rules."""
-
-    def test_auth_user_valid_email(self) -> None:
-        """Test AuthUser creation with valid email."""
-        # Test passes if no exception is raised during creation
-        _ = AuthUser(email="test@example.com", id="user-123", token="jwt-token", raw={"key": "value"})
-
-    def test_auth_user_invalid_email(self) -> None:
-        """Test AuthUser with invalid email raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            _ = AuthUser(email="invalid-email", id="user-123", token="jwt-token", raw={})
-
-        # Verify the error is specifically about email validation
-        assert "email" in str(exc_info.value).lower()
-
-    def test_auth_user_edge_cases(self) -> None:
-        """Test AuthUser with edge case emails."""
-        # Valid edge cases
-        valid_emails = ["user+tag@example.com", "user.name@domain.co.uk", "123@test.com"]
-
-        for email in valid_emails:
-            _ = AuthUser(email=email, id="user-123", token="jwt-token", raw={})
-            # Test passes if no exception is raised
-
-        # Invalid edge cases
-        invalid_emails = ["@example.com", "user@", "user", "", "user@.com"]
-
-        for email in invalid_emails:
-            with pytest.raises(ValidationError):
-                _ = AuthUser(email=email, id="user-123", token="jwt-token", raw={})
-
-    def test_auth_user_creation(self) -> None:
-        """Test AuthUser creation with valid data."""
-        auth_user_data: dict[str, Any] = {
-            "email": "test@example.com",
-            "id": "user-123",
-            "token": "jwt.token.here",
-            "raw": {"sub": "user-123", "email": "test@example.com", "aud": "authenticated"},
-        }
-
-        auth_user = AuthUser(
-            email=auth_user_data["email"],
-            id=auth_user_data["id"],
-            token=auth_user_data["token"],
-            raw=auth_user_data["raw"],
-        )
-
-        assert auth_user.email == "test@example.com"
-        assert auth_user.id == "user-123"
-        assert auth_user.token == "jwt.token.here"
-        assert auth_user.raw == {"sub": "user-123", "email": "test@example.com", "aud": "authenticated"}
-
-    def test_auth_user_with_minimal_data(self) -> None:
-        """Test AuthUser with minimal required data."""
-        minimal_data: dict[str, Any] = {
-            "email": "test@example.com",
-            "id": "user-123",
-            "token": "jwt.token",
-            "raw": {},
-        }
-
-        auth_user = AuthUser(
-            email=minimal_data["email"],
-            id=minimal_data["id"],
-            token=minimal_data["token"],
-            raw=minimal_data["raw"],
-        )
-
-        assert auth_user.email == "test@example.com"
-        assert auth_user.id == "user-123"
-        assert auth_user.token == "jwt.token"
-        assert auth_user.raw == {}
-
-    def test_auth_user_json_serialization(self) -> None:
-        """Test AuthUser JSON serialization."""
-        auth_user_data: dict[str, Any] = {
-            "email": "test@example.com",
-            "id": "user-123",
-            "token": "jwt.token.here",
-            "raw": {"sub": "user-123", "email": "test@example.com"},
-        }
-
-        auth_user = AuthUser(
-            email=auth_user_data["email"],
-            id=auth_user_data["id"],
-            token=auth_user_data["token"],
-            raw=auth_user_data["raw"],
-        )
-        json_str = auth_user.model_dump_json()
-
-        # Parse back to verify
-        parsed = json.loads(json_str)
-        assert parsed["email"] == "test@example.com"
-        assert parsed["id"] == "user-123"
-        assert parsed["token"] == "jwt.token.here"
-
-    def test_auth_user_dict_conversion(self) -> None:
-        """Test AuthUser to dict conversion."""
-        auth_user_data: dict[str, Any] = {
-            "email": "test@example.com",
-            "id": "user-123",
-            "token": "jwt.token.here",
-            "raw": {"sub": "user-123", "email": "test@example.com"},
-        }
-
-        auth_user = AuthUser(
-            email=auth_user_data["email"],
-            id=auth_user_data["id"],
-            token=auth_user_data["token"],
-            raw=auth_user_data["raw"],
-        )
-        user_dict = auth_user.model_dump()
-
-        assert user_dict["email"] == "test@example.com"
-        assert user_dict["id"] == "user-123"
-        assert user_dict["token"] == "jwt.token.here"
-        assert isinstance(user_dict["raw"], dict)
-
-    def test_auth_user_equality(self) -> None:
-        """Test AuthUser equality comparison."""
-        auth_user_data: dict[str, Any] = {
-            "email": "test@example.com",
-            "id": "user-123",
-            "token": "jwt.token",
-            "raw": {"sub": "user-123"},
-        }
-
-        user1 = AuthUser(
-            email=auth_user_data["email"],
-            id=auth_user_data["id"],
-            token=auth_user_data["token"],
-            raw=auth_user_data["raw"],
-        )
-        user2 = AuthUser(
-            email=auth_user_data["email"],
-            id=auth_user_data["id"],
-            token=auth_user_data["token"],
-            raw=auth_user_data["raw"],
-        )
-
-        assert user1 == user2
-
-        # Modify one field
-        user2.email = "different@example.com"
-        assert user1 != user2
-
-    def test_auth_user_with_complex_raw_data(self) -> None:
-        """Test AuthUser with complex raw data."""
-        complex_data: dict[str, Any] = {
-            "email": "test@example.com",
-            "id": "user-123",
-            "token": "jwt.token",
-            "raw": {
-                "sub": "user-123",
-                "email": "test@example.com",
-                "aud": "authenticated",
-                "role": "admin",
-                "app_metadata": {"provider": "google"},
-                "user_metadata": {"name": "Test User"},
-                "exp": 1638360000,
-                "iat": 1638356400,
-            },
-        }
-
-        auth_user = AuthUser(
-            email=complex_data["email"],
-            id=complex_data["id"],
-            token=complex_data["token"],
-            raw=complex_data["raw"],
-        )
-
-        assert auth_user.raw["sub"] == "user-123"
-        assert auth_user.raw["app_metadata"]["provider"] == "google"
-        assert auth_user.raw["exp"] == 1638360000
-
-
 class TestModelValidation:
     """Test model validation and error handling."""
 
@@ -567,39 +390,10 @@ class TestModelValidation:
         with pytest.raises(ValidationError):
             _ = UserProfileData(**invalid_data)
 
-    def test_auth_user_missing_required_field(self) -> None:
-        """Test AuthUser validation with missing required field."""
-        invalid_data: dict[str, Any] = {
-            "email": "test@example.com",
-            "id": "user-123",
-            "raw": {},
-            # Missing 'token' field
-        }
-
-        with pytest.raises(ValidationError):
-            _ = AuthUser(**invalid_data)
-
     def test_user_profile_data_invalid_email_format(self) -> None:
         """Test UserProfileData with invalid email format."""
         # Note: UserProfileData inherits from Supabase User which may not validate email format
         # This test may need adjustment based on actual validation behavior
-
-    def test_auth_user_invalid_email_format(self) -> None:
-        """Test AuthUser with invalid email format."""
-        invalid_data: dict[str, Any] = {
-            "email": "invalid-email-format",
-            "id": "user-123",
-            "token": "jwt.token",
-            "raw": {},
-        }
-
-        with pytest.raises(ValidationError):
-            _ = AuthUser(
-                email=invalid_data["email"],
-                id=invalid_data["id"],
-                token=invalid_data["token"],
-                raw=invalid_data["raw"],
-            )
 
 
 class TestModelSerializationEdgeCases:
@@ -644,26 +438,6 @@ class TestModelSerializationEdgeCases:
         parsed = json.loads(json_str)
         assert parsed["email_confirmed_at"] is None
         assert parsed["phone"] is None
-
-    def test_auth_user_with_empty_raw_dict(self) -> None:
-        """Test AuthUser with empty raw dict."""
-        user_data: dict[str, Any] = {
-            "email": "test@example.com",
-            "id": "user-123",
-            "token": "jwt.token",
-            "raw": {},
-        }
-
-        auth_user = AuthUser(
-            email=user_data["email"],
-            id=user_data["id"],
-            token=user_data["token"],
-            raw=user_data["raw"],
-        )
-        json_str = auth_user.model_dump_json()
-
-        parsed = json.loads(json_str)
-        assert parsed["raw"] == {}
 
     def test_user_profile_data_with_special_characters(self) -> None:
         """Test UserProfileData with special characters in metadata."""
