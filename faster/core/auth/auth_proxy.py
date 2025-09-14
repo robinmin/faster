@@ -27,7 +27,6 @@ class AuthProxy:
         supabase_anon_key: str,
         supabase_service_key: str,
         supabase_jwks_url: str,
-        # supabase_client_id: str,
         supabase_audience: str,
         cache_ttl: int = 3600,
         auto_refresh_jwks: bool = True,
@@ -37,7 +36,6 @@ class AuthProxy:
         self._supabase_anon_key = supabase_anon_key
         self._supabase_service_key = supabase_service_key
         self._supabase_jwks_url = supabase_jwks_url
-        # self._supabase_client_id = supabase_client_id
         self._supabase_audience = supabase_audience
         self._cache_ttl = cache_ttl
         self._auto_refresh_jwks = auto_refresh_jwks
