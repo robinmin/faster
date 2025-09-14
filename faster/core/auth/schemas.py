@@ -183,3 +183,137 @@ class UserRole(MyBase, table=True):
     id: int | None = Field(default=None, primary_key=True, description="Primary key")
     user_auth_id: str = Field(max_length=64, sa_column_kwargs={"name": "C_USER_AUTH_ID"}, description="User auth ID")
     role: str = Field(max_length=32, sa_column_kwargs={"name": "C_ROLE"}, description="User role")
+
+
+class UserAction(MyBase, table=True):
+    """
+    User action table to store all user events and behaviors for tracking and analytics.
+    Initially designed for Supabase auth events, but extensible for all user interactions.
+    """
+
+    __tablename__ = "AUTH_USER_ACTION"
+    __table_args__ = (
+        Index("idx_user_action_user_auth_id", "C_USER_AUTH_ID"),
+        Index("idx_user_action_timestamp", "D_TIMESTAMP"),
+        Index("idx_user_action_event_type", "C_EVENT_TYPE"),
+        Index("idx_user_action_event_name", "C_EVENT_NAME"),
+        Index("idx_user_action_trace_id", "C_TRACE_ID"),
+        Index("idx_user_action_session_id", "C_SESSION_ID"),
+        Index("idx_user_action_source", "C_EVENT_SOURCE"),
+        # Composite indexes for common queries
+        Index("idx_user_action_user_time", "C_USER_AUTH_ID", "D_TIMESTAMP"),
+        Index("idx_user_action_type_time", "C_EVENT_TYPE", "D_TIMESTAMP"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True, description="Primary key")
+
+    # Core identification
+    user_auth_id: str | None = Field(
+        default=None,
+        max_length=64,
+        sa_column_kwargs={"name": "C_USER_AUTH_ID"},
+        description="User auth ID (null for anonymous events)",
+    )
+    trace_id: str | None = Field(
+        default=None,
+        max_length=128,
+        sa_column_kwargs={"name": "C_TRACE_ID"},
+        description="Trace ID for correlating related events",
+    )
+    session_id: str | None = Field(
+        default=None,
+        max_length=128,
+        sa_column_kwargs={"name": "C_SESSION_ID"},
+        description="Session ID for grouping user actions",
+    )
+
+    # Event categorization
+    event_type: str = Field(
+        max_length=32,
+        sa_column_kwargs={"name": "C_EVENT_TYPE"},
+        description="Event category (auth, navigation, api_call, user_action, system)",
+    )
+    event_name: str = Field(
+        max_length=64,
+        sa_column_kwargs={"name": "C_EVENT_NAME"},
+        description="Specific event name (login, logout, page_view, button_click, etc.)",
+    )
+    event_source: str = Field(
+        max_length=32,
+        sa_column_kwargs={"name": "C_EVENT_SOURCE"},
+        description="Event source (supabase, frontend, api, system, mobile_app)",
+    )
+
+    # Temporal information
+    timestamp: datetime = Field(
+        default=None,
+        sa_column_kwargs={
+            "name": "D_TIMESTAMP",
+            "server_default": func.now(),
+        },
+        description="When the action occurred",
+    )
+
+    # Location and client context
+    ip_address: str | None = Field(
+        default=None,
+        max_length=45,  # IPv6 max length
+        sa_column_kwargs={"name": "C_IP_ADDRESS"},
+        description="Client IP address (hashed for privacy if needed)",
+    )
+    user_agent: str | None = Field(
+        default=None,
+        max_length=512,
+        sa_column_kwargs={"name": "C_USER_AGENT"},
+        description="Browser/client user agent string",
+    )
+    client_info: str | None = Field(
+        default=None,
+        max_length=256,
+        sa_column_kwargs={"name": "C_CLIENT_INFO"},
+        description="Additional client information (device, OS, app version)",
+    )
+    referrer: str | None = Field(
+        default=None,
+        max_length=512,
+        sa_column_kwargs={"name": "C_REFERRER"},
+        description="HTTP referrer or previous page",
+    )
+
+    # Geographical context (optional)
+    country_code: str | None = Field(
+        default=None,
+        max_length=2,
+        sa_column_kwargs={"name": "C_COUNTRY_CODE"},
+        description="ISO country code derived from IP",
+    )
+    city: str | None = Field(
+        default=None,
+        max_length=128,
+        sa_column_kwargs={"name": "C_CITY"},
+        description="City derived from IP geolocation",
+    )
+    timezone: str | None = Field(
+        default=None, max_length=64, sa_column_kwargs={"name": "C_TIMEZONE"}, description="User's timezone"
+    )
+
+    # Flexible data storage
+    event_payload: str | None = Field(
+        default=None, sa_column=Column("C_EVENT_PAYLOAD", Text), description="Event-specific data as JSON"
+    )
+    extra_metadata: str | None = Field(
+        default=None, sa_column=Column("C_EXTRA_METADATA", Text), description="Additional system metadata as JSON"
+    )
+
+    # Status and processing flags
+    is_processed: bool = Field(
+        default=False,
+        sa_column_kwargs={"name": "B_IS_PROCESSED", "server_default": "0"},
+        description="Whether this action has been processed by analytics pipeline",
+    )
+    processing_status: str | None = Field(
+        default=None,
+        max_length=32,
+        sa_column_kwargs={"name": "C_PROCESSING_STATUS"},
+        description="Processing status (pending, completed, failed, skipped)",
+    )
