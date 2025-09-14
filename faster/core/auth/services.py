@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Any
 
 from ..database import DBSession, get_transaction
 from ..exceptions import DBError
@@ -489,3 +490,50 @@ class AuthService:
 
         except Exception as e:
             logger.error(f"Unexpected error in background logout processing for {user.id}: {e}")
+
+    async def log_event(
+        self,
+        event_type: str,
+        event_name: str,
+        event_source: str,
+        user_auth_id: str | None = None,
+        trace_id: str | None = None,
+        session_id: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        client_info: str | None = None,
+        referrer: str | None = None,
+        country_code: str | None = None,
+        city: str | None = None,
+        timezone: str | None = None,
+        event_payload: dict[str, Any] | None = None,
+        extra_metadata: dict[str, Any] | None = None,
+        session: DBSession | None = None,
+    ) -> bool:
+        """
+        Log a user action/event to the AUTH_USER_ACTION table.
+        """
+        try:
+            return await self._repository.log_event(
+                event_type=event_type,
+                event_name=event_name,
+                event_source=event_source,
+                user_auth_id=user_auth_id,
+                trace_id=trace_id,
+                session_id=session_id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                client_info=client_info,
+                referrer=referrer,
+                country_code=country_code,
+                city=city,
+                timezone=timezone,
+                event_payload=event_payload,
+                extra_metadata=extra_metadata,
+                session=session,
+            )
+        except Exception as e:
+            logger.error(f"AuthService.log_event failed: {e}")
+            # Never re-raise exceptions to avoid disrupting the main application flow
+            # Event logging is for tracking/analytics and should not interfere with core functionality
+            return False
