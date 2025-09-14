@@ -8,7 +8,6 @@ Create Date: 2025-09-13 22:43:33.352531
 
 from collections.abc import Sequence
 import logging
-from typing import Union
 
 from alembic import op
 import sqlalchemy as sa
@@ -17,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 # Revision identifiers, used by Alembic.
 revision: str = "5f36e6c0eb24"
-down_revision: Union[str, None] = '7719df2d967d'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '7719df2d967d'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
