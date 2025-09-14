@@ -129,6 +129,21 @@ async def on_callback(
 
     logger.info(f"Received auth callback event: {event}, user: {user.id}")
 
+    # Log the event to database for tracking and analytics (never throws exceptions)
+    client_ip = getattr(request.client, "host", None) if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    _ = await auth_service.log_event(
+        event_type="auth",
+        event_name=event,
+        event_source="supabase",
+        user_auth_id=user.id,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        event_payload={"status": "success", "endpoint": "callback"},
+        extra_metadata={"request_method": request.method, "url": str(request.url)},
+    )
+
     # Route to specific event handlers
     try:
         if event == "SIGNED_IN":
@@ -175,6 +190,21 @@ async def on_notification(
     """
 
     logger.info(f"Received public auth notification event: {event}")
+
+    # Log the public event to database for tracking and analytics (never throws exceptions)
+    client_ip = getattr(request.client, "host", None) if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    _ = await auth_service.log_event(
+        event_type="auth",
+        event_name=event,
+        event_source="supabase",
+        user_auth_id=None,  # Public events don't have authenticated users
+        ip_address=client_ip,
+        user_agent=user_agent,
+        event_payload={"status": "success", "endpoint": "notification"},
+        extra_metadata={"request_method": request.method, "url": str(request.url)},
+    )
 
     # Route to specific event handlers
     try:
