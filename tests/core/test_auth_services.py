@@ -15,7 +15,16 @@ TEST_USER_ID = "user-123"
 @pytest.fixture
 def auth_service() -> AuthService:
     """Fixture to create an AuthService instance for testing."""
-    return AuthService(jwt_secret=TEST_SECRET, algorithms=TEST_ALGORITHMS)
+    return AuthService(
+        supabase_url="https://test.supabase.co",
+        supabase_anon_key="test-anon-key",
+        supabase_service_key="test-service-key",
+        supabase_jwks_url="https://test.supabase.co/.well-known/jwks.json",
+        supabase_audience="test-audience",
+        auto_refresh_jwks=True,
+        jwks_cache_ttl_seconds=3600,
+        user_cache_ttl_seconds=3600,
+    )
 
 
 @pytest.mark.asyncio
