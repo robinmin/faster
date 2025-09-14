@@ -56,33 +56,7 @@ async def app_state(request: Request) -> AppResponseDict:
     """
     Returns the app state for dev-admin.
     """
-    app_state_data = {
-        "application": {
-            "name": getattr(request.app.state.settings, "app_name", "Unknown"),
-            "version": getattr(request.app.state.settings, "app_version", "Unknown"),
-            "environment": getattr(request.app.state.settings, "environment", "Unknown"),
-            "debug_mode": getattr(request.app.state.settings, "is_debug", False),
-        },
-        "services": {
-            "database": getattr(request.app.state, "latest_status_info", {}).get("db", {}),
-            "redis": getattr(request.app.state, "latest_status_info", {}).get("redis", {}),
-            "sentry": getattr(request.app.state, "latest_status_info", {}).get("sentry", {}),
-        },
-        "configuration": {
-            "auth_enabled": getattr(request.app.state.settings, "auth_enabled", False),
-            "cors_enabled": getattr(request.app.state.settings, "cors_enabled", False),
-            "gzip_enabled": getattr(request.app.state.settings, "gzip_enabled", False),
-            "redis_enabled": getattr(request.app.state.settings, "redis_enabled", False),
-        },
-        "system": {
-            "latest_status_check": getattr(request.app.state, "latest_status_check", None),
-            "deployment_platform": getattr(request.app.state.settings, "deployment_platform", "Unknown"),
-        },
-    }
-
-    return AppResponseDict(
-        data=app_state_data,
-    )
+    return AppResponseDict(data=getattr(request.app.state, "_state", {}))
 
 
 @dev_router.get("/request_state", response_model=None)

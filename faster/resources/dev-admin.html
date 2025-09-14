@@ -526,12 +526,256 @@
                 <div class="navbar-start">
                   <div class="flex items-center gap-3">
                     <div class="avatar">
-                      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-secondary flex items-center justify-center">
-                        <i data-lucide="terminal" class="w-5 h-5 text-accent-content" aria-hidden="true"></i>
+                      <div
+                        class="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-secondary flex items-center justify-center"
+                      >
+                        <i
+                          data-lucide="terminal"
+                          class="w-5 h-5 text-accent-content"
+                          aria-hidden="true"
+                        ></i>
                       </div>
                     </div>
                     <div>
-                      <h1 class="text-xl font-bold" x-text="getPageTitle()"></h1>
+                      <h1
+                        class="text-xl font-bold"
+                        x-text="getPageTitle()"
+                      ></h1>
+                      <p
+                        class="text-sm text-base-content/60"
+                        x-text="getPageDescription()"
+                      ></p>
+                    </div>
+                  </div>
+                </div>
+                <div class="navbar-end">
+                  <div class="flex gap-2">
+                    <div class="dropdown dropdown-end">
+                      <div
+                        tabindex="0"
+                        role="button"
+                        class="btn btn-ghost btn-sm"
+                      >
+                        <i
+                          data-lucide="download"
+                          class="w-4 h-4"
+                          aria-hidden="true"
+                        ></i>
+                        Export
+                      </div>
+                      <ul
+                        tabindex="0"
+                        class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52"
+                      >
+                        <li>
+                          <a @click="exportAsJSON()"
+                            ><i data-lucide="file-text" class="w-4 h-4"></i>
+                            JSON</a
+                          >
+                        </li>
+                        <li>
+                          <a @click="copyToClipboard()"
+                            ><i data-lucide="copy" class="w-4 h-4"></i> Copy</a
+                          >
+                        </li>
+                      </ul>
+                    </div>
+                    <button
+                      @click="refreshData()"
+                      class="btn btn-primary btn-sm"
+                      :class="{ 'loading': isLoading }"
+                      :disabled="isLoading"
+                    >
+                      <i
+                        data-lucide="refresh-cw"
+                        class="w-4 h-4"
+                        aria-hidden="true"
+                      ></i>
+                      <span x-show="!isLoading">Refresh</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Code Editor Interface -->
+              <div
+                x-show="appStateData && Object.keys(appStateData).length > 0"
+                class="mockup-window border-2 border-base-300 bg-base-100 shadow-2xl"
+              >
+                <div class="flex justify-center px-4 py-4 bg-base-200">
+                  <!-- Code Editor Mockup -->
+                  <div class="w-full">
+                    <!-- Editor Header -->
+                    <div
+                      class="flex items-center justify-between bg-base-100 px-4 py-2 border-b border-base-300"
+                    >
+                      <div class="flex items-center gap-2">
+                        <div class="flex gap-1">
+                          <div class="w-3 h-3 rounded-full bg-error"></div>
+                          <div class="w-3 h-3 rounded-full bg-warning"></div>
+                          <div class="w-3 h-3 rounded-full bg-success"></div>
+                        </div>
+                        <span class="text-sm font-mono text-base-content/60"
+                          >app_state.json</span
+                        >
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <div class="badge badge-sm badge-accent">Live</div>
+                        <span
+                          class="text-xs text-base-content/40"
+                          x-text="formatTimestamp()"
+                        ></span>
+                      </div>
+                    </div>
+
+                    <!-- Line Numbers & Code -->
+                    <div class="flex bg-base-100">
+                      <!-- Line Numbers -->
+                      <div
+                        class="bg-base-200 px-4 py-4 text-xs font-mono text-base-content/40 select-none min-w-[60px] border-r border-base-300 overflow-auto max-h-[500px]"
+                      >
+                        <template x-for="line in getLineNumbers()" :key="line">
+                          <div class="leading-6 text-right" x-text="line"></div>
+                        </template>
+                      </div>
+
+                       <!-- Code Content -->
+                       <div class="flex-1 p-4 overflow-auto max-h-[500px]">
+                         <pre
+                           class="text-sm font-mono leading-6 text-base-content"
+                           x-html="formatAppStateDataWithSyntax()"
+                        ></pre>
+                      </div>
+                    </div>
+
+                    <!-- Editor Footer -->
+                    <div
+                      class="flex items-center justify-between bg-base-200 px-4 py-2 border-t border-base-300 text-xs"
+                    >
+                      <div class="flex items-center gap-4">
+                        <span class="flex items-center gap-1">
+                          <i data-lucide="type" class="w-3 h-3"></i>
+                          JSON
+                        </span>
+                        <span class="flex items-center gap-1">
+                          <i data-lucide="file-text" class="w-3 h-3"></i>
+                          <span x-text="getDataSize()"></span>
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-4">
+                        <span x-text="getObjectCount()"></span>
+                        <div class="flex items-center gap-1">
+                          <div class="w-2 h-2 rounded-full bg-success"></div>
+                          <span>Ready</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Loading State -->
+              <div
+                x-show="isLoading && (!appStateData || Object.keys(appStateData).length === 0)"
+                class="card bg-base-100 shadow-xl"
+              >
+                <div class="card-body items-center text-center">
+                  <div
+                    class="loading loading-spinner loading-lg text-primary"
+                  ></div>
+                  <h3 class="text-lg font-semibold mt-4">
+                    Loading Application State
+                  </h3>
+                  <p class="text-base-content/60">
+                    Fetching real-time data from server...
+                  </p>
+                </div>
+              </div>
+
+              <!-- Empty State -->
+              <div
+                x-show="!isLoading && (!appStateData || Object.keys(appStateData).length === 0) && !errorMessage"
+                class="hero bg-base-200 rounded-box"
+              >
+                <div class="hero-content text-center py-20">
+                  <div class="max-w-md">
+                    <div class="mockup-code mb-6 bg-base-100">
+                      <pre
+                        data-prefix="$"
+                      ><code>curl /dev/app_state</code></pre>
+                      <pre
+                        data-prefix=">"
+                        class="text-warning"
+                      ><code>No data found</code></pre>
+                    </div>
+                    <h3 class="text-2xl font-bold">No Application State</h3>
+                    <p class="py-4 text-base-content/70">
+                      The application state endpoint returned no data. This
+                      could be normal during startup or maintenance.
+                    </p>
+                    <button
+                      @click="refreshData()"
+                      class="btn btn-primary"
+                      :class="{ 'loading': isLoading }"
+                      :disabled="isLoading"
+                    >
+                      <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                      Check Again
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Error State -->
+              <div x-show="errorMessage" class="alert alert-error shadow-lg">
+                <div class="flex items-start gap-3">
+                  <i
+                    data-lucide="alert-triangle"
+                    class="w-6 h-6 flex-shrink-0"
+                    aria-hidden="true"
+                  ></i>
+                  <div class="flex-1">
+                    <h3 class="font-bold text-lg">Connection Error</h3>
+                    <div
+                      class="text-sm opacity-80 mt-1"
+                      x-text="errorMessage"
+                    ></div>
+                    <div class="mt-3">
+                      <button
+                        @click="refreshData()"
+                        class="btn btn-sm btn-ghost"
+                      >
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Request State Page -->
+          <div
+            x-show="$store.app.currentPage === 'request-state'"
+            x-data="requestStatePage()"
+            x-cloak
+          >
+            <div class="max-w-7xl mx-auto space-y-6">
+              <!-- Request State Header -->
+              <div class="navbar bg-base-100 shadow-lg rounded-box">
+                <div class="navbar-start">
+                  <div class="flex items-center gap-3">
+                    <div class="avatar">
+                      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-secondary flex items-center justify-center">
+                        <i data-lucide="send" class="w-5 h-5 text-accent-content" aria-hidden="true"></i>
+                      </div>
+                    </div>
+                    <div>
+                      <h1
+                        class="text-xl font-bold"
+                        x-text="getPageTitle()"
+                      ></h1>
                       <p class="text-sm text-base-content/60" x-text="getPageDescription()"></p>
                     </div>
                   </div>
@@ -563,10 +807,10 @@
 
               <!-- Code Editor Interface -->
               <div
-                x-show="appStateData && Object.keys(appStateData).length > 0"
+                x-show="requestStateData && Object.keys(requestStateData).length > 0"
                 class="mockup-window border-2 border-base-300 bg-base-100 shadow-2xl"
               >
-                <div class="flex justify-center px-4 py-16 bg-base-200">
+                <div class="flex justify-center px-4 py-4 bg-base-200">
                   <!-- Code Editor Mockup -->
                   <div class="w-full">
                     <!-- Editor Header -->
@@ -577,7 +821,7 @@
                           <div class="w-3 h-3 rounded-full bg-warning"></div>
                           <div class="w-3 h-3 rounded-full bg-success"></div>
                         </div>
-                        <span class="text-sm font-mono text-base-content/60">app_state.json</span>
+                        <span class="text-sm font-mono text-base-content/60">request_state.json</span>
                       </div>
                       <div class="flex items-center gap-2">
                         <div class="badge badge-sm badge-accent">Live</div>
@@ -588,15 +832,15 @@
                     <!-- Line Numbers & Code -->
                     <div class="flex bg-base-100">
                       <!-- Line Numbers -->
-                      <div class="bg-base-200 px-4 py-4 text-xs font-mono text-base-content/40 select-none min-w-[60px] border-r border-base-300">
-                        <template x-for="(line, index) in getLineNumbers()" :key="index">
+                       <div class="bg-base-200 px-4 py-4 text-xs font-mono text-base-content/40 select-none min-w-[60px] border-r border-base-300 overflow-auto max-h-[500px]">
+                        <template x-for="line in getLineNumbers()" :key="line">
                           <div class="leading-6 text-right" x-text="line"></div>
                         </template>
                       </div>
 
                       <!-- Code Content -->
-                      <div class="flex-1 p-4 overflow-auto max-h-[600px]">
-                        <pre class="text-sm font-mono leading-6 text-base-content" x-html="formatAppStateDataWithSyntax()"></pre>
+                      <div class="flex-1 p-4 overflow-auto max-h-[500px]">
+                        <pre class="text-sm font-mono leading-6 text-base-content" x-html="formatRequestStateDataWithSyntax()"></pre>
                       </div>
                     </div>
 
@@ -626,30 +870,30 @@
 
               <!-- Loading State -->
               <div
-                x-show="isLoading && (!appStateData || Object.keys(appStateData).length === 0)"
+                x-show="isLoading && (!requestStateData || Object.keys(requestStateData).length === 0)"
                 class="card bg-base-100 shadow-xl"
               >
                 <div class="card-body items-center text-center">
                   <div class="loading loading-spinner loading-lg text-primary"></div>
-                  <h3 class="text-lg font-semibold mt-4">Loading Application State</h3>
-                  <p class="text-base-content/60">Fetching real-time data from server...</p>
+                  <h3 class="text-lg font-semibold mt-4">Loading Request State</h3>
+                  <p class="text-base-content/60">Fetching real-time request data from server...</p>
                 </div>
               </div>
 
               <!-- Empty State -->
               <div
-                x-show="!isLoading && (!appStateData || Object.keys(appStateData).length === 0) && !errorMessage"
+                x-show="!isLoading && (!requestStateData || Object.keys(requestStateData).length === 0) && !errorMessage"
                 class="hero bg-base-200 rounded-box"
               >
                 <div class="hero-content text-center py-20">
                   <div class="max-w-md">
                     <div class="mockup-code mb-6 bg-base-100">
-                      <pre data-prefix="$"><code>curl /dev/app_state</code></pre>
+                      <pre data-prefix="$"><code>curl /dev/request_state</code></pre>
                       <pre data-prefix=">" class="text-warning"><code>No data found</code></pre>
                     </div>
-                    <h3 class="text-2xl font-bold">No Application State</h3>
+                    <h3 class="text-2xl font-bold">No Request State</h3>
                     <p class="py-4 text-base-content/70">
-                      The application state endpoint returned no data. This could be normal during startup or maintenance.
+                      The request state endpoint returned no data. This could be normal during startup or maintenance.
                     </p>
                     <button
                       @click="refreshData()"
@@ -977,6 +1221,9 @@
           // console.log(`Loading ${pageId} page data...`);
           if (pageId === "app-state") {
             return await this.call("/dev/app_state");
+          }
+          if (pageId === "request-state") {
+            return await this.call("/dev/request_state");
           }
           return await this.call(`/auth/${pageId}`);
         },
@@ -1515,7 +1762,8 @@
             { id: "dashboard", label: "Dashboard", icon: "layout-dashboard" },
             { id: "onboarding", label: "Onboarding", icon: "user-check" },
             { id: "profile", label: "Profile", icon: "user" },
-            { id: "app-state", label: "App State", icon: "settings" }
+            { id: "app-state", label: "App State", icon: "settings" },
+            { id: "request-state", label: "Request State", icon: "send" }
           ],
 
           async selectMenuItem(item) {
@@ -1873,34 +2121,51 @@
               const jsonString = JSON.stringify(this.appStateData, null, 2);
               // Simple syntax highlighting for JSON
               return jsonString
-                .replace(/("[\w_-]+")\s*:/g, '<span class="text-purple-400">$1</span>:')
-                .replace(/:\s*("[^"]*")/g, ': <span class="text-green-400">$1</span>')
-                .replace(/:\s*(\d+)/g, ': <span class="text-blue-400">$1</span>')
-                .replace(/:\s*(true|false)/g, ': <span class="text-orange-400">$1</span>')
-                .replace(/:\s*(null)/g, ': <span class="text-gray-400">$1</span>');
+                .replace(
+                  /("["\w_-]+")\s*:/g,
+                  '<span class="text-purple-400">$1</span>:'
+                )
+                .replace(
+                  /:\s*("[^"]*")/g,
+                  ': <span class="text-green-400">$1</span>'
+                )
+                .replace(
+                  /:\s*(\d+)/g,
+                  ': <span class="text-blue-400">$1</span>'
+                )
+                .replace(
+                  /:\s*(true|false)/g,
+                  ': <span class="text-orange-400">$1</span>'
+                )
+                .replace(
+                  /:\s*(null)/g,
+                  ': <span class="text-gray-400">$1</span>'
+                );
             } catch (e) {
               return '<span class="text-red-400">Error formatting data</span>';
             }
           },
 
           getLineNumbers() {
-            if (!this.appStateData) return "";
+            if (!this.appStateData) return [];
             try {
-              const lines = JSON.stringify(this.appStateData, null, 2).split('\n');
-              return lines.map((_, index) => index + 1).join('\n');
+              const lines = JSON.stringify(this.appStateData, null, 2).split(
+                "\n"
+              );
+              return lines.map((_, index) => index + 1);
             } catch (e) {
-              return "1";
+              return [1];
             }
           },
 
           formatTimestamp() {
             const now = new Date();
-            return now.toLocaleString('en-US', {
-              month: 'short',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit'
+            return now.toLocaleString("en-US", {
+              month: "short",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit"
             });
           },
 
@@ -1937,12 +2202,14 @@
 
             try {
               const jsonString = JSON.stringify(this.appStateData, null, 2);
-              const blob = new Blob([jsonString], { type: 'application/json' });
+              const blob = new Blob([jsonString], { type: "application/json" });
               const url = URL.createObjectURL(blob);
 
-              const a = document.createElement('a');
+              const a = document.createElement("a");
               a.href = url;
-              a.download = `app-state-${new Date().toISOString().split('T')[0]}.json`;
+              a.download = `app-state-${
+                new Date().toISOString().split("T")[0]
+              }.json`;
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
@@ -1963,6 +2230,213 @@
 
             try {
               const jsonString = JSON.stringify(this.appStateData, null, 2);
+              await navigator.clipboard.writeText(jsonString);
+              toastService.show("Copied to clipboard", "success");
+            } catch (error) {
+              console.error("Copy failed:", error);
+              toastService.show("Copy failed", "error");
+            }
+          }
+        };
+      }
+
+      function requestStatePage() {
+        return {
+          requestStateData: null,
+          isLoading: false,
+          errorMessage: "",
+          initialized: false,
+
+          init() {
+            if (this.initialized) {
+              // console.log("Request State page already initialized, skipping...");
+              return;
+            }
+            this.initialized = true;
+
+            // Watch for page data changes
+            this.$watch("$store.app.pageData", newData => {
+              this.updateRequestStateData(newData);
+            });
+
+            // Initial data update
+            this.updateRequestStateData(Alpine.store("app").pageData);
+          },
+
+          updateRequestStateData(pageData) {
+            this.errorMessage = "";
+
+            if (pageData && pageData.status === "success") {
+              // Extract the actual request state data (everything except message and status)
+              const { message, status, ...requestStateData } = pageData;
+              this.requestStateData = requestStateData;
+            } else if (pageData && pageData.status === "http error") {
+              this.errorMessage =
+                pageData.message || "Failed to load request state data";
+              this.requestStateData = null;
+            } else {
+              this.requestStateData = null;
+            }
+          },
+
+          async refreshData() {
+            if (this.isLoading) return;
+
+            this.isLoading = true;
+            this.errorMessage = "";
+
+            try {
+              const data = await apiService.call("/dev/request_state");
+
+              // Update the store
+              Alpine.store("app").pageData = {
+                message: data.message,
+                status: data.status,
+                ...data.data
+              };
+
+              toastService.show("Request state refreshed successfully", "success");
+            } catch (error) {
+              console.error("Error refreshing request state:", error);
+              this.errorMessage =
+                error.message || "Failed to refresh request state data";
+              toastService.show("Failed to refresh request state", "error");
+            } finally {
+              this.isLoading = false;
+            }
+          },
+
+          getPageTitle() {
+            const pageData = Alpine.store("app").pageData;
+            return pageData?.message || "Request State";
+          },
+
+          getPageDescription() {
+            return "Real-time request state and processing data";
+          },
+
+          formatRequestStateData() {
+            if (!this.requestStateData) return "";
+            try {
+              return JSON.stringify(this.requestStateData, null, 2);
+            } catch (e) {
+              return "Error formatting data";
+            }
+          },
+
+          formatRequestStateDataWithSyntax() {
+            if (!this.requestStateData) return "";
+            try {
+              const jsonString = JSON.stringify(this.requestStateData, null, 2);
+              // Simple syntax highlighting for JSON
+              return jsonString
+                .replace(
+                  /("["\w_-]+")\s*:/g,
+                  '<span class="text-purple-400">$1</span>:'
+                )
+                .replace(
+                  /:\s*("[^"]*")/g,
+                  ': <span class="text-green-400">$1</span>'
+                )
+                .replace(
+                  /:\s*(\d+)/g,
+                  ': <span class="text-blue-400">$1</span>'
+                )
+                .replace(
+                  /:\s*(true|false)/g,
+                  ': <span class="text-orange-400">$1</span>'
+                )
+                .replace(
+                  /:\s*(null)/g,
+                  ': <span class="text-gray-400">$1</span>'
+                );
+            } catch (e) {
+              return '<span class="text-red-400">Error formatting data</span>';
+            }
+          },
+
+          getLineNumbers() {
+            if (!this.requestStateData) return [];
+            try {
+              const lines = JSON.stringify(this.requestStateData, null, 2).split(
+                "\n"
+              );
+              return lines.map((_, index) => index + 1);
+            } catch (e) {
+              return [1];
+            }
+          },
+
+          formatTimestamp() {
+            const now = new Date();
+            return now.toLocaleString("en-US", {
+              month: "short",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit"
+            });
+          },
+
+          getDataSize() {
+            if (!this.requestStateData) return "0 bytes";
+            try {
+              const jsonString = JSON.stringify(this.requestStateData);
+              const bytes = new Blob([jsonString]).size;
+              if (bytes < 1024) return `${bytes} bytes`;
+              if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+              return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+            } catch (e) {
+              return "0 bytes";
+            }
+          },
+
+          getObjectCount() {
+            if (!this.requestStateData) return 0;
+            try {
+              const jsonString = JSON.stringify(this.requestStateData);
+              const braceCount = (jsonString.match(/\{/g) || []).length;
+              const arrayCount = (jsonString.match(/\[/g) || []).length;
+              return braceCount + arrayCount;
+            } catch (e) {
+              return 0;
+            }
+          },
+
+          async exportAsJSON() {
+            if (!this.requestStateData) {
+              toastService.show("No data to export", "warning");
+              return;
+            }
+
+            try {
+              const jsonString = JSON.stringify(this.requestStateData, null, 2);
+              const blob = new Blob([jsonString], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `request-state-${new Date().toISOString().split('T')[0]}.json`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+
+              toastService.show("File downloaded successfully", "success");
+            } catch (error) {
+              console.error("Export failed:", error);
+              toastService.show("Export failed", "error");
+            }
+          },
+
+          async copyToClipboard() {
+            if (!this.requestStateData) {
+              toastService.show("No data to copy", "warning");
+              return;
+            }
+
+            try {
+              const jsonString = JSON.stringify(this.requestStateData, null, 2);
               await navigator.clipboard.writeText(jsonString);
               toastService.show("Copied to clipboard", "success");
             } catch (error) {
