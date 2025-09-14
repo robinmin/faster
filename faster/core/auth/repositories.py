@@ -9,7 +9,7 @@ from sqlmodel import select
 from ..database import BaseRepository, DatabaseManager, DBSession
 from ..exceptions import DBError
 from .models import UserProfileData
-from .schemas import User, UserMetadata, UserProfile, UserRole
+from .schemas import User, UserAction, UserMetadata, UserProfile, UserRole
 
 ###############################################################################
 
@@ -676,3 +676,201 @@ class AuthRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to set roles for user {user_id}: {e}")
             raise DBError(f"Failed to set roles for user {user_id}: {e}") from e
+
+    async def log_event(
+        self,
+        event_type: str,
+        event_name: str,
+        event_source: str,
+        user_auth_id: str | None = None,
+        trace_id: str | None = None,
+        session_id: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        client_info: str | None = None,
+        referrer: str | None = None,
+        country_code: str | None = None,
+        city: str | None = None,
+        timezone: str | None = None,
+        event_payload: dict[str, Any] | None = None,
+        extra_metadata: dict[str, Any] | None = None,
+        session: DBSession | None = None,
+    ) -> bool:
+        """
+        Log a user action/event to the AUTH_USER_ACTION table.
+
+        Args:
+            event_type: Event category (auth, navigation, api_call, user_action, system)
+            event_name: Specific event name (login, logout, page_view, button_click, etc.)
+            event_source: Event source (supabase, frontend, api, system, mobile_app)
+            user_auth_id: User auth ID (optional for anonymous events)
+            trace_id: Trace ID for correlating related events
+            session_id: Session ID for grouping user actions
+            ip_address: Client IP address
+            user_agent: Browser/client user agent string
+            client_info: Additional client information
+            referrer: HTTP referrer or previous page
+            country_code: ISO country code derived from IP
+            city: City derived from IP geolocation
+            timezone: User's timezone
+            event_payload: Event-specific data as dictionary (will be stored as JSON)
+            extra_metadata: Additional system metadata as dictionary (will be stored as JSON)
+            session: Optional database session to use
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            ValueError: If required parameters are invalid
+            DBError: If database operation fails
+
+        Example:
+            >>> repo = AuthRepository()
+            >>> success = await repo.log_event(
+            ...     event_type="auth",
+            ...     event_name="login",
+            ...     event_source="supabase",
+            ...     user_auth_id="user123",
+            ...     event_payload={"provider": "google"}
+            ... )
+            >>> print(success)  # True
+        """
+        # Validate required parameters
+        if not event_type or not event_type.strip():
+            raise ValueError("Event type cannot be empty")
+        if not event_name or not event_name.strip():
+            raise ValueError("Event name cannot be empty")
+        if not event_source or not event_source.strip():
+            raise ValueError("Event source cannot be empty")
+
+        try:
+            if session is not None:
+                # Use provided session (for background tasks or transactions)
+                return await self._log_event_impl(
+                    session,
+                    event_type,
+                    event_name,
+                    event_source,
+                    user_auth_id,
+                    trace_id,
+                    session_id,
+                    ip_address,
+                    user_agent,
+                    client_info,
+                    referrer,
+                    country_code,
+                    city,
+                    timezone,
+                    event_payload,
+                    extra_metadata,
+                )
+            # Create new transaction (normal operation)
+            async with self.transaction() as db_session:
+                return await self._log_event_impl(
+                    db_session,
+                    event_type,
+                    event_name,
+                    event_source,
+                    user_auth_id,
+                    trace_id,
+                    session_id,
+                    ip_address,
+                    user_agent,
+                    client_info,
+                    referrer,
+                    country_code,
+                    city,
+                    timezone,
+                    event_payload,
+                    extra_metadata,
+                )
+        except Exception as e:
+            logger.error(
+                f"Failed to log event: {e}",
+                extra={
+                    "event_type": event_type,
+                    "event_name": event_name,
+                    "event_source": event_source,
+                    "user_auth_id": user_auth_id,
+                    "trace_id": trace_id,
+                },
+            )
+            raise DBError(f"Failed to log event {event_type}/{event_name}: {e}") from e
+
+    async def _log_event_impl(
+        self,
+        session: DBSession,
+        event_type: str,
+        event_name: str,
+        event_source: str,
+        user_auth_id: str | None,
+        trace_id: str | None,
+        session_id: str | None,
+        ip_address: str | None,
+        user_agent: str | None,
+        client_info: str | None,
+        referrer: str | None,
+        country_code: str | None,
+        city: str | None,
+        timezone: str | None,
+        event_payload: dict[str, Any] | None,
+        extra_metadata: dict[str, Any] | None,
+    ) -> bool:
+        """
+        Internal implementation for logging user actions.
+
+        Args:
+            session: Database session
+            (other parameters same as log_event)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Create new UserAction record
+            user_action = UserAction(
+                user_auth_id=user_auth_id,
+                trace_id=trace_id,
+                session_id=session_id,
+                event_type=event_type,
+                event_name=event_name,
+                event_source=event_source,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                client_info=client_info,
+                referrer=referrer,
+                country_code=country_code,
+                city=city,
+                timezone=timezone,
+                event_payload=json.dumps(event_payload) if event_payload else None,
+                extra_metadata=json.dumps(extra_metadata) if extra_metadata else None,
+                is_processed=False,
+                processing_status="pending",
+            )
+
+            session.add(user_action)
+            await session.flush()
+
+            logger.info(
+                f"Successfully logged event: {event_type}/{event_name} from {event_source}",
+                extra={
+                    "event_type": event_type,
+                    "event_name": event_name,
+                    "event_source": event_source,
+                    "user_auth_id": user_auth_id,
+                    "trace_id": trace_id,
+                    "session_id": session_id,
+                },
+            )
+            return True
+
+        except Exception as e:
+            logger.error(
+                f"Error logging event {event_type}/{event_name}: {e}",
+                extra={
+                    "event_type": event_type,
+                    "event_name": event_name,
+                    "user_auth_id": user_auth_id,
+                },
+            )
+            raise
