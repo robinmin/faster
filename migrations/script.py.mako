@@ -8,6 +8,7 @@ Create Date: ${create_date}
 
 from collections.abc import Sequence
 import logging
+from typing import Union
 
 from alembic import op
 import sqlalchemy as sa
