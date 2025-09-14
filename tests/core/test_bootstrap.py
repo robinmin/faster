@@ -24,10 +24,11 @@ def mock_settings() -> Settings:
         environment="development",
         database_url="sqlite+aiosqlite:///:memory:",
         redis_url="redis://localhost",
-        jwt_secret_key="test-secret",
         auth_enabled=True,
         cors_enabled=True,
         gzip_enabled=True,
+        jwks_cache_ttl_seconds=3600,
+        user_cache_ttl_seconds=3600,
     )
 
 
