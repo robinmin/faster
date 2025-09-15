@@ -1,497 +1,759 @@
-from typing import Any
-from unittest.mock import AsyncMock
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.routing import Match
 
-from faster.core.auth.services import AuthService
+from faster.core.auth.models import UserProfileData
+from faster.core.auth.services import AuthService, AuthServiceConfig
+from faster.core.config import Settings
 from faster.core.exceptions import DBError
 
-# Constants for testing
-TEST_SECRET = "a_very_secret_key"
-TEST_ALGORITHMS = ["HS256"]
-TEST_USER_ID = "user-123"
+# Test constants
+TEST_USER_ID = "test-user-123"
+TEST_TOKEN = "valid.jwt.token"
+TEST_EMAIL = "test@example.com"
 
 
 @pytest.fixture
-def auth_service() -> AuthService:
-    """Fixture to create an AuthService instance for testing."""
-    return AuthService(
-        supabase_url="https://test.supabase.co",
-        supabase_anon_key="test-anon-key",
-        supabase_service_key="test-service-key",
-        supabase_jwks_url="https://test.supabase.co/.well-known/jwks.json",
-        supabase_audience="test-audience",
-        auto_refresh_jwks=True,
-        jwks_cache_ttl_seconds=3600,
-        user_cache_ttl_seconds=3600,
+def mock_settings() -> Settings:
+    """Mock settings for testing."""
+    settings = MagicMock(spec=Settings)
+    settings.auth_enabled = True
+    settings.supabase_url = "https://test.supabase.co"
+    settings.supabase_anon_key = "test-anon-key"
+    settings.supabase_service_key = "test-service-key"
+    settings.supabase_jwks_url = "https://test.supabase.co/.well-known/jwks.json"
+    settings.supabase_audience = "test-audience"
+    settings.auto_refresh_jwks = True
+    settings.jwks_cache_ttl_seconds = 3600
+    settings.user_cache_ttl_seconds = 3600
+    settings.is_debug = False
+    return settings
+
+
+@pytest.fixture
+def mock_user_profile() -> UserProfileData:
+    """Mock user profile data."""
+    return UserProfileData(
+        id=TEST_USER_ID,
+        aud="test-audience",
+        role="authenticated",
+        email=TEST_EMAIL,
+        email_confirmed_at=datetime(2023, 1, 1, 0, 0, 0),
+        phone=None,
+        confirmed_at=datetime(2023, 1, 1, 0, 0, 0),
+        last_sign_in_at=datetime(2023, 1, 1, 0, 0, 0),
+        is_anonymous=False,
+        created_at=datetime(2023, 1, 1, 0, 0, 0),
+        updated_at=datetime(2023, 1, 1, 0, 0, 0),
+        app_metadata={},
+        user_metadata={},
     )
 
 
-@pytest.mark.asyncio
-class TestAuthServiceRoles:
-    """Tests for role and access control logic in AuthService."""
-
-    async def test_get_roles_returns_correct_roles(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Tests that get_roles correctly fetches and returns a set of roles.
-        """
-        # Arrange
-        mock_user2role_get = mocker.patch(
-            "faster.core.auth.services.user2role_get",
-            return_value=["admin", "editor"],
-        )
-
-        # Act
-        roles = set(await auth_service.get_roles(TEST_USER_ID))
-
-        # Assert
-        mock_user2role_get.assert_awaited_once_with(TEST_USER_ID)
-        assert roles == {"admin", "editor"}
-
-    async def test_get_roles_returns_empty_set_for_no_roles(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Tests that get_roles returns an empty set if the user has no roles.
-        """
-        # Arrange
-        mocker.patch("faster.core.auth.services.user2role_get", return_value=None)
-
-        # Act
-        roles = set(await auth_service.get_roles(TEST_USER_ID))
-
-        # Assert
-        assert roles == set()
-
-    async def test_get_roles_returns_empty_set_for_empty_user_id(self, auth_service: AuthService) -> None:
-        """
-        Tests that get_roles returns an empty set if user_id is empty.
-        """
-        # Act
-        roles = set(await auth_service.get_roles(""))
-
-        # Assert
-        assert roles == set()
-
-    async def test_get_roles_by_tags_returns_correct_roles(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Tests that get_roles_by_tags aggregates roles from multiple tags.
-        """
-
-        # Arrange
-        async def sysmap_side_effect(category: str, left: str | None = None) -> dict[str, list[str]]:
-            if left is None:  # Called for lazy initialization
-                return {"protected": ["admin"], "editor-content": ["editor", "admin"]}
-            return {}
-
-        mock_sysmap_get = mocker.patch(
-            "faster.core.auth.services.sysmap_get",
-            side_effect=sysmap_side_effect,
-        )
-
-        # Act
-        roles = await auth_service.get_roles_by_tags(["protected", "editor-content"])
-
-        # Assert
-        assert mock_sysmap_get.await_count == 1  # Only called once for lazy initialization
-        assert roles == {"admin", "editor"}
-
-        # Test that cache is used on subsequent calls
-        roles2 = await auth_service.get_roles_by_tags(["protected"])
-        assert mock_sysmap_get.await_count == 1  # Still only called once
-        assert roles2 == {"admin"}
-
-        # Test cache clearing
-        auth_service.clear_tag_role_cache()
-        assert not auth_service.is_tag_role_cache_initialized()
-
-        # Test that cache is reloaded after clearing
-        roles3 = await auth_service.get_roles_by_tags(["editor-content"])
-        assert mock_sysmap_get.await_count == 2  # Called again after cache clear
-        assert roles3 == {"editor", "admin"}
-
-    async def test_get_roles_by_tags_returns_empty_set_for_no_tags(self, auth_service: AuthService) -> None:
-        """
-        Tests that get_roles_by_tags returns an empty set if no tags are provided.
-        """
-        # Act
-        roles = await auth_service.get_roles_by_tags([])
-
-        # Assert
-        assert roles == set()
+@pytest.fixture
+def mock_auth_client() -> MagicMock:
+    """Mock auth client for testing."""
+    return MagicMock()
 
 
-@pytest.mark.asyncio
-class TestAuthServiceAccessCheck:
-    """Tests for the check_access method in AuthService."""
+@pytest.fixture
+def mock_repository() -> AsyncMock:
+    """Mock repository for testing."""
+    return AsyncMock()
 
-    @pytest.mark.parametrize(
-        "user_roles, required_roles, expected_result",
-        [
-            ({"admin"}, {"admin", "editor"}, True),  # User has one of the required roles
-            ({"editor"}, {"admin", "editor"}, True),  # User has the other required role
-            ({"admin", "viewer"}, {"admin"}, True),  # User has the exact required role
-            ({"viewer"}, {"admin", "editor"}, False),  # User has no matching roles
-            (set(), {"admin"}, False),  # User has no roles
-            ({"admin"}, set(), False),  # Endpoint requires no roles
-        ],
-    )
-    async def test_check_access_logic(
+
+@pytest.fixture
+def auth_service(mock_settings: Settings) -> AuthService:
+    """Create AuthService instance for testing."""
+    with patch("faster.core.auth.services.AuthService.setup"):
+        service = AuthService()
+        return service
+
+
+class TestAuthServiceInitialization:
+    """Tests for AuthService initialization."""
+
+    @pytest.mark.asyncio
+    async def test_setup_success_with_auth_enabled(self, mock_settings: Settings) -> None:
+        """Test successful setup with auth enabled."""
+        service = AuthService()
+
+        with patch("faster.core.auth.services.AuthProxy") as mock_auth_proxy:
+            mock_auth_proxy.return_value = MagicMock()
+            result = await service.setup(mock_settings)
+
+            assert result is True
+            # Test behavior instead of accessing private attributes
+            health = await service.check_health()
+            assert health["status"] != "not_setup"
+            mock_auth_proxy.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_setup_success_with_auth_disabled(self) -> None:
+        """Test successful setup with auth disabled."""
+        mock_settings = MagicMock(spec=Settings)
+        mock_settings.auth_enabled = False
+        # Provide all required attributes even when auth is disabled
+        mock_settings.supabase_url = "https://test.supabase.co"
+        mock_settings.supabase_anon_key = "test-anon-key"
+        mock_settings.supabase_service_key = "test-service-key"
+        mock_settings.supabase_jwks_url = "https://test.supabase.co/.well-known/jwks.json"
+        mock_settings.supabase_audience = "test-audience"
+        mock_settings.jwks_cache_ttl_seconds = 3600
+        mock_settings.auto_refresh_jwks = True
+        mock_settings.user_cache_ttl_seconds = 3600
+        mock_settings.is_debug = False
+
+        service = AuthService()
+        result = await service.setup(mock_settings)
+
+        assert result is True
+        # Test behavior instead of accessing private attributes
+        health = await service.check_health()
+        assert health["auth_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_setup_failure(self, mock_settings: Settings) -> None:
+        """Test setup failure."""
+        service = AuthService()
+
+        with patch("faster.core.auth.services.AuthProxy", side_effect=Exception("Setup failed")):
+            result = await service.setup(mock_settings)
+
+            assert result is False
+            # Test behavior instead of accessing private attributes
+            health = await service.check_health()
+            assert health["status"] == "not_setup"
+
+    @pytest.mark.asyncio
+    async def test_teardown_success(self, auth_service: AuthService) -> None:
+        """Test successful teardown."""
+        result = await auth_service.teardown()
+
+        assert result is True
+        # Test behavior instead of accessing private attributes
+        health = await auth_service.check_health()
+        assert health["status"] == "not_setup"
+
+
+class TestAuthServiceHealthCheck:
+    """Tests for health check functionality."""
+
+    @pytest.mark.asyncio
+    async def test_check_health_not_setup(self) -> None:
+        """Test health check when service is not setup."""
+        service = AuthService()
+
+        result = await service.check_health()
+
+        assert result["status"] == "not_setup"
+        assert result["auth_enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_check_health_success(self, mock_settings: Settings, mock_auth_client: MagicMock) -> None:
+        """Test successful health check."""
+        # Create a fresh service and set it up properly
+        service = AuthService()
+        # Set up the config with the needed values
+        test_config: AuthServiceConfig = {
+            "auth_enabled": True,
+            "supabase_url": "https://test.supabase.co",
+            "supabase_anon_key": "test-anon-key",
+            "supabase_service_key": "test-service-key",
+            "supabase_jwks_url": "https://test.supabase.co/.well-known/jwks.json",
+            "supabase_audience": "test-audience",
+            "jwks_cache_ttl_seconds": 3600,
+            "auto_refresh_jwks": True,
+            "user_cache_ttl_seconds": 3600,
+            "is_debug": False,
+        }
+        service.set_test_config(test_config)
+        with (
+            patch.object(service, "_auth_client", mock_auth_client),
+            patch.object(service, "_is_setup", True),
+            patch(
+                "faster.core.auth.services.sysmap_get", return_value={"admin": ["admin"], "user": ["user"]}
+            ) as mock_sysmap,
+            patch.object(mock_auth_client, "get_jwks_cache_info", return_value={"size": 10}),
+        ):
+            result = await service.check_health()
+            assert result["status"] == "healthy"
+            assert result["auth_enabled"] is True
+            assert result["tag_role_cache_size"] == 2
+            assert result["jwks_cache"] == {"size": 10}
+            _ = mock_sysmap.assert_awaited_once_with("tag_role")
+
+    @pytest.mark.asyncio
+    async def test_check_health_with_error(self, mock_settings: Settings, mock_auth_client: MagicMock) -> None:
+        """Test health check with error."""
+        # Create a fresh service and set it up properly
+        service = AuthService()
+        # Set up the config with the needed values
+        test_config: AuthServiceConfig = {
+            "auth_enabled": True,
+            "supabase_url": "https://test.supabase.co",
+            "supabase_anon_key": "test-anon-key",
+            "supabase_service_key": "test-service-key",
+            "supabase_jwks_url": "https://test.supabase.co/.well-known/jwks.json",
+            "supabase_audience": "test-audience",
+            "jwks_cache_ttl_seconds": 3600,
+            "auto_refresh_jwks": True,
+            "user_cache_ttl_seconds": 3600,
+            "is_debug": False,
+        }
+        service.set_test_config(test_config)
+        with (
+            patch.object(service, "_auth_client", mock_auth_client),
+            patch.object(service, "_is_setup", True),
+            patch("faster.core.auth.services.sysmap_get", side_effect=Exception("Redis error")),
+        ):
+            result = await service.check_health()
+
+            assert result["status"] == "error"
+            assert "error" in result
+
+
+class TestAuthServiceRouteManagement:
+    """Tests for route management functionality."""
+
+    def test_collect_router_info(self, auth_service: AuthService) -> None:
+        """Test collecting router information."""
+
+        mock_app = MagicMock()
+        mock_route = MagicMock()
+        mock_route.path = "/api/test"
+        mock_route.methods = frozenset(["GET", "POST"])  # APIRoute uses frozenset
+        mock_route.tags = ["protected"]
+        mock_route.name = "test_endpoint"
+
+        # Mock the endpoint function
+        mock_endpoint = MagicMock()
+        mock_endpoint.__name__ = "test_function"
+        mock_route.endpoint = mock_endpoint
+
+        mock_app.routes = [mock_route]
+
+        # Patch isinstance to return True for our mock
+        with patch("faster.core.auth.services.isinstance", return_value=True):
+            endpoints = auth_service.collect_router_info(mock_app)
+
+        assert len(endpoints) == 1
+        assert endpoints[0]["path"] == "/api/test"
+        assert set(endpoints[0]["methods"]) == {"GET", "POST"}
+        assert endpoints[0]["tags"] == ["protected"]
+
+    def test_create_route_finder(self, auth_service: AuthService) -> None:
+        """Test creating route finder."""
+
+        mock_app = MagicMock()
+        mock_route = MagicMock()
+        mock_route.matches.return_value = (Match.FULL, {"path_params": {}})
+
+        mock_app.routes = [mock_route]
+
+        finder = auth_service.create_route_finder(mock_app)
+
+        assert finder is not None
+        assert callable(finder)
+
+    def test_find_route_success(self, auth_service: AuthService) -> None:
+        """Test successful route finding."""
+        mock_finder = MagicMock(return_value={"path": "/api/test", "tags": ["protected"]})
+
+        with patch.object(auth_service, "_route_finder", mock_finder):
+            result = auth_service.find_route("GET", "/api/test")
+
+            assert result is not None
+            assert result["tags"] == ["protected"]
+            mock_finder.assert_called_once_with("GET", "/api/test")
+
+    def test_find_route_no_finder(self, auth_service: AuthService) -> None:
+        """Test route finding when no finder is set."""
+        with patch.object(auth_service, "_route_finder", None):
+            result = auth_service.find_route("GET", "/api/test")
+
+            assert result is None
+
+
+class TestAuthServiceTagRoleMapping:
+    """Tests for tag-role mapping functionality."""
+
+    def test_set_tag_role_mapping(self, auth_service: AuthService) -> None:
+        """Test setting tag-role mapping."""
+        mapping = {"admin": ["admin"], "user": ["user"]}
+        auth_service.set_tag_role_mapping(mapping)
+
+        # Test behavior instead of accessing private attribute
+        result = auth_service.get_tag_role_mapping()
+        assert result == mapping
+
+    def test_get_tag_role_mapping(self, auth_service: AuthService) -> None:
+        """Test getting tag-role mapping."""
+        mapping = {"admin": ["admin"]}
+
+        with patch.object(auth_service, "_tag_role_cache", mapping):
+            result = auth_service.get_tag_role_mapping()
+
+            assert result == mapping
+            assert result is not mapping  # Should return a copy
+
+    @pytest.mark.asyncio
+    async def test_get_roles_by_tags(self, auth_service: AuthService) -> None:
+        """Test getting roles by tags."""
+        cache = {"admin": ["admin"], "user": ["user"], "editor": ["editor", "admin"]}
+
+        with patch.object(auth_service, "_tag_role_cache", cache):
+            result = await auth_service.get_roles_by_tags(["admin", "editor"])
+
+            assert result == {"admin", "editor"}
+
+    @pytest.mark.asyncio
+    async def test_get_roles_by_tags_empty(self, auth_service: AuthService) -> None:
+        """Test getting roles by empty tags list."""
+        result = await auth_service.get_roles_by_tags([])
+
+        assert result == set()
+
+    def test_clear_tag_role_cache(self, auth_service: AuthService) -> None:
+        """Test clearing tag-role cache."""
+        with patch.object(auth_service, "_tag_role_cache", {"admin": ["admin"]}):
+            auth_service.clear_tag_role_cache()
+
+            # Test behavior instead of accessing private attribute
+            result = auth_service.get_tag_role_mapping()
+            assert result == {}
+
+    def test_is_tag_role_cache_initialized(self, auth_service: AuthService) -> None:
+        """Test checking if tag-role cache is initialized."""
+        assert auth_service.is_tag_role_cache_initialized() is False
+
+        with patch.object(auth_service, "_tag_role_cache", {"admin": ["admin"]}):
+            assert auth_service.is_tag_role_cache_initialized() is True
+
+
+class TestAuthServiceUserManagement:
+    """Tests for user management functionality."""
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_id_from_cache(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData
+    ) -> None:
+        """Test getting user by ID from cache."""
+        with patch("faster.core.auth.services.get_user_profile", return_value=mock_user_profile.model_dump_json()):
+            result = await auth_service.get_user_by_id(TEST_USER_ID, from_cache=True)
+
+            assert result == mock_user_profile
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_id_from_database(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_repository: AsyncMock
+    ) -> None:
+        """Test getting user by ID from database."""
+        with (
+            patch("faster.core.auth.services.get_user_profile", return_value=None),
+            patch.object(mock_repository, "get_user_info", return_value=mock_user_profile) as mock_get_db,
+            patch("faster.core.auth.services.set_user_profile"),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.get_user_by_id(TEST_USER_ID, from_cache=True)
+
+            assert result == mock_user_profile
+            _ = mock_get_db.assert_awaited_once_with(TEST_USER_ID, None)
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_id_from_supabase(
         self,
         auth_service: AuthService,
-        mocker: Any,
-        user_roles: set[str],
-        required_roles: set[str],
-        expected_result: bool,
+        mock_user_profile: UserProfileData,
+        mock_auth_client: MagicMock,
+        mock_repository: AsyncMock,
     ) -> None:
-        """
-        Tests the access logic with various combinations of user and required roles.
-        """
-        # Arrange
-        mocker.patch.object(auth_service, "get_roles", return_value=user_roles)
-        mocker.patch.object(auth_service, "get_roles_by_tags", return_value=required_roles)
+        """Test getting user by ID from Supabase."""
+        with (
+            patch("faster.core.auth.services.get_user_profile", return_value=None),
+            patch.object(mock_repository, "get_user_info", return_value=None),
+            patch.object(
+                mock_auth_client, "get_user_by_id", new_callable=AsyncMock, return_value=mock_user_profile
+            ) as mock_get_supabase,
+            patch.object(mock_repository, "set_user_info"),
+            patch("faster.core.auth.services.set_user_profile"),
+            patch.object(auth_service, "_repository", mock_repository),
+            patch.object(auth_service, "_auth_client", mock_auth_client),
+        ):
+            result = await auth_service.get_user_by_id(TEST_USER_ID, from_cache=True)
 
-        # Act
-        has_access = await auth_service.check_access(TEST_USER_ID, ["some-tag"])
+            assert result == mock_user_profile
+            _ = mock_get_supabase.assert_awaited_once_with(TEST_USER_ID)
 
-        # Assert
-        assert has_access is expected_result
-
-    async def test_check_access_denies_if_no_required_roles(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Tests that access is denied if the endpoint has no required roles,
-        regardless of user roles.
-        """
-        # Arrange
-        mocker.patch.object(auth_service, "get_roles", return_value={"viewer"})
-        mocker.patch.object(auth_service, "get_roles_by_tags", return_value=set())
-
-        # Act
-        has_access = await auth_service.check_access(TEST_USER_ID, ["public-tag"])
-
-        # Assert
-        assert has_access is False
-
-
-@pytest.mark.asyncio
-class TestAuthServiceLogEvent:
-    """Tests for the log_event method in AuthService."""
-
-    async def test_log_event_success_with_minimal_params(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Test that log_event successfully proxies to repository with minimal parameters.
-        """
-        # Arrange
-        mock_repo_log_event = mocker.patch.object(
-            auth_service._repository,  # type: ignore[reportPrivateUsage, unused-ignore]
-            "log_event",
-            return_value=True
-        )
-
-        # Act
-        result = await auth_service.log_event(
-            event_type="auth",
-            event_name="login",
-            event_source="supabase"
-        )
-
-        # Assert
-        assert result is True
-        mock_repo_log_event.assert_awaited_once_with(
-            event_type="auth",
-            event_name="login",
-            event_source="supabase",
-            user_auth_id=None,
-            trace_id=None,
-            session_id=None,
-            ip_address=None,
-            user_agent=None,
-            client_info=None,
-            referrer=None,
-            country_code=None,
-            city=None,
-            timezone=None,
-            event_payload=None,
-            extra_metadata=None,
-            session=None,
-        )
-
-    async def test_log_event_success_with_all_params(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Test that log_event successfully proxies to repository with all parameters.
-        """
-        # Arrange
-        mock_repo_log_event = mocker.patch.object(
-            auth_service._repository,  # type: ignore[reportPrivateUsage, unused-ignore]
-            "log_event",
-            return_value=True
-        )
-
-        event_payload = {"provider": "google", "session_duration": 3600}
-        extra_metadata = {"browser": "chrome", "version": "1.0.0"}
-
-        # Act
-        result = await auth_service.log_event(
-            event_type="user_action",
-            event_name="button_click",
-            event_source="frontend",
-            user_auth_id="user123",
-            trace_id="trace_abc",
-            session_id="session_xyz",
-            ip_address="192.168.1.1",
-            user_agent="Mozilla/5.0...",
-            client_info="Chrome 91.0",
-            referrer="https://example.com",
-            country_code="US",
-            city="San Francisco",
-            timezone="PST",
-            event_payload=event_payload,
-            extra_metadata=extra_metadata
-        )
-
-        # Assert
-        assert result is True
-        mock_repo_log_event.assert_awaited_once_with(
-            event_type="user_action",
-            event_name="button_click",
-            event_source="frontend",
-            user_auth_id="user123",
-            trace_id="trace_abc",
-            session_id="session_xyz",
-            ip_address="192.168.1.1",
-            user_agent="Mozilla/5.0...",
-            client_info="Chrome 91.0",
-            referrer="https://example.com",
-            country_code="US",
-            city="San Francisco",
-            timezone="PST",
-            event_payload=event_payload,
-            extra_metadata=extra_metadata,
-            session=None,
-        )
-
-    async def test_log_event_with_session_parameter(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Test that log_event properly passes through session parameter.
-        """
-        # Arrange
-        mock_repo_log_event = mocker.patch.object(
-            auth_service._repository,  # type: ignore[reportPrivateUsage, unused-ignore]
-            "log_event",
-            return_value=True
-        )
-        mock_session = AsyncMock()
-
-        # Act
-        result = await auth_service.log_event(
-            event_type="system",
-            event_name="service_start",
-            event_source="api",
-            session=mock_session
-        )
-
-        # Assert
-        assert result is True
-        mock_repo_log_event.assert_awaited_once_with(
-            event_type="system",
-            event_name="service_start",
-            event_source="api",
-            user_auth_id=None,
-            trace_id=None,
-            session_id=None,
-            ip_address=None,
-            user_agent=None,
-            client_info=None,
-            referrer=None,
-            country_code=None,
-            city=None,
-            timezone=None,
-            event_payload=None,
-            extra_metadata=None,
-            session=mock_session,
-        )
-
-    async def test_log_event_handles_repository_value_error(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Test that log_event returns False on ValueError from repository without raising exceptions.
-        """
-        # Arrange
-        mocker.patch.object(
-            auth_service._repository,  # type: ignore[reportPrivateUsage, unused-ignore]
-            "log_event",
-            side_effect=ValueError("Event type cannot be empty")
-        )
-        mock_logger_error = mocker.patch("faster.core.auth.services.logger.error")
-
-        # Act
-        result = await auth_service.log_event(
-            event_type="",
-            event_name="login",
-            event_source="supabase"
-        )
-
-        # Assert
-        assert result is False  # Should return False instead of raising
-        mock_logger_error.assert_called_once()
-        assert "AuthService.log_event failed" in str(mock_logger_error.call_args)
-
-    async def test_log_event_handles_repository_db_error(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Test that log_event returns False on DBError from repository without raising exceptions.
-        """
-        # Arrange
-        db_error = DBError("Failed to log event auth/login: Database connection failed")
-        mocker.patch.object(
-            auth_service._repository,  # type: ignore[reportPrivateUsage, unused-ignore]
-            "log_event",
-            side_effect=db_error
-        )
-        mock_logger_error = mocker.patch("faster.core.auth.services.logger.error")
-
-        # Act
-        result = await auth_service.log_event(
-            event_type="auth",
-            event_name="login",
-            event_source="supabase"
-        )
-
-        # Assert
-        assert result is False  # Should return False instead of raising
-        mock_logger_error.assert_called_once()
-        assert "AuthService.log_event failed" in str(mock_logger_error.call_args)
-
-    async def test_log_event_handles_generic_exception(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Test that log_event returns False on generic exceptions without raising them.
-        """
-        # Arrange
-        generic_error = RuntimeError("Unexpected error occurred")
-        mocker.patch.object(
-            auth_service._repository,  # type: ignore[reportPrivateUsage, unused-ignore]
-            "log_event",
-            side_effect=generic_error
-        )
-        mock_logger_error = mocker.patch("faster.core.auth.services.logger.error")
-
-        # Act
-        result = await auth_service.log_event(
-            event_type="auth",
-            event_name="login",
-            event_source="supabase"
-        )
-
-        # Assert
-        assert result is False  # Should return False instead of raising
-        mock_logger_error.assert_called_once()
-        assert "AuthService.log_event failed" in str(mock_logger_error.call_args)
-
-    @pytest.mark.parametrize(
-        "event_type, event_name, event_source, user_auth_id, expected_success",
-        [
-            # Valid cases
-            ("auth", "login", "supabase", "user123", True),
-            ("user_action", "click", "frontend", "user456", True),
-            ("system", "startup", "api", None, True),  # Anonymous event
-            ("navigation", "page_view", "frontend", "user789", True),
-            # Repository returns False
-            ("auth", "logout", "supabase", "user123", False),
-        ],
-    )
-    async def test_log_event_parametrized_scenarios(
-        self,
-        auth_service: AuthService,
-        mocker: Any,
-        event_type: str,
-        event_name: str,
-        event_source: str,
-        user_auth_id: str | None,
-        expected_success: bool,
+    @pytest.mark.asyncio
+    async def test_get_user_by_id_not_found(
+        self, auth_service: AuthService, mock_auth_client: MagicMock, mock_repository: AsyncMock
     ) -> None:
-        """
-        Test log_event with various parameter combinations using parametrization.
-        """
-        # Arrange
-        mock_repo_log_event = mocker.patch.object(
-            auth_service._repository,  # type: ignore[reportPrivateUsage, unused-ignore]
-            "log_event",
-            return_value=expected_success
-        )
+        """Test getting user by ID when not found anywhere."""
+        with (
+            patch("faster.core.auth.services.get_user_profile", return_value=None),
+            patch.object(mock_repository, "get_user_info", return_value=None),
+            patch.object(mock_auth_client, "get_user_by_id", return_value=None),
+            patch.object(auth_service, "_repository", mock_repository),
+            patch.object(auth_service, "_auth_client", mock_auth_client),
+        ):
+            result = await auth_service.get_user_by_id(TEST_USER_ID, from_cache=True)
 
-        # Act
-        result = await auth_service.log_event(
-            event_type=event_type,
-            event_name=event_name,
-            event_source=event_source,
-            user_auth_id=user_auth_id
-        )
+            assert result is None
 
-        # Assert
-        assert result is expected_success
-        mock_repo_log_event.assert_awaited_once()
+    @pytest.mark.asyncio
+    async def test_get_user_by_token(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_auth_client: MagicMock
+    ) -> None:
+        """Test getting user by token."""
+        with (
+            patch.object(
+                mock_auth_client, "get_user_by_token", new_callable=AsyncMock, return_value=mock_user_profile
+            ) as mock_method,
+            patch.object(auth_service, "_auth_client", mock_auth_client),
+        ):
+            result = await auth_service.get_user_by_token(TEST_TOKEN)
 
-    async def test_log_event_with_complex_payload_data(self, auth_service: AuthService, mocker: Any) -> None:
-        """
-        Test log_event with complex nested payload and metadata.
-        """
-        # Arrange
-        mock_repo_log_event = mocker.patch.object(
-            auth_service._repository,  # type: ignore[reportPrivateUsage, unused-ignore]
-            "log_event",
-            return_value=True
-        )
+            assert result == mock_user_profile
+            _ = mock_method.assert_awaited_once_with(TEST_TOKEN)
 
-        complex_payload = {
-            "user_action": {
-                "button_id": "export_button",
-                "page": "app_state",
-                "coordinates": {"x": 100, "y": 200},
-                "context": {
-                    "previous_actions": ["page_load", "data_refresh"],
-                    "session_time": 1800
-                }
-            },
-            "performance": {
-                "load_time": 250,
-                "render_time": 150
-            }
-        }
+    @pytest.mark.asyncio
+    async def test_get_user_id_from_token(self, auth_service: AuthService, mock_auth_client: MagicMock) -> None:
+        """Test getting user ID from token."""
+        with (
+            patch.object(
+                mock_auth_client, "get_user_id_from_token", new_callable=AsyncMock, return_value=TEST_USER_ID
+            ) as mock_method,
+            patch.object(auth_service, "_auth_client", mock_auth_client),
+        ):
+            result = await auth_service.get_user_id_from_token(TEST_TOKEN)
 
-        complex_metadata = {
-            "system": {
-                "version": "1.2.3",
-                "environment": "production"
-            },
-            "analytics": {
-                "experiment_id": "exp_123",
-                "variant": "A"
-            }
-        }
+            assert result == TEST_USER_ID
+            _ = mock_method.assert_awaited_once_with(TEST_TOKEN)
 
-        # Act
-        result = await auth_service.log_event(
-            event_type="user_action",
-            event_name="complex_interaction",
-            event_source="frontend",
-            user_auth_id="user123",
-            event_payload=complex_payload,
-            extra_metadata=complex_metadata
-        )
 
-        # Assert
-        assert result is True
-        mock_repo_log_event.assert_awaited_once_with(
-            event_type="user_action",
-            event_name="complex_interaction",
-            event_source="frontend",
-            user_auth_id="user123",
-            trace_id=None,
-            session_id=None,
-            ip_address=None,
-            user_agent=None,
-            client_info=None,
-            referrer=None,
-            country_code=None,
-            city=None,
-            timezone=None,
-            event_payload=complex_payload,
-            extra_metadata=complex_metadata,
-            session=None,
-        )
+class TestAuthServiceRoleManagement:
+    """Tests for role management functionality."""
+
+    @pytest.mark.asyncio
+    async def test_get_roles_from_cache(self, auth_service: AuthService) -> None:
+        """Test getting roles from cache."""
+        with patch("faster.core.auth.services.user2role_get", return_value=["admin", "user"]):
+            result = await auth_service.get_roles(TEST_USER_ID, from_cache=True)
+
+            assert result == ["admin", "user"]
+
+    @pytest.mark.asyncio
+    async def test_get_roles_from_database(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
+        """Test getting roles from database."""
+        with (
+            patch("faster.core.auth.services.user2role_get", return_value=None),
+            patch.object(mock_repository, "get_roles", return_value=["user"]) as mock_get_db,
+            patch("faster.core.auth.services.user2role_set"),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.get_roles(TEST_USER_ID, from_cache=True)
+
+            assert result == ["user"]
+            _ = mock_get_db.assert_awaited_once_with(TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_get_roles_empty_user_id(self, auth_service: AuthService) -> None:
+        """Test getting roles with empty user ID."""
+        result = await auth_service.get_roles("", from_cache=True)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_set_roles_success(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
+        """Test setting roles successfully."""
+        with (
+            patch.object(mock_repository, "set_roles", return_value=True) as mock_set_db,
+            patch("faster.core.auth.services.user2role_set", return_value=True),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.set_roles(TEST_USER_ID, ["admin", "user"], to_cache=True)
+
+            assert result is True
+            _ = mock_set_db.assert_awaited_once_with(TEST_USER_ID, ["admin", "user"])
+
+    @pytest.mark.asyncio
+    async def test_set_roles_failure(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
+        """Test setting roles failure."""
+        with (
+            patch.object(mock_repository, "set_roles", return_value=False),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.set_roles(TEST_USER_ID, ["admin"], to_cache=True)
+
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_set_roles_empty_user_id(self, auth_service: AuthService) -> None:
+        """Test setting roles with empty user ID."""
+        result = await auth_service.set_roles("", ["admin"], to_cache=True)
+
+        assert result is False
+
+
+class TestAuthServiceAccessControl:
+    """Tests for access control functionality."""
+
+    @pytest.mark.asyncio
+    async def test_check_access_granted(self, auth_service: AuthService) -> None:
+        """Test access granted."""
+        with (
+            patch.object(auth_service, "get_roles", return_value=["admin"]),
+            patch.object(auth_service, "get_roles_by_tags", return_value={"admin"}),
+        ):
+            result = await auth_service.check_access(TEST_USER_ID, ["admin-tag"])
+
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_check_access_denied_no_user_roles(self, auth_service: AuthService) -> None:
+        """Test access denied when user has no roles."""
+        with (
+            patch.object(auth_service, "get_roles", return_value=[]),
+            patch.object(auth_service, "get_roles_by_tags", return_value={"admin"}),
+        ):
+            result = await auth_service.check_access(TEST_USER_ID, ["admin-tag"])
+
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_check_access_denied_no_required_roles(self, auth_service: AuthService) -> None:
+        """Test access denied when no required roles."""
+        with (
+            patch.object(auth_service, "get_roles", return_value=["user"]),
+            patch.object(auth_service, "get_roles_by_tags", return_value=set()),
+        ):
+            result = await auth_service.check_access(TEST_USER_ID, ["public-tag"])
+
+            assert result is False
+
+
+class TestAuthServiceLoginLogout:
+    """Tests for login/logout functionality."""
+
+    @pytest.mark.asyncio
+    async def test_process_user_login_success(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData
+    ) -> None:
+        """Test successful user login processing."""
+        mock_user = MagicMock()
+        with patch.object(auth_service, "_save_user_profile_to_database", return_value=mock_user) as mock_save:
+            result = await auth_service.process_user_login(TEST_TOKEN, mock_user_profile)
+
+            assert result == mock_user
+            _ = mock_save.assert_awaited_once_with(mock_user_profile)
+
+    @pytest.mark.asyncio
+    async def test_process_user_login_failure(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData
+    ) -> None:
+        """Test user login processing failure."""
+        with patch.object(auth_service, "_save_user_profile_to_database", side_effect=DBError("Save failed")):
+            # Test that DBError is raised
+            try:
+                _ = await auth_service.process_user_login(TEST_TOKEN, mock_user_profile)
+                raise AssertionError("Expected DBError to be raised")
+            except DBError:
+                pass  # Expected
+
+    @pytest.mark.asyncio
+    async def test_process_user_logout(self, auth_service: AuthService, mock_user_profile: UserProfileData) -> None:
+        """Test user logout processing."""
+        await auth_service.process_user_logout(TEST_TOKEN, mock_user_profile)
+
+        # Should not raise any exceptions
+
+    @pytest.mark.asyncio
+    async def test_background_process_logout(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData
+    ) -> None:
+        """Test background logout processing."""
+        with (
+            patch("faster.core.auth.services.blacklist_add", return_value=True),
+            patch.object(auth_service, "process_user_logout") as mock_process_logout,
+        ):
+            await auth_service.background_process_logout(TEST_TOKEN, mock_user_profile)
+
+            _ = mock_process_logout.assert_awaited_once_with(TEST_TOKEN, mock_user_profile)
+
+
+class TestAuthServiceUserProfilePersistence:
+    """Tests for user profile persistence."""
+
+    @pytest.mark.asyncio
+    async def test_save_user_profile_to_database(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_repository: AsyncMock
+    ) -> None:
+        """Test saving user profile to database."""
+        mock_user = MagicMock()
+        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
+            mock_session = AsyncMock()
+            mock_transaction.return_value.__aenter__.return_value = mock_session
+
+            with (
+                patch.object(mock_repository, "create_or_update_user", return_value=mock_user) as mock_create,
+                patch.object(auth_service, "_repository", mock_repository),
+                patch("faster.core.auth.services.set_user_profile"),
+            ):
+                # Test through process_user_login which calls _save_user_profile_to_database internally
+                result = await auth_service.process_user_login(TEST_TOKEN, mock_user_profile)
+
+                assert result is not None
+                _ = mock_create.assert_awaited_once()
+                args = mock_create.call_args[0]
+                assert args[1]["id"] == TEST_USER_ID
+                assert args[1]["email"] == TEST_EMAIL
+
+    @pytest.mark.asyncio
+    async def test_should_update_user_in_db_new_user(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_repository: AsyncMock
+    ) -> None:
+        """Test should update user in DB for new user."""
+        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
+            mock_session = AsyncMock()
+            mock_transaction.return_value.__aenter__.return_value = mock_session
+
+            with (
+                patch.object(mock_repository, "get_user_by_auth_id", return_value=None),
+                patch.object(auth_service, "_repository", mock_repository),
+            ):
+                result = await auth_service.should_update_user_in_db(mock_user_profile)
+
+                assert result is True
+
+    @pytest.mark.asyncio
+    async def test_should_update_user_in_db_old_update(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_repository: AsyncMock
+    ) -> None:
+        """Test should update user in DB for old update."""
+        old_user = MagicMock()
+        old_user.updated_at = datetime.now() - timedelta(hours=25)
+
+        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
+            mock_session = AsyncMock()
+            mock_transaction.return_value.__aenter__.return_value = mock_session
+
+            with (
+                patch.object(mock_repository, "get_user_by_auth_id", return_value=old_user),
+                patch.object(auth_service, "_repository", mock_repository),
+            ):
+                result = await auth_service.should_update_user_in_db(mock_user_profile)
+
+                assert result is True
+
+    @pytest.mark.asyncio
+    async def test_should_update_user_in_db_recent_update(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_repository: AsyncMock
+    ) -> None:
+        """Test should not update user in DB for recent update."""
+        recent_user = MagicMock()
+        recent_user.updated_at = datetime.now() - timedelta(hours=1)
+
+        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
+            mock_session = AsyncMock()
+            mock_transaction.return_value.__aenter__.return_value = mock_session
+
+            with (
+                patch.object(mock_repository, "get_user_by_auth_id", return_value=recent_user),
+                patch.object(auth_service, "_repository", mock_repository),
+            ):
+                result = await auth_service.should_update_user_in_db(mock_user_profile)
+
+                assert result is False
+
+
+class TestAuthServiceBackgroundTasks:
+    """Tests for background task functionality."""
+
+    @pytest.mark.asyncio
+    async def test_background_update_user_info_success(
+        self, auth_service: AuthService, mock_user_profile: UserProfileData
+    ) -> None:
+        """Test successful background user info update."""
+        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
+            mock_session = AsyncMock()
+            mock_transaction.return_value.__aenter__.return_value = mock_session
+
+            with (
+                patch.object(auth_service, "get_user_by_id", return_value=mock_user_profile),
+                patch.object(auth_service, "_save_user_profile_to_database_with_session", create=True) as mock_save,
+            ):
+                await auth_service.background_update_user_info(TEST_TOKEN, TEST_USER_ID)
+
+                _ = mock_save.assert_awaited_once_with(mock_session, mock_user_profile)
+
+    @pytest.mark.asyncio
+    async def test_background_update_user_info_no_user(self, auth_service: AuthService) -> None:
+        """Test background user info update when user not found."""
+        with patch.object(auth_service, "get_user_by_id", return_value=None):
+            await auth_service.background_update_user_info(TEST_TOKEN, TEST_USER_ID)
+
+            # Should not raise exception
+
+
+class TestAuthServiceRepositoryProxy:
+    """Tests for repository proxy methods."""
+
+    @pytest.mark.asyncio
+    async def test_check_user_onboarding_complete(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
+        """Test checking user onboarding complete."""
+        with (
+            patch.object(mock_repository, "check_user_profile_exists", return_value=True) as mock_method,
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.check_user_onboarding_complete(TEST_USER_ID)
+
+            assert result is True
+            _ = mock_method.assert_awaited_once_with(TEST_USER_ID)
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_auth_id(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
+        """Test getting user by auth ID."""
+        mock_user = MagicMock()
+        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
+            mock_session = AsyncMock()
+            mock_transaction.return_value.__aenter__.return_value = mock_session
+
+            with (
+                patch.object(mock_repository, "get_user_by_auth_id", return_value=mock_user),
+                patch.object(auth_service, "_repository", mock_repository),
+            ):
+                result = await auth_service.get_user_by_auth_id(TEST_USER_ID)
+
+                assert result == mock_user
+
+
+class TestAuthServiceEventLogging:
+    """Tests for event logging functionality."""
+
+    @pytest.mark.asyncio
+    async def test_log_event_success(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
+        """Test successful event logging."""
+        with (
+            patch.object(mock_repository, "log_event", return_value=True) as mock_method,
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.log_event(
+                event_type="auth", event_name="login", event_source="supabase", user_auth_id=TEST_USER_ID
+            )
+
+            assert result is True
+            _ = mock_method.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_log_event_failure(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
+        """Test event logging failure."""
+        with (
+            patch.object(mock_repository, "log_event", side_effect=Exception("Log failed")),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.log_event(event_type="auth", event_name="login", event_source="supabase")
+
+            assert result is False

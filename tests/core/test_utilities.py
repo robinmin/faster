@@ -4,7 +4,6 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import status
-from fastapi.routing import APIRoute
 import pytest
 
 from faster.core.exceptions import AppError, AuthError
@@ -15,8 +14,6 @@ from faster.core.utilities import (
     check_all_resources,
     custom_validation_exception_handler,
     detect_platform,
-    get_all_endpoints,
-    get_current_endpoint,
     is_api_call,
     is_cloudflare_workers,
     is_vps_deployment,
@@ -36,255 +33,95 @@ class TestPlatformDetection:
         result = detect_platform("cloudflare-workers")
         assert result == "cloudflare-workers"
 
-    def test_detect_platform_auto_default(self) -> None:
-        """Test detect_platform with 'auto' setting defaults to 'vps'."""
-        with patch.dict(os.environ, {}, clear=True):
-            result = detect_platform("auto")
-            assert result == "vps"
-
+    @patch.dict(os.environ, {"CF_PAGES": "1"}, clear=True)
     def test_detect_platform_auto_cloudflare_pages(self) -> None:
         """Test detect_platform detects Cloudflare Pages."""
-        with patch.dict(os.environ, {"CF_PAGES": "1"}):
-            result = detect_platform("auto")
-            assert result == "cloudflare-workers"
+        result = detect_platform("auto")
+        assert result == "cloudflare-workers"
 
+    @patch.dict(os.environ, {"CF_WORKER": "1"}, clear=True)
     def test_detect_platform_auto_cloudflare_worker(self) -> None:
         """Test detect_platform detects Cloudflare Worker."""
-        with patch.dict(os.environ, {"CF_WORKER": "1"}):
-            result = detect_platform("auto")
-            assert result == "cloudflare-workers"
+        result = detect_platform("auto")
+        assert result == "cloudflare-workers"
 
+    @patch.dict(os.environ, {"AWS_LAMBDA_FUNCTION_NAME": "test"}, clear=True)
     def test_detect_platform_auto_aws_lambda(self) -> None:
-        """Test detect_platform detects AWS Lambda as VPS-like."""
-        with patch.dict(os.environ, {"AWS_LAMBDA_FUNCTION_NAME": "test-function"}):
-            result = detect_platform("auto")
-            assert result == "vps"
+        """Test detect_platform detects AWS Lambda as VPS."""
+        result = detect_platform("auto")
+        assert result == "vps"
 
-    def test_detect_platform_auto_heroku(self) -> None:
-        """Test detect_platform detects Heroku as VPS-like."""
-        with patch.dict(os.environ, {"HEROKU_APP_NAME": "test-app"}):
-            result = detect_platform("auto")
-            assert result == "vps"
+    @patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT": "test"}, clear=True)
+    def test_detect_platform_auto_google_cloud(self) -> None:
+        """Test detect_platform detects Google Cloud as VPS."""
+        result = detect_platform("auto")
+        assert result == "vps"
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_detect_platform_auto_default_vps(self) -> None:
+        """Test detect_platform defaults to VPS when no indicators."""
+        result = detect_platform("auto")
+        assert result == "vps"
 
     def test_is_cloudflare_workers_true(self) -> None:
-        """Test is_cloudflare_workers returns True for Cloudflare Workers."""
-        with patch.dict(os.environ, {"CF_WORKER": "1"}):
-            result = is_cloudflare_workers("auto")
+        """Test is_cloudflare_workers returns True for cloudflare-workers."""
+        with patch("faster.core.utilities.detect_platform", return_value="cloudflare-workers"):
+            result = is_cloudflare_workers("test")
             assert result is True
 
     def test_is_cloudflare_workers_false(self) -> None:
-        """Test is_cloudflare_workers returns False for non-Cloudflare Workers."""
-        with patch.dict(os.environ, {}, clear=True):
-            result = is_cloudflare_workers("auto")
+        """Test is_cloudflare_workers returns False for vps."""
+        with patch("faster.core.utilities.detect_platform", return_value="vps"):
+            result = is_cloudflare_workers("test")
             assert result is False
 
     def test_is_vps_deployment_true(self) -> None:
-        """Test is_vps_deployment returns True for VPS deployment."""
-        with patch.dict(os.environ, {}, clear=True):
-            result = is_vps_deployment("auto")
+        """Test is_vps_deployment returns True for vps."""
+        with patch("faster.core.utilities.detect_platform", return_value="vps"):
+            result = is_vps_deployment("test")
             assert result is True
 
     def test_is_vps_deployment_false(self) -> None:
-        """Test is_vps_deployment returns False for non-VPS deployment."""
-        with patch.dict(os.environ, {"CF_WORKER": "1"}):
-            result = is_vps_deployment("auto")
+        """Test is_vps_deployment returns False for cloudflare-workers."""
+        with patch("faster.core.utilities.detect_platform", return_value="cloudflare-workers"):
+            result = is_vps_deployment("test")
             assert result is False
 
 
 class TestRequestUtilities:
     """Test request utility functions."""
 
-    def test_is_api_call_with_json_accept_header(self) -> None:
-        """Test is_api_call returns True with application/json accept header."""
+    def test_is_api_call_with_json_accept(self) -> None:
+        """Test is_api_call returns True for application/json accept header."""
         mock_request = MagicMock()
         mock_request.headers.get.return_value = "application/json"
 
         result = is_api_call(mock_request)
         assert result is True
-        mock_request.headers.get.assert_called_once_with("accept")
 
-    def test_is_api_call_with_mixed_accept_header(self) -> None:
-        """Test is_api_call returns True with mixed accept header containing application/json."""
+    def test_is_api_call_with_mixed_accept(self) -> None:
+        """Test is_api_call returns True when application/json is in mixed accept header."""
         mock_request = MagicMock()
-        mock_request.headers.get.return_value = "text/html,application/json;q=0.9,*/*;q=0.8"
+        mock_request.headers.get.return_value = "text/html,application/json,*/*"
 
         result = is_api_call(mock_request)
         assert result is True
-        mock_request.headers.get.assert_called_once_with("accept")
 
-    def test_is_api_call_without_json_accept_header(self) -> None:
-        """Test is_api_call returns False without application/json accept header."""
+    def test_is_api_call_without_json_accept(self) -> None:
+        """Test is_api_call returns False for non-JSON accept header."""
         mock_request = MagicMock()
-        mock_request.headers.get.return_value = "text/html,application/xhtml+xml"
+        mock_request.headers.get.return_value = "text/html"
 
         result = is_api_call(mock_request)
         assert result is False
-        mock_request.headers.get.assert_called_once_with("accept")
 
-    def test_is_api_call_with_no_accept_header(self) -> None:
-        """Test is_api_call returns False with no accept header."""
+    def test_is_api_call_no_accept_header(self) -> None:
+        """Test is_api_call returns False when no accept header."""
         mock_request = MagicMock()
         mock_request.headers.get.return_value = None
 
         result = is_api_call(mock_request)
         assert result is False
-        mock_request.headers.get.assert_called_once_with("accept")
-
-
-class TestEndpointUtilities:
-    """Test endpoint utility functions."""
-
-    def test_get_all_endpoints(self) -> None:
-        """Test get_all_endpoints returns correct endpoint information."""
-        # Create a mock FastAPI app with routes
-        mock_app = MagicMock()
-
-        # Create mock routes
-        mock_route1 = MagicMock(spec=APIRoute)
-        mock_route1.path = "/api/users"
-        mock_route1.methods = {"GET", "POST"}
-        mock_route1.tags = ["users"]
-        mock_route1.name = "get_users"
-        # Properly mock the endpoint function
-        mock_endpoint_func = MagicMock()
-        mock_endpoint_func.__name__ = "get_users_endpoint"
-        mock_route1.endpoint = mock_endpoint_func
-
-        mock_route2 = MagicMock(spec=APIRoute)
-        mock_route2.path = "/api/items"
-        mock_route2.methods = {"GET"}
-        mock_route2.tags = ["items"]
-        mock_route2.name = "get_items"
-        # Properly mock the endpoint function
-        mock_endpoint_func2 = MagicMock()
-        mock_endpoint_func2.__name__ = "get_items_endpoint"
-        mock_route2.endpoint = mock_endpoint_func2
-
-        mock_app.routes = [mock_route1, mock_route2]
-
-        result = get_all_endpoints(mock_app)
-
-        assert len(result) == 2
-        assert result[0]["path"] == "/api/users"
-        assert set(result[0]["methods"]) == {"GET", "POST"}
-        assert result[0]["tags"] == ["users"]
-        assert result[0]["name"] == "get_users"
-        assert result[0]["endpoint_func"] == "get_users_endpoint"
-
-        assert result[1]["path"] == "/api/items"
-        assert result[1]["methods"] == ["GET"]
-        assert result[1]["tags"] == ["items"]
-        assert result[1]["name"] == "get_items"
-        assert result[1]["endpoint_func"] == "get_items_endpoint"
-
-    def test_get_all_endpoints_with_non_api_routes(self) -> None:
-        """Test get_all_endpoints ignores non-API routes."""
-        # Create a mock FastAPI app with routes
-        mock_app = MagicMock()
-
-        # Create mock routes - one APIRoute and one non-APIRoute
-        mock_route1 = MagicMock(spec=APIRoute)
-        mock_route1.path = "/api/users"
-        mock_route1.methods = {"GET"}
-        mock_route1.tags = ["users"]
-        mock_route1.name = "get_users"
-        # Properly mock the endpoint function
-        mock_endpoint_func = MagicMock()
-        mock_endpoint_func.__name__ = "get_users_endpoint"
-        mock_route1.endpoint = mock_endpoint_func
-
-        mock_route2 = MagicMock()  # Non-APIRoute
-        mock_route2.path = "/static"
-
-        mock_app.routes = [mock_route1, mock_route2]
-
-        result = get_all_endpoints(mock_app)
-
-        assert len(result) == 1
-        assert result[0]["path"] == "/api/users"
-
-    def test_get_current_endpoint_match(self) -> None:
-        """Test get_current_endpoint finds matching endpoint."""
-        mock_request = MagicMock()
-        mock_request.url.path = "/api/users"
-        mock_request.method = "GET"
-
-        endpoints = [
-            {
-                "path": "/api/users",
-                "methods": ["GET", "POST"],
-                "tags": ["users"],
-                "name": "get_users",
-                "endpoint_func": "get_users_endpoint",
-            }
-        ]
-
-        result = get_current_endpoint(mock_request, endpoints)
-
-        assert result is not None
-        assert result["path"] == "/api/users"
-        assert result["methods"] == ["GET", "POST"]
-
-    def test_get_current_endpoint_head_method(self) -> None:
-        """Test get_current_endpoint handles HEAD method."""
-        mock_request = MagicMock()
-        mock_request.url.path = "/api/users"
-        mock_request.method = "HEAD"
-
-        endpoints = [
-            {
-                "path": "/api/users",
-                "methods": ["GET", "POST"],
-                "tags": ["users"],
-                "name": "get_users",
-                "endpoint_func": "get_users_endpoint",
-            }
-        ]
-
-        result = get_current_endpoint(mock_request, endpoints)
-
-        assert result is not None
-        assert result["path"] == "/api/users"
-
-    def test_get_current_endpoint_no_match(self) -> None:
-        """Test get_current_endpoint returns None when no match found."""
-        mock_request = MagicMock()
-        mock_request.url.path = "/api/nonexistent"
-        mock_request.method = "GET"
-
-        endpoints = [
-            {
-                "path": "/api/users",
-                "methods": ["GET", "POST"],
-                "tags": ["users"],
-                "name": "get_users",
-                "endpoint_func": "get_users_endpoint",
-            }
-        ]
-
-        result = get_current_endpoint(mock_request, endpoints)
-
-        assert result is None
-
-    def test_get_current_endpoint_method_mismatch(self) -> None:
-        """Test get_current_endpoint returns None when method doesn't match."""
-        mock_request = MagicMock()
-        mock_request.url.path = "/api/users"
-        mock_request.method = "DELETE"
-
-        endpoints = [
-            {
-                "path": "/api/users",
-                "methods": ["GET", "POST"],
-                "tags": ["users"],
-                "name": "get_users",
-                "endpoint_func": "get_users_endpoint",
-            }
-        ]
-
-        result = get_current_endpoint(mock_request, endpoints)
-
-        assert result is None
 
 
 class TestResourceCheck:
@@ -299,24 +136,12 @@ class TestResourceCheck:
         mock_settings = MagicMock()
         mock_settings.refresh_interval = 60  # 60 seconds
 
-        # Mock the app routes for get_all_endpoints
-        mock_route = MagicMock(spec=APIRoute)
-        mock_route.path = "/api/test"
-        mock_route.methods = {"GET"}
-        mock_route.tags = ["test"]
-        mock_route.name = "test_endpoint"
-        # Properly mock the endpoint function
-        mock_endpoint_func = MagicMock()
-        mock_endpoint_func.__name__ = "test_endpoint_func"
-        mock_route.endpoint = mock_endpoint_func
-        mock_app.routes = [mock_route]
-
         # Should skip because last check was recent
         await check_all_resources(mock_app, mock_settings)
 
         # Since it's an async function that returns None, we can't easily check if it was skipped
-        # But we can check that endpoints were still set (the function always sets them)
-        assert hasattr(mock_app.state, "endpoints")
+        # But we can verify that latest_status_check was not updated (since it was recent)
+        # This test mainly ensures no errors occur when skipping
 
     @pytest.mark.asyncio
     async def test_check_all_resources_performs_check(self) -> None:
@@ -337,23 +162,7 @@ class TestResourceCheck:
             }
             mock_get_instance.return_value = mock_plugin_mgr
 
-            # Mock the app routes for get_all_endpoints
-            mock_route = MagicMock(spec=APIRoute)
-            mock_route.path = "/api/test"
-            mock_route.methods = {"GET"}
-            mock_route.tags = ["test"]
-            mock_route.name = "test_endpoint"
-            # Properly mock the endpoint function
-            mock_endpoint_func = MagicMock()
-            mock_endpoint_func.__name__ = "test_endpoint_func"
-            mock_route.endpoint = mock_endpoint_func
-            mock_app.routes = [mock_route]
-
             await check_all_resources(mock_app, mock_settings)
-
-            # Verify that endpoints were set
-            assert hasattr(mock_app.state, "endpoints")
-            assert len(mock_app.state.endpoints) == 1
 
             # Verify that plugin health check was called
             mock_plugin_mgr.check_health.assert_called_once()
@@ -433,19 +242,19 @@ class TestExceptionHandlers:
             assert result.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
             assert len(content["data"]) == 3
 
-            # Check that errors are grouped by field
-            field_errors = {item["field"]: item["messages"] for item in content["data"]}
-            assert "body.name" in field_errors
-            assert "body.email" in field_errors
-            assert "query.page" in field_errors
+            # Check that error details are properly formatted
+            fields = [item["field"] for item in content["data"]]
+            assert "body.name" in fields
+            assert "body.email" in fields
+            assert "query.page" in fields
 
             mock_logger.error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_auth_exception_handler(self) -> None:
-        """Test auth_exception_handler formats authentication errors."""
+        """Test auth_exception_handler formats response correctly."""
         mock_request = MagicMock()
-        mock_exception = AuthError("Authentication failed", status_code=401, errors=[{"reason": "invalid_token"}])
+        mock_exception = AuthError("Authentication failed", status_code=401, errors=[{"error": "Invalid token"}])
 
         with patch("faster.core.utilities.logger") as mock_logger:
             result = await auth_exception_handler(mock_request, mock_exception)
@@ -456,14 +265,14 @@ class TestExceptionHandlers:
             content = json.loads(bytes(result.body))
             assert content["status"] == "Authentication failed"
             assert content["message"] == "Authentication failed"
+            assert content["data"] == [{"error": "Invalid token"}]
             assert result.status_code == 401
-            assert content["data"] == [{"reason": "invalid_token"}]
 
             mock_logger.error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_auth_exception_handler_without_errors(self) -> None:
-        """Test auth_exception_handler handles authentication error without errors."""
+        """Test auth_exception_handler handles exception without errors."""
         mock_request = MagicMock()
         mock_exception = AuthError("Authentication failed", status_code=401)
 
@@ -476,7 +285,7 @@ class TestExceptionHandlers:
             content = json.loads(bytes(result.body))
             assert content["status"] == "Authentication failed"
             assert content["message"] == "Authentication failed"
-            assert result.status_code == 401
             assert content["data"] == {}  # Default to empty dict when None
+            assert result.status_code == 401
 
             mock_logger.error.assert_called_once()

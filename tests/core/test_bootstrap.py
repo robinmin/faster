@@ -134,8 +134,52 @@ async def test_refresh_status(mock_settings: Settings, mock_plugin_mgr: MagicMoc
         # Mock the SysService.get_sys_info to return True
         with patch("faster.core.bootstrap.SysService.get_sys_info", new_callable=AsyncMock) as mock_get_sys_info:
             mock_get_sys_info.return_value = True
-            # Just verify the function runs without error
-            await bootstrap.refresh_status(app, mock_settings, verbose=True)
+
+            # Mock the AppRepository.get_sys_map to return test data
+            with patch("faster.core.bootstrap.AppRepository.get_sys_map", new_callable=AsyncMock) as mock_get_sys_map:
+                mock_get_sys_map.return_value = {
+                    "tag_role": {
+                        "admin": ["admin", "super_admin"],
+                        "protected": ["user", "admin", "super_admin"],
+                        "public": [],
+                    }
+                }
+
+                # Just verify the function runs without error
+                await bootstrap.refresh_status(app, mock_settings, verbose=True)
+
+
+@pytest.mark.asyncio
+async def test_refresh_status_database_error_fallback(
+    mock_settings: Settings, mock_plugin_mgr: MagicMock, caplog: Any
+) -> None:
+    """Test that refresh_status falls back to hardcoded values when database loading fails."""
+    app = FastAPI()
+    app.state.settings = mock_settings
+
+    # Mock the check_all_resources function to avoid database initialization issues
+    with patch("faster.core.bootstrap.check_all_resources") as mock_check_all_resources:
+
+        def mock_check_all_resources_side_effect(app: Any, settings: Any) -> None:
+            app.state.endpoints = []
+
+        mock_check_all_resources.side_effect = mock_check_all_resources_side_effect
+
+        # Mock the SysService.get_sys_info to return True
+        with patch("faster.core.bootstrap.SysService.get_sys_info", new_callable=AsyncMock) as mock_get_sys_info:
+            mock_get_sys_info.return_value = True
+
+            # Mock the AppRepository.get_sys_map to raise an exception (database error)
+            with patch("faster.core.bootstrap.AppRepository.get_sys_map", new_callable=AsyncMock) as mock_get_sys_map:
+                mock_get_sys_map.side_effect = Exception("Database connection failed")
+
+                # Verify the function runs without error and uses fallback values
+                await bootstrap.refresh_status(app, mock_settings, verbose=True)
+
+                # Check that error was logged
+                assert any(
+                    "Failed to load tag-role mapping from database" in record.message for record in caplog.records
+                )
 
 
 def test_create_app(mock_settings: Settings, mock_db_mgr: MagicMock, mock_redis_mgr: MagicMock) -> None:

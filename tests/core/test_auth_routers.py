@@ -9,6 +9,7 @@ import pytest
 from faster.core.auth.middlewares import get_current_user
 from faster.core.auth.models import UserProfileData
 from faster.core.auth.routers import router
+from faster.core.auth.services import AuthService
 
 
 class TestAuthRouters:
@@ -60,10 +61,8 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return True
-            with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
+            # Mock the auth service singleton instance method
+            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
                 mock_check_onboarding.return_value = True
 
                 # Make a request to the endpoint
@@ -100,10 +99,8 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return False
-            with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
+            # Mock the auth service singleton instance method
+            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
                 mock_check_onboarding.return_value = False
 
                 # Make a request to the endpoint
@@ -171,10 +168,8 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return True
-            with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
+            # Mock the auth service singleton instance method
+            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
                 mock_check_onboarding.return_value = True
 
                 # Make a request to the endpoint
@@ -211,10 +206,8 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return False
-            with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
+            # Mock the auth service singleton instance method
+            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
                 mock_check_onboarding.return_value = False
 
                 # Make a request to the endpoint
@@ -274,10 +267,8 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return True
-            with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
+            # Mock the auth service singleton instance method
+            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
                 mock_check_onboarding.return_value = True
 
                 # Make a request to the endpoint
@@ -344,10 +335,8 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return False
-            with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
+            # Mock the auth service singleton instance method
+            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
                 mock_check_onboarding.return_value = False
 
                 # Make a request to the endpoint
@@ -413,7 +402,7 @@ class TestAuthRouters:
                 patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
                 patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
                 patch(
-                    "faster.core.auth.routers.auth_service.should_update_user_in_db", new_callable=AsyncMock
+    "faster.core.auth.services.AuthService.should_update_user_in_db", new_callable=AsyncMock
                 ) as mock_should_update,
             ):
                 mock_blacklist_delete.return_value = None
@@ -457,7 +446,7 @@ class TestAuthRouters:
             with (
                 patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
                 patch(
-                    "faster.core.auth.routers.auth_service.background_process_logout", new_callable=AsyncMock
+    "faster.core.auth.services.AuthService.background_process_logout", new_callable=AsyncMock
                 ) as mock_bg_logout,
             ):
                 mock_bg_logout.return_value = None
@@ -541,7 +530,7 @@ class TestAuthRouters:
             with (
                 patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
                 patch(
-                    "faster.core.auth.routers.auth_service.background_update_user_info", new_callable=AsyncMock
+    "faster.core.auth.services.AuthService.background_update_user_info", new_callable=AsyncMock
                 ) as mock_bg_update,
             ):
                 mock_bg_update.return_value = None
@@ -833,10 +822,8 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Mock the auth_service.check_user_onboarding_complete to return False
-            with patch(
-                "faster.core.auth.routers.auth_service.check_user_onboarding_complete", new_callable=AsyncMock
-            ) as mock_check_onboarding:
+            # Mock the auth service singleton instance method
+            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
                 mock_check_onboarding.return_value = False
 
                 # Make a request to the endpoint

@@ -20,7 +20,7 @@ def reset_sentry_manager_singleton() -> None:
     Fixture to reset the SentryManager singleton before each test.
     This ensures test isolation.
     """
-    SentryManager._instance = None  # pyright: ignore[reportPrivateUsage]
+    SentryManager.clear_instances()
 
 
 @pytest.fixture
