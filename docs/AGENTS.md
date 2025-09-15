@@ -14,6 +14,11 @@ Faster is a comprehensive web framework that provides a solid foundation for bui
 - **Testing**: Ready-to-use test setup with pytest
 - **Deployment Ready**: Production-ready server configuration
 
+## MCP
+Always use context7 when I need code generation, setup or configuration steps, or
+library/API documentation. This means you should automatically use the Context7 MCP
+tools to resolve library id and get library docs without me having to explicitly ask.
+
 ## Core Tasks
 This project uses 'make' tool for managing tasks and workflows. Prefer to use the following command first:
 ```bash
@@ -105,7 +110,7 @@ category: str = Field(max_length=64, sa_column_kwargs={"name": "C_CATEGORY"})
 - Maintain high test coverage for business logic
 - All tests must pass before committing changes
 
-## Testing Guidelines
+### Testing Guidelines
 - Framework: pytest
 - Coverage: Aim for 80%+
 - Tests go under tests/, mirroring app/ structure.
