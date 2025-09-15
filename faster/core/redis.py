@@ -36,7 +36,6 @@ import redis.asyncio as redis
 from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
 from redis.typing import FieldT
-from typing_extensions import Self
 
 from .config import Settings
 from .exceptions import AppError
@@ -678,18 +677,11 @@ class RedisClient(RedisInterface):
 class RedisManager(BasePlugin):
     """Manages Redis connections for different providers."""
 
-    _instance = None
-
     def __init__(self) -> None:
         self._client: RedisClient | None = None
         self._provider: RedisProvider | None = None
         self.is_ready: bool = False
 
-    @classmethod
-    def get_instance(cls) -> Self:
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
 
     async def _setup_internal(  # noqa: C901
         self,
