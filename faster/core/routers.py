@@ -51,7 +51,7 @@ async def settings(request: Request) -> AppResponseDict:
     )
 
 
-@dev_router.get("/app_state", response_model=None, tags=["public"])
+@dev_router.get("/app_state", response_model=None)
 async def app_state(request: Request) -> AppResponseDict:
     """
     Returns the app state for dev-admin.
@@ -105,7 +105,7 @@ async def metrics(request: Request) -> Response:
         return Response("Metrics not available - prometheus_client not installed", status_code=503)
 
 
-@sys_router.get("/health", response_model=None)
+@sys_router.get("/health", response_model=None, tags=["public"])
 async def check_health(request: Request) -> AppResponseDict:
     await check_all_resources(request.app, request.app.state.settings)
 
@@ -115,8 +115,9 @@ async def check_health(request: Request) -> AppResponseDict:
     return AppResponseDict(
         data={
             "latest_status_check": latest_status_check,
-            "db": latest_status_info.get("db", None),
-            "redis": latest_status_info.get("redis", None),
-            "sentry": latest_status_info.get("sentry", None),
+            "db": latest_status_info.get("db", {}),
+            "redis": latest_status_info.get("redis", {}),
+            "sentry": latest_status_info.get("sentry", {}),
+            "auth": latest_status_info.get("auth", {}),
         },
     )
