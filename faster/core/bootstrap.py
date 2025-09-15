@@ -30,6 +30,8 @@ from .exceptions import (
 from .logger import get_logger, setup_logger
 from .plugins import PluginManager
 from .redis import RedisManager
+from .redisex import MapCategory
+from .repositories import AppRepository
 from .routers import dev_router, sys_router
 from .sentry import SentryManager
 from .services import SysService
@@ -71,6 +73,7 @@ def _register_all_plugins(app: FastAPI) -> None:
     plugin_mgr.register("database", DatabaseManager.get_instance())
     plugin_mgr.register("redis", RedisManager.get_instance())
     plugin_mgr.register("sentry", SentryManager.get_instance())
+    plugin_mgr.register("auth", AuthService.get_instance())
     logger.debug("Plugin manager setup complete")
 
 
@@ -106,27 +109,12 @@ def _add_middlewares(app: FastAPI, settings: Settings, middlewares: list[Any] | 
     trusted_hosts = settings.allowed_hosts or ["*"]
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
-    if settings.auth_enabled:
-        jwks_url = settings.supabase_jwks_url
-        if not jwks_url:
-            jwks_url = (settings.supabase_url or "") + "/auth/v1/.well-known/jwks.json"
-
-        auth_service = AuthService(
-            supabase_url=settings.supabase_url or "",
-            supabase_anon_key=settings.supabase_anon_key or "",
-            supabase_service_key=settings.supabase_service_key or "",
-            supabase_jwks_url=jwks_url,
-            supabase_audience=settings.supabase_audience or "",
-            auto_refresh_jwks=settings.auto_refresh_jwks,
-            jwks_cache_ttl_seconds=settings.jwks_cache_ttl_seconds,
-            user_cache_ttl_seconds=settings.user_cache_ttl_seconds,
-        )
-        app.add_middleware(
-            AuthMiddleware,
-            auth_service=auth_service,
-            allowed_paths=get_default_allowed_paths(),
-            require_auth=True,
-        )
+    # Always add AuthMiddleware, but it will check settings.auth_enabled internally
+    app.add_middleware(
+        AuthMiddleware,
+        allowed_paths=get_default_allowed_paths(),
+        require_auth=settings.auth_enabled,
+    )
 
     if settings.cors_enabled:
         app.add_middleware(
@@ -165,6 +153,28 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
     """
     await check_all_resources(app, app.state.settings)
 
+    # Initialize route finder in AuthService for middleware usage
+    auth_service = AuthService.get_instance()
+    _ = auth_service.create_route_finder(app)
+
+    # Setup tag-role mapping for authorization
+    try:
+        repository = AppRepository()
+        sys_map_data = await repository.get_sys_map(category=str(MapCategory.TAG_ROLE))
+
+        # Extract tag-role mapping from the database result
+        tag_role_mapping = sys_map_data.get(str(MapCategory.TAG_ROLE), {})
+
+        # If no data found in database, use fallback defaults
+        if not tag_role_mapping:
+            logger.warning("No tag-role mapping found in database, using fallback defaults")
+
+        auth_service.set_tag_role_mapping(tag_role_mapping)
+        logger.info(f"Loaded tag-role mapping with {len(tag_role_mapping)} entries from database")
+
+    except Exception as e:
+        logger.error(f"Failed to load tag-role mapping from database: {e}, using fallback defaults")
+
     # load system information into redis cache
     service = SysService()
     if not await service.get_sys_info():
@@ -182,6 +192,7 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
     db_health = latest_status_info.get("db", {})
     redis_health = latest_status_info.get("redis", {})
     sentry_health = latest_status_info.get("sentry", {})
+    auth_health = latest_status_info.get("auth", {})
 
     if db_health.get("master", False):
         logger.info(f"\tDB\t: {db_health}")
@@ -197,14 +208,12 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
         logger.warning(f"\tRedis\t: {redis_health}")
 
     logger.info(f"\tSentry\t: {sentry_health}")
+    logger.info(f"\tAuth\t: {auth_health}")
 
     if settings.is_debug:
-        logger.debug("=========================================================")
-        logger.debug("All available URLs:")
-        for endpoint in app.state.endpoints:
-            logger.debug(
-                f"  [{'/'.join(endpoint['methods'])}] {endpoint['path']} - {endpoint['name']} \t# {', '.join(endpoint['tags'])} "
-            )
+        # Use AuthService's router collection and logging methods
+        endpoints = auth_service.collect_router_info(app)
+        auth_service.log_router_info(endpoints)
 
     logger.info("=========================================================")
 
