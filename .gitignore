@@ -22,3 +22,4 @@ wheels/
 
 # As CLAUDE.md is just a softlink to the AGENTS.md file, it should be ignored
 CLAUDE.md
+.augmentignore
