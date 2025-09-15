@@ -5,7 +5,6 @@ from typing import Any, TypeVar
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.routing import APIRoute
 
 from .config import Settings
 from .exceptions import AppError, AuthError
@@ -96,54 +95,8 @@ def is_api_call(request: Request) -> bool:
     return (accept_header and "application/json" in accept_header) or False
 
 
-def get_all_endpoints(app: FastAPI) -> list[dict[str, Any]]:
-    """
-    Return a list of all endpoints with method, path, tags, and function name.
-    Includes routes defined via decorators and normal route registration.
-    """
-    endpoints: list[dict[str, Any]] = []
-
-    for route in app.routes:
-        if isinstance(route, APIRoute):
-            endpoint_info = {
-                "path": route.path,
-                "methods": list(route.methods),  # set -> list
-                "tags": route.tags or [],
-                "name": route.name,  # function name
-                "endpoint_func": route.endpoint.__name__,  # actual function name
-            }
-            endpoints.append(endpoint_info)
-
-    return endpoints
 
 
-def get_current_endpoint(request: Request, endpoints: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """
-    Return the endpoint info for the current request.
-
-    Args:
-        request: FastAPI Request object
-        endpoints: List returned by get_all_endpoints
-
-    Returns:
-        The matching endpoint dict or None if not found or method not supported
-    """
-    request_path = request.url.path
-    request_method = request.method
-
-    for ep in endpoints:
-        if request_path == ep.get("path"):
-            # Check if the request method is supported by this endpoint
-            endpoint_methods = ep.get("methods", [])
-
-            # HEAD requests are automatically supported for GET endpoints
-            if request_method == "HEAD" and "GET" in endpoint_methods:
-                return ep
-
-            if request_method in endpoint_methods:
-                return ep
-
-    return None
 
 
 async def check_all_resources(app: FastAPI, settings: Settings) -> None:
@@ -161,9 +114,7 @@ async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     # refresh latest_status_check
     app.state.latest_status_check = right_now
 
-    # Refresh all endpoints
-    endpoints = get_all_endpoints(app)
-    app.state.endpoints = endpoints
+    # Note: Endpoint information is now managed by AuthService
 
     # Refresh plugin statuses
     plugin_health = await PluginManager.get_instance().check_health()
