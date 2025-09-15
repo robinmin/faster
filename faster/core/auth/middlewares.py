@@ -1,12 +1,9 @@
-from collections.abc import Callable
-from functools import lru_cache
-from typing import Any, cast
+from typing import cast
 
-from fastapi import FastAPI, Request, status
+from fastapi import Request, status
 from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
-from starlette.routing import Match
 from starlette.types import ASGIApp
 
 from ..logger import get_logger
@@ -19,44 +16,17 @@ from .utilities import extract_bearer_token_from_request
 logger = get_logger(__name__)
 
 
-def make_route_finder(
-    app: FastAPI,
-) -> Callable[[str, str], dict[str, Any] | None]:
-    @lru_cache(maxsize=4096)
-    def _find_route(method: str, path: str) -> dict[str, Any] | None:
-        scope = {"type": "http", "method": method, "path": path, "root_path": getattr(app, "root_path", "")}
-        for route in app.routes:
-            try:
-                match, child_scope = route.matches(scope)
-            except Exception:
-                continue
-            if match is Match.FULL:
-                return {
-                    "method": method,
-                    "path": path,
-                    "path_template": getattr(route, "path", None),
-                    "tags": getattr(route, "tags", []),
-                    "path_params": child_scope.get("path_params", {}) if child_scope else {},
-                }
-        return None
-
-    return _find_route
-
-
 class AuthMiddleware(BaseHTTPMiddleware):
-    def __init__(
-        self, app: ASGIApp, auth_service: AuthService, allowed_paths: list[str] | None = None, require_auth: bool = True
-    ) -> None:
+    def __init__(self, app: ASGIApp, allowed_paths: list[str] | None = None, require_auth: bool = True) -> None:
         """
-        Initialize middleware with auth_service and configuration.
+        Initialize middleware with configuration.
         Args:
             app: FastAPI application instance
-            auth_service: AuthService instance
             allowed_paths: List of paths to allowed paths from authentication
             require_auth: Whether to require authentication for non-allowed paths
         """
         super().__init__(app)
-        self._auth_service = auth_service
+        self._auth_service = AuthService.get_instance()
 
         # Process allowed paths for optimal performance
         raw_paths = allowed_paths or ["/docs", "/redoc", "/openapi.json", "/health"]
@@ -74,37 +44,24 @@ class AuthMiddleware(BaseHTTPMiddleware):
         self._require_auth = require_auth
         self._security = HTTPBearer(auto_error=False)
 
-    def _is_allowed_path(self, path: str) -> bool:
-        """Check if the request path is allowed from authentication."""
+    def _check_allowed_path(self, request: Request, current_path: str) -> bool:
+        """Check if the request path is allowed and set appropriate state."""
         # Fast O(1) exact match check first
-        if path in self._exact_allowed_paths:
+        if current_path in self._exact_allowed_paths:
+            request.state.user = None
+            request.state.authenticated = False
+            request.state.roles = set()
+            logger.debug(f"[auth] Allowed path: {current_path}")
             return True
 
         # Only check prefixes if needed - O(n) but typically small n
-        return any(path.startswith(prefix) for prefix in self._prefix_allowed_paths)
-
-    def _handle_allowed_path(self, request: Request, current_path: str) -> bool:
-        """Handle allowed paths in debug mode."""
-        if self._is_allowed_path(current_path):
+        if any(current_path.startswith(prefix) for prefix in self._prefix_allowed_paths):
             request.state.user = None
             request.state.authenticated = False
+            request.state.roles = set()
             logger.debug(f"[auth] Allowed path: {current_path}")
             return True
-        return False
 
-    # def _get_endpoint_tags(self, request: Request, current_path: str) -> list[str] | None:
-    #     """Get endpoint tags or return None if endpoint not found."""
-    #     current_endpoint = get_current_endpoint(request, request.app.state.endpoints)
-    #     if not current_endpoint or "tags" not in current_endpoint:
-    #         logger.error(f"[auth] Not Found - 404: [{request.method.upper()}] {current_path}")
-    #         return None
-    #     return list(current_endpoint["tags"])
-
-    def _is_public_endpoint(self, tags: list[str], current_path: str) -> bool:
-        """Check if endpoint is public."""
-        if "public" in tags:
-            logger.debug(f"[auth] Skipping public endpoint : {current_path}")
-            return True
         return False
 
     async def _get_authenticated_user_profile(self, user_id: str) -> UserProfileData | None:
@@ -163,39 +120,49 @@ class AuthMiddleware(BaseHTTPMiddleware):
         current_path = request.url.path
         current_method = request.method
 
-        # replace with path_template if necessary: "/notification/INITIAL_SESSION" -> "/notification/{event}"
-        _find_route = make_route_finder(request.app)
-        route_info = _find_route(current_method, current_path)
-        if route_info and "path_template" in route_info:
-            current_path = route_info["path_template"]
-        else:
-            return AppResponseDict(
-                status="http error",
-                message="Not Found(0)",
-                status_code=status.HTTP_404_NOT_FOUND,
-            )
-        # logger.debug(f"[auth] ==> Processing request: {current_method} {current_path}")
-
         try:
-            # 1. Handle allowed paths in debug mode
-            if current_method in ["HEAD", "OPTIONS"] or self._handle_allowed_path(request, current_path):
+            # 1. Check if authentication is enabled - if not, bypass all auth checks
+            if not self._require_auth or current_method in ["HEAD", "OPTIONS"]:
+                request.state.user = None
+                request.state.authenticated = False
+                request.state.roles = set()
                 return await call_next(request)
 
-            # 2. Get endpoint tags
+            # 2. Replace with path_template if necessary: "/notification/INITIAL_SESSION" -> "/notification/{event}"
+            route_info = self._auth_service.find_route(current_method, current_path)
+            if route_info and "path_template" in route_info and route_info["path_template"]:
+                current_path = route_info["path_template"]
+            else:
+                return AppResponseDict(
+                    status="http error",
+                    message="Route not found",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+            # logger.debug(f"[auth] ==> Processing request: {current_method} {current_path}")
+
+            # 3. Check allowed paths
+            if self._check_allowed_path(request, current_path):
+                return await call_next(request)
+
+            # 4. Get endpoint tags
             # tags = self._get_endpoint_tags(request, current_path)
             tags = route_info.get("tags", [])
             if not tags:
                 return AppResponseDict(
                     status="http error",
-                    message="Not Found(1)",
+                    message="Endpoint tags not found",
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
 
-            # 3. Skip public endpoints
-            if self._is_public_endpoint(tags, current_path):
+            # 5. Skip public endpoints
+            if "public" in tags:
+                request.state.user = None
+                request.state.authenticated = False
+                request.state.roles = set()
+                logger.debug(f"[auth] Skipping public endpoint: {current_path}")
                 return await call_next(request)
 
-            # 4. Authenticate request and get user profile
+            # 6. Authenticate request and get user profile
             token = extract_bearer_token_from_request(request)
             if not token or await blacklist_exists(token):
                 return AppResponseDict(
@@ -204,19 +171,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     status_code=status.HTTP_401_UNAUTHORIZED,
                 )
 
-            # 5. Get user profile
+            # 7. Get user profile
             user_id = await self._auth_service.get_user_id_from_token(token)
             await self._set_request_state(request, user_id, current_path)
 
-            # 6. Check authentication and authorization
-            if not user_id and self._require_auth:
+            # 8. Check authentication and authorization
+            if not user_id:
                 return AppResponseDict(
                     status="http error",
                     message="Authentication required",
                     status_code=status.HTTP_401_UNAUTHORIZED,
                 )
 
-            # 7. RBAC check
+            # 9. RBAC check
             if user_id and not await self._auth_service.check_access(user_id, tags):
                 return AppResponseDict(
                     status="http error",
@@ -225,7 +192,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
             logger.debug(f"[auth] => pass on {current_method} {current_path} for {user_id}")
 
-            # 8. Continue to the next middleware/endpoint
+            # 10. Continue to the next middleware/endpoint
             return await call_next(request)
         except Exception as exp:
             logger.error(f"[auth] Authentication error: {exp}")
