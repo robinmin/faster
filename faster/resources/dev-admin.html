@@ -11,12 +11,16 @@
       rel="stylesheet"
       type="text/css"
     />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://cdn.tailwindcss.com" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" defer></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
     <script
       src="https://js.sentry-cdn.com/d2a200c0751f88c697a50ea7adb176e8.min.js"
+      defer
       crossorigin="anonymous"
+      id="sentry-script"
+      onload="window.sentryLoaded = true; window.dispatchEvent(new Event('sentryReady'));"
+      onerror="window.sentryLoadFailed = true;"
     ></script>
 
     <style>
@@ -581,17 +585,17 @@
                       </ul>
                     </div>
                     <button
-                      @click="refreshData()"
+                      @click="loadHealthData()"
                       class="btn btn-primary btn-sm"
-                      :class="{ 'loading': isLoading }"
-                      :disabled="isLoading"
+                      :class="{ 'loading': loading }"
+                      :disabled="loading"
                     >
                       <i
                         data-lucide="refresh-cw"
                         class="w-4 h-4"
                         aria-hidden="true"
                       ></i>
-                      <span x-show="!isLoading">Refresh</span>
+                      <span x-show="!loading">Refresh</span>
                     </button>
                   </div>
                 </div>
@@ -639,11 +643,11 @@
                         </template>
                       </div>
 
-                       <!-- Code Content -->
-                       <div class="flex-1 p-4 overflow-auto max-h-[500px]">
-                         <pre
-                           class="text-sm font-mono leading-6 text-base-content"
-                           x-html="formatAppStateDataWithSyntax()"
+                      <!-- Code Content -->
+                      <div class="flex-1 p-4 overflow-auto max-h-[500px]">
+                        <pre
+                          class="text-sm font-mono leading-6 text-base-content"
+                          x-html="formatAppStateDataWithSyntax()"
                         ></pre>
                       </div>
                     </div>
@@ -676,7 +680,7 @@
 
               <!-- Loading State -->
               <div
-                x-show="isLoading && (!appStateData || Object.keys(appStateData).length === 0)"
+                x-show="loading && (!appStateData || Object.keys(appStateData).length === 0)"
                 class="card bg-base-100 shadow-xl"
               >
                 <div class="card-body items-center text-center">
@@ -694,7 +698,7 @@
 
               <!-- Empty State -->
               <div
-                x-show="!isLoading && (!appStateData || Object.keys(appStateData).length === 0) && !errorMessage"
+                x-show="!loading && (!appStateData || Object.keys(appStateData).length === 0) && !error"
                 class="hero bg-base-200 rounded-box"
               >
                 <div class="hero-content text-center py-20">
@@ -714,10 +718,10 @@
                       could be normal during startup or maintenance.
                     </p>
                     <button
-                      @click="refreshData()"
+                      @click="loadHealthData()"
                       class="btn btn-primary"
-                      :class="{ 'loading': isLoading }"
-                      :disabled="isLoading"
+                      :class="{ 'loading': loading }"
+                      :disabled="loading"
                     >
                       <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                       Check Again
@@ -727,7 +731,7 @@
               </div>
 
               <!-- Error State -->
-              <div x-show="errorMessage" class="alert alert-error shadow-lg">
+              <div x-show="error" class="alert alert-error shadow-lg">
                 <div class="flex items-start gap-3">
                   <i
                     data-lucide="alert-triangle"
@@ -738,11 +742,11 @@
                     <h3 class="font-bold text-lg">Connection Error</h3>
                     <div
                       class="text-sm opacity-80 mt-1"
-                      x-text="errorMessage"
+                      x-text="error"
                     ></div>
                     <div class="mt-3">
                       <button
-                        @click="refreshData()"
+                        @click="loadHealthData()"
                         class="btn btn-sm btn-ghost"
                       >
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i>
@@ -767,8 +771,14 @@
                 <div class="navbar-start">
                   <div class="flex items-center gap-3">
                     <div class="avatar">
-                      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-secondary flex items-center justify-center">
-                        <i data-lucide="send" class="w-5 h-5 text-accent-content" aria-hidden="true"></i>
+                      <div
+                        class="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-secondary flex items-center justify-center"
+                      >
+                        <i
+                          data-lucide="send"
+                          class="w-5 h-5 text-accent-content"
+                          aria-hidden="true"
+                        ></i>
                       </div>
                     </div>
                     <div>
@@ -776,30 +786,57 @@
                         class="text-xl font-bold"
                         x-text="getPageTitle()"
                       ></h1>
-                      <p class="text-sm text-base-content/60" x-text="getPageDescription()"></p>
+                      <p
+                        class="text-sm text-base-content/60"
+                        x-text="getPageDescription()"
+                      ></p>
                     </div>
                   </div>
                 </div>
                 <div class="navbar-end">
                   <div class="flex gap-2">
                     <div class="dropdown dropdown-end">
-                      <div tabindex="0" role="button" class="btn btn-ghost btn-sm">
-                        <i data-lucide="download" class="w-4 h-4" aria-hidden="true"></i>
+                      <div
+                        tabindex="0"
+                        role="button"
+                        class="btn btn-ghost btn-sm"
+                      >
+                        <i
+                          data-lucide="download"
+                          class="w-4 h-4"
+                          aria-hidden="true"
+                        ></i>
                         Export
                       </div>
-                      <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
-                        <li><a @click="exportAsJSON()"><i data-lucide="file-text" class="w-4 h-4"></i> JSON</a></li>
-                        <li><a @click="copyToClipboard()"><i data-lucide="copy" class="w-4 h-4"></i> Copy</a></li>
+                      <ul
+                        tabindex="0"
+                        class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52"
+                      >
+                        <li>
+                          <a @click="exportAsJSON()"
+                            ><i data-lucide="file-text" class="w-4 h-4"></i>
+                            JSON</a
+                          >
+                        </li>
+                        <li>
+                          <a @click="copyToClipboard()"
+                            ><i data-lucide="copy" class="w-4 h-4"></i> Copy</a
+                          >
+                        </li>
                       </ul>
                     </div>
                     <button
-                      @click="refreshData()"
+                      @click="loadHealthData()"
                       class="btn btn-primary btn-sm"
-                      :class="{ 'loading': isLoading }"
-                      :disabled="isLoading"
+                      :class="{ 'loading': loading }"
+                      :disabled="loading"
                     >
-                      <i data-lucide="refresh-cw" class="w-4 h-4" aria-hidden="true"></i>
-                      <span x-show="!isLoading">Refresh</span>
+                      <i
+                        data-lucide="refresh-cw"
+                        class="w-4 h-4"
+                        aria-hidden="true"
+                      ></i>
+                      <span x-show="!loading">Refresh</span>
                     </button>
                   </div>
                 </div>
@@ -814,25 +851,34 @@
                   <!-- Code Editor Mockup -->
                   <div class="w-full">
                     <!-- Editor Header -->
-                    <div class="flex items-center justify-between bg-base-100 px-4 py-2 border-b border-base-300">
+                    <div
+                      class="flex items-center justify-between bg-base-100 px-4 py-2 border-b border-base-300"
+                    >
                       <div class="flex items-center gap-2">
                         <div class="flex gap-1">
                           <div class="w-3 h-3 rounded-full bg-error"></div>
                           <div class="w-3 h-3 rounded-full bg-warning"></div>
                           <div class="w-3 h-3 rounded-full bg-success"></div>
                         </div>
-                        <span class="text-sm font-mono text-base-content/60">request_state.json</span>
+                        <span class="text-sm font-mono text-base-content/60"
+                          >request_state.json</span
+                        >
                       </div>
                       <div class="flex items-center gap-2">
                         <div class="badge badge-sm badge-accent">Live</div>
-                        <span class="text-xs text-base-content/40" x-text="formatTimestamp()"></span>
+                        <span
+                          class="text-xs text-base-content/40"
+                          x-text="formatTimestamp()"
+                        ></span>
                       </div>
                     </div>
 
                     <!-- Line Numbers & Code -->
                     <div class="flex bg-base-100">
                       <!-- Line Numbers -->
-                       <div class="bg-base-200 px-4 py-4 text-xs font-mono text-base-content/40 select-none min-w-[60px] border-r border-base-300 overflow-auto max-h-[500px]">
+                      <div
+                        class="bg-base-200 px-4 py-4 text-xs font-mono text-base-content/40 select-none min-w-[60px] border-r border-base-300 overflow-auto max-h-[500px]"
+                      >
                         <template x-for="line in getLineNumbers()" :key="line">
                           <div class="leading-6 text-right" x-text="line"></div>
                         </template>
@@ -840,12 +886,17 @@
 
                       <!-- Code Content -->
                       <div class="flex-1 p-4 overflow-auto max-h-[500px]">
-                        <pre class="text-sm font-mono leading-6 text-base-content" x-html="formatRequestStateDataWithSyntax()"></pre>
+                        <pre
+                          class="text-sm font-mono leading-6 text-base-content"
+                          x-html="formatRequestStateDataWithSyntax()"
+                        ></pre>
                       </div>
                     </div>
 
                     <!-- Editor Footer -->
-                    <div class="flex items-center justify-between bg-base-200 px-4 py-2 border-t border-base-300 text-xs">
+                    <div
+                      class="flex items-center justify-between bg-base-200 px-4 py-2 border-t border-base-300 text-xs"
+                    >
                       <div class="flex items-center gap-4">
                         <span class="flex items-center gap-1">
                           <i data-lucide="type" class="w-3 h-3"></i>
@@ -870,36 +921,48 @@
 
               <!-- Loading State -->
               <div
-                x-show="isLoading && (!requestStateData || Object.keys(requestStateData).length === 0)"
+                x-show="loading && (!requestStateData || Object.keys(requestStateData).length === 0)"
                 class="card bg-base-100 shadow-xl"
               >
                 <div class="card-body items-center text-center">
-                  <div class="loading loading-spinner loading-lg text-primary"></div>
-                  <h3 class="text-lg font-semibold mt-4">Loading Request State</h3>
-                  <p class="text-base-content/60">Fetching real-time request data from server...</p>
+                  <div
+                    class="loading loading-spinner loading-lg text-primary"
+                  ></div>
+                  <h3 class="text-lg font-semibold mt-4">
+                    Loading Request State
+                  </h3>
+                  <p class="text-base-content/60">
+                    Fetching real-time request data from server...
+                  </p>
                 </div>
               </div>
 
               <!-- Empty State -->
               <div
-                x-show="!isLoading && (!requestStateData || Object.keys(requestStateData).length === 0) && !errorMessage"
+                x-show="!loading && (!requestStateData || Object.keys(requestStateData).length === 0) && !error"
                 class="hero bg-base-200 rounded-box"
               >
                 <div class="hero-content text-center py-20">
                   <div class="max-w-md">
                     <div class="mockup-code mb-6 bg-base-100">
-                      <pre data-prefix="$"><code>curl /dev/request_state</code></pre>
-                      <pre data-prefix=">" class="text-warning"><code>No data found</code></pre>
+                      <pre
+                        data-prefix="$"
+                      ><code>curl /dev/request_state</code></pre>
+                      <pre
+                        data-prefix=">"
+                        class="text-warning"
+                      ><code>No data found</code></pre>
                     </div>
                     <h3 class="text-2xl font-bold">No Request State</h3>
                     <p class="py-4 text-base-content/70">
-                      The request state endpoint returned no data. This could be normal during startup or maintenance.
+                      The request state endpoint returned no data. This could be
+                      normal during startup or maintenance.
                     </p>
                     <button
-                      @click="refreshData()"
+                      @click="loadHealthData()"
                       class="btn btn-primary"
-                      :class="{ 'loading': isLoading }"
-                      :disabled="isLoading"
+                      :class="{ 'loading': loading }"
+                      :disabled="loading"
                     >
                       <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                       Check Again
@@ -909,14 +972,208 @@
               </div>
 
               <!-- Error State -->
-              <div x-show="errorMessage" class="alert alert-error shadow-lg">
+              <div x-show="error" class="alert alert-error shadow-lg">
                 <div class="flex items-start gap-3">
-                  <i data-lucide="alert-triangle" class="w-6 h-6 flex-shrink-0" aria-hidden="true"></i>
+                  <i
+                    data-lucide="alert-triangle"
+                    class="w-6 h-6 flex-shrink-0"
+                    aria-hidden="true"
+                  ></i>
                   <div class="flex-1">
                     <h3 class="font-bold text-lg">Connection Error</h3>
-                    <div class="text-sm opacity-80 mt-1" x-text="errorMessage"></div>
+                    <div
+                      class="text-sm opacity-80 mt-1"
+                      x-text="error"
+                    ></div>
                     <div class="mt-3">
-                      <button @click="refreshData()" class="btn btn-sm btn-ghost">
+                      <button
+                        @click="loadHealthData()"
+                        class="btn btn-sm btn-ghost"
+                      >
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sys Health Page -->
+          <div
+            x-show="$store.app.currentPage === 'sys-health'"
+            x-data="sysHealthPage()"
+            x-cloak
+          >
+            <div class="max-w-7xl mx-auto space-y-6">
+              <!-- Sys Health Header -->
+              <div class="navbar bg-base-100 shadow-lg rounded-box">
+                <div class="navbar-start">
+                  <div class="flex items-center gap-3">
+                    <div class="avatar">
+                      <div
+                        class="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-secondary flex items-center justify-center"
+                      >
+                        <i
+                          data-lucide="heart-pulse"
+                          class="w-5 h-5 text-accent-content"
+                          aria-hidden="true"
+                        ></i>
+                      </div>
+                    </div>
+                    <div>
+                      <h1
+                        class="text-xl font-bold"
+                      >System Health</h1>
+                      <p
+                        class="text-sm text-base-content/60"
+                      >Monitor plugin status and health metrics</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="navbar-end">
+                  <div class="flex gap-2">
+                    <button
+                      @click="loadHealthData()"
+                      class="btn btn-primary btn-sm"
+                      :class="{ 'loading': loading }"
+                      :disabled="loading"
+                    >
+                      <i
+                        data-lucide="refresh-cw"
+                        class="w-4 h-4"
+                        aria-hidden="true"
+                      ></i>
+                      <span x-show="!loading">Refresh</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Plugin Health Status Cards -->
+              <div
+                x-show="healthData && Object.keys(healthData).length > 0"
+                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+              >
+                <template x-for="[pluginName, pluginHealth] in (healthData ? Object.entries(healthData).filter(([key]) => !['latest_status_check'].includes(key)) : [])" :key="pluginName">
+                  <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body">
+                      <h2 class="card-title capitalize flex items-center gap-2">
+                        <i
+                          :data-lucide="getPluginIcon(pluginName)"
+                          class="w-5 h-5 text-primary"
+                          aria-hidden="true"
+                        ></i>
+                        <span x-text="pluginName.toUpperCase()"></span>
+                      </h2>
+
+                      <!-- Status Badge -->
+                      <div class="flex items-center gap-2 mb-3">
+                        <div
+                          class="badge"
+                          :class="getPluginStatus(pluginHealth).color === 'green' ? 'badge-success' : getPluginStatus(pluginHealth).color === 'red' ? 'badge-error' : 'badge-warning'"
+                        >
+                          <i
+                            data-lucide="check-circle"
+                            class="w-3 h-3 mr-1"
+                            aria-hidden="true"
+                          ></i>
+                          <span x-text="getPluginStatus(pluginHealth).status"></span>
+                        </div>
+                      </div>
+
+                      <!-- Plugin Details -->
+                      <div class="space-y-2 text-sm">
+                        <template x-for="detail in formatPluginData(pluginHealth)" :key="detail.key">
+                          <div class="flex justify-between">
+                            <span class="text-base-content/60 capitalize" x-text="detail.key"></span>
+                            <span
+                              class="font-mono text-xs"
+                              x-text="detail.value"
+                            ></span>
+                          </div>
+                        </template>
+                      </div>
+
+                      <!-- Error Details (if any) -->
+                      <div x-show="getPluginStatus(pluginHealth).status === 'error'" class="mt-3">
+                        <div class="alert alert-error alert-sm">
+                          <i data-lucide="alert-triangle" class="w-4 h-4" aria-hidden="true"></i>
+                          <span class="text-xs">Plugin has errors</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <!-- Loading State -->
+              <div
+                x-show="loading && (!healthData || Object.keys(healthData).length === 0)"
+                class="card bg-base-100 shadow-xl"
+              >
+                <div class="card-body items-center text-center">
+                  <div
+                    class="loading loading-spinner loading-lg text-primary"
+                  ></div>
+                  <h3 class="text-lg font-semibold mt-4">
+                    Loading System Health
+                  </h3>
+                  <p class="text-base-content/60">
+                    Checking plugin status and health metrics...
+                  </p>
+                </div>
+              </div>
+
+              <!-- Empty State -->
+              <div
+                x-show="!loading && (!healthData || Object.keys(healthData).length === 0) && !error"
+                class="hero bg-base-200 rounded-box"
+              >
+                <div class="hero-content text-center py-20">
+                  <div class="max-w-md">
+                    <div class="mockup-code mb-6 bg-base-100">
+                      <pre data-prefix="$"><code>curl /health</code></pre>
+                      <pre data-prefix=">" class="text-warning"><code>No data found</code></pre>
+                    </div>
+                    <h3 class="text-2xl font-bold">No Health Data</h3>
+                    <p class="py-4 text-base-content/70">
+                      The health endpoint returned no data. This could be
+                      normal during startup or maintenance.
+                    </p>
+                    <button
+                      @click="loadHealthData()"
+                      class="btn btn-primary"
+                      :class="{ 'loading': loading }"
+                      :disabled="loading"
+                    >
+                      <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                      Check Again
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Error State -->
+              <div x-show="error" class="alert alert-error shadow-lg">
+                <div class="flex items-start gap-3">
+                  <i
+                    data-lucide="alert-triangle"
+                    class="w-6 h-6 flex-shrink-0"
+                    aria-hidden="true"
+                  ></i>
+                  <div class="flex-1">
+                    <h3 class="font-bold text-lg">Health Check Error</h3>
+                    <div
+                      class="text-sm opacity-80 mt-1"
+                      x-text="error"
+                    ></div>
+                    <div class="mt-3">
+                      <button
+                        @click="loadHealthData()"
+                        class="btn btn-sm btn-ghost"
+                      >
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                         Retry
                       </button>
@@ -1225,11 +1482,14 @@
           if (pageId === "request-state") {
             return await this.call("/dev/request_state");
           }
+          if (pageId === "sys-health") {
+            return await this.call("/health");
+          }
           return await this.call(`/auth/${pageId}`);
         },
 
         async notifyAuthEvent(event, eventData = {}) {
-          // console.log(`Notifying backend about auth event: ${event}`);
+          console.log(`Notifying backend about auth event: ${event}`);
 
           // Public events (no auth required): INITIAL_SESSION
           // Private events (auth required): SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY
@@ -1492,31 +1752,31 @@
             }
           },
 
-          async initializeServices() {
-            const config = Alpine.store("app").config;
-            Alpine.store("app").loadingMessage = "Setting up services...";
+           async initializeServices() {
+             const config = Alpine.store("app").config;
+             Alpine.store("app").loadingMessage = "Setting up services...";
 
-            // Initialize Sentry
-            if (config.sentryEnabled && config.sentryDsn) {
-              this.initSentry(config);
-            }
+             // Initialize Sentry (async to handle script loading)
+             if (config.sentryEnabled && config.sentryDsn) {
+               await this.initSentryAsync(config);
+             }
 
-            // Initialize Supabase
-            if (config.supabaseUrl && config.supabaseKey) {
-              try {
-                Alpine.store("app").supabase = await authService.initSupabase(
-                  config
-                );
-              } catch (error) {
-                console.error("Supabase initialization failed:", error);
-                throw error;
-              }
-            } else {
-              toastService.show("Authentication not configured", "warning");
-              Alpine.store("app").currentView = "auth";
-              return;
-            }
-          },
+             // Initialize Supabase
+             if (config.supabaseUrl && config.supabaseKey) {
+               try {
+                 Alpine.store("app").supabase = await authService.initSupabase(
+                   config
+                 );
+               } catch (error) {
+                 console.error("Supabase initialization failed:", error);
+                 throw error;
+               }
+             } else {
+               toastService.show("Authentication not configured", "warning");
+               Alpine.store("app").currentView = "auth";
+               return;
+             }
+           },
 
           async checkAuthentication() {
             Alpine.store("app").loadingMessage = "Checking authentication...";
@@ -1529,21 +1789,63 @@
             }
           },
 
-          initSentry(config) {
-            if (!config.sentryDsn) return;
+           initSentryAsync(config) {
+             if (!config.sentryDsn) return;
 
-            try {
-              Sentry.init({
-                dsn: config.sentryDsn,
-                environment: config.sentryEnvironment,
-                tracesSampleRate:
-                  config.sentryEnvironment === "production" ? 0.1 : 1.0
-              });
-              // console.log("Sentry initialized successfully");
-            } catch (error) {
-              console.error("Sentry initialization failed:", error);
-            }
-          }
+             // Event-driven Sentry initialization - no polling or timeouts needed
+             const initializeSentry = () => {
+               if (typeof Sentry === 'undefined') {
+                 // Sentry object not available despite script load event
+                 return;
+               }
+
+               try {
+                 Sentry.init({
+                   dsn: config.sentryDsn,
+                   environment: config.sentryEnvironment,
+                   tracesSampleRate:
+                     config.sentryEnvironment === "production" ? 0.1 : 1.0,
+                   beforeSend(event) {
+                     // Filter out network errors and other noise
+                     if (event.exception?.values?.[0]?.type === 'NetworkError') {
+                       return null;
+                     }
+                     return event;
+                   }
+                 });
+                 console.log("Sentry initialized successfully via event listener");
+               } catch (error) {
+                 console.error("Sentry initialization failed:", error);
+               }
+             };
+
+             // Check if Sentry is already available (script loaded before this runs)
+             if (window.sentryLoaded && typeof Sentry !== 'undefined') {
+               initializeSentry();
+               return;
+             }
+
+             // Check if script failed to load
+             if (window.sentryLoadFailed) {
+               // Sentry script failed to load
+               return;
+             }
+
+             // Listen for the script load event
+             window.addEventListener('sentryReady', initializeSentry, { once: true });
+
+             // Fallback: if script is still loading after DOM ready, wait for it
+             if (document.readyState === 'loading') {
+               document.addEventListener('DOMContentLoaded', () => {
+                 // Give it a moment for deferred scripts to execute
+                 setTimeout(() => {
+                   if (!window.sentryLoaded && !window.sentryLoadFailed) {
+                     // Sentry script load status unknown after DOM ready
+                   }
+                 }, 100);
+               });
+             }
+           }
         };
       }
 
@@ -1762,6 +2064,7 @@
             { id: "dashboard", label: "Dashboard", icon: "layout-dashboard" },
             { id: "onboarding", label: "Onboarding", icon: "user-check" },
             { id: "profile", label: "Profile", icon: "user" },
+            { id: "sys-health", label: "Sys Health", icon: "heart-pulse" },
             { id: "app-state", label: "App State", icon: "settings" },
             { id: "request-state", label: "Request State", icon: "send" }
           ],
@@ -2034,8 +2337,8 @@
       function appStatePage() {
         return {
           appStateData: null,
-          isLoading: false,
-          errorMessage: "",
+          loading: false,
+          error: "",
           initialized: false,
 
           init() {
@@ -2055,14 +2358,14 @@
           },
 
           updateAppStateData(pageData) {
-            this.errorMessage = "";
+            this.error = "";
 
             if (pageData && pageData.status === "success") {
               // Extract the actual app state data (everything except message and status)
               const { message, status, ...appStateData } = pageData;
               this.appStateData = appStateData;
             } else if (pageData && pageData.status === "http error") {
-              this.errorMessage =
+              this.error =
                 pageData.message || "Failed to load app state data";
               this.appStateData = null;
             } else {
@@ -2070,11 +2373,11 @@
             }
           },
 
-          async refreshData() {
-            if (this.isLoading) return;
+          async loadHealthData() {
+            if (this.loading) return;
 
-            this.isLoading = true;
-            this.errorMessage = "";
+            this.loading = true;
+            this.error = "";
 
             try {
               const data = await apiService.call("/dev/app_state");
@@ -2089,11 +2392,11 @@
               toastService.show("App state refreshed successfully", "success");
             } catch (error) {
               console.error("Error refreshing app state:", error);
-              this.errorMessage =
+              this.error =
                 error.message || "Failed to refresh app state data";
               toastService.show("Failed to refresh app state", "error");
             } finally {
-              this.isLoading = false;
+              this.loading = false;
             }
           },
 
@@ -2243,8 +2546,8 @@
       function requestStatePage() {
         return {
           requestStateData: null,
-          isLoading: false,
-          errorMessage: "",
+          loading: false,
+          error: "",
           initialized: false,
 
           init() {
@@ -2264,14 +2567,14 @@
           },
 
           updateRequestStateData(pageData) {
-            this.errorMessage = "";
+            this.error = "";
 
             if (pageData && pageData.status === "success") {
               // Extract the actual request state data (everything except message and status)
               const { message, status, ...requestStateData } = pageData;
               this.requestStateData = requestStateData;
             } else if (pageData && pageData.status === "http error") {
-              this.errorMessage =
+              this.error =
                 pageData.message || "Failed to load request state data";
               this.requestStateData = null;
             } else {
@@ -2279,11 +2582,11 @@
             }
           },
 
-          async refreshData() {
-            if (this.isLoading) return;
+          async loadHealthData() {
+            if (this.loading) return;
 
-            this.isLoading = true;
-            this.errorMessage = "";
+            this.loading = true;
+            this.error = "";
 
             try {
               const data = await apiService.call("/dev/request_state");
@@ -2295,14 +2598,17 @@
                 ...data.data
               };
 
-              toastService.show("Request state refreshed successfully", "success");
+              toastService.show(
+                "Request state refreshed successfully",
+                "success"
+              );
             } catch (error) {
               console.error("Error refreshing request state:", error);
-              this.errorMessage =
+              this.error =
                 error.message || "Failed to refresh request state data";
               toastService.show("Failed to refresh request state", "error");
             } finally {
-              this.isLoading = false;
+              this.loading = false;
             }
           },
 
@@ -2358,9 +2664,11 @@
           getLineNumbers() {
             if (!this.requestStateData) return [];
             try {
-              const lines = JSON.stringify(this.requestStateData, null, 2).split(
-                "\n"
-              );
+              const lines = JSON.stringify(
+                this.requestStateData,
+                null,
+                2
+              ).split("\n");
               return lines.map((_, index) => index + 1);
             } catch (e) {
               return [1];
@@ -2411,12 +2719,14 @@
 
             try {
               const jsonString = JSON.stringify(this.requestStateData, null, 2);
-              const blob = new Blob([jsonString], { type: 'application/json' });
+              const blob = new Blob([jsonString], { type: "application/json" });
               const url = URL.createObjectURL(blob);
 
-              const a = document.createElement('a');
+              const a = document.createElement("a");
               a.href = url;
-              a.download = `request-state-${new Date().toISOString().split('T')[0]}.json`;
+              a.download = `request-state-${
+                new Date().toISOString().split("T")[0]
+              }.json`;
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
@@ -2442,6 +2752,156 @@
             } catch (error) {
               console.error("Copy failed:", error);
               toastService.show("Copy failed", "error");
+            }
+          }
+        };
+      }
+
+      function sysHealthPage() {
+        return {
+          loading: false,
+          error: null,
+          healthData: null,
+          lastUpdate: null,
+          initialized: false,
+
+          init() {
+            if (this.initialized) {
+              return;
+            }
+            this.initialized = true;
+
+            // Load health data when page becomes active
+            this.$watch("$store.app.currentPage", page => {
+              if (page === "sys-health") {
+                this.loadHealthData();
+              }
+            });
+
+            // Initial load if we're already on this page
+            if (Alpine.store("app").currentPage === "sys-health") {
+              this.loadHealthData();
+            }
+          },
+
+          async loadHealthData() {
+            this.loading = true;
+            this.error = null;
+
+            try {
+              const response = await fetch("/health");
+
+              if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+              }
+
+              const data = await response.json();
+              this.healthData = data.data || {};
+              this.lastUpdate = new Date();
+            } catch (err) {
+              console.error("Failed to load health data:", err);
+              this.error = err.message || "Failed to load health data";
+            } finally {
+              this.loading = false;
+            }
+          },
+
+          getPluginIcon(pluginName) {
+            const iconMap = {
+              db: "database",
+              redis: "cpu",
+              sentry: "bug",
+              auth: "shield"
+            };
+            return iconMap[pluginName] || "cog";
+          },
+
+          getPluginStatus(plugin) {
+            if (!plugin || typeof plugin !== "object") {
+              return { status: "unknown", color: "gray" };
+            }
+
+            // Check common status indicators
+            if (plugin.status === "healthy" || plugin.healthy === true) {
+              return { status: "healthy", color: "green" };
+            }
+
+            if (plugin.status === "error" || plugin.error || plugin.healthy === false) {
+              return { status: "error", color: "red" };
+            }
+
+            if (plugin.status === "warning" || plugin.warnings) {
+              return { status: "warning", color: "yellow" };
+            }
+
+            // For plugins with connection info, check if they're connected
+            if (plugin.connected === true) {
+              return { status: "healthy", color: "green" };
+            }
+
+            if (plugin.connected === false) {
+              return { status: "error", color: "red" };
+            }
+
+            // Default to healthy if we have data
+            return { status: "healthy", color: "green" };
+          },
+
+          formatPluginData(plugin) {
+            if (!plugin || typeof plugin !== "object") {
+              return [{ key: "Status", value: "No data available" }];
+            }
+
+            const formatted = [];
+
+            // Add common fields first
+            if (plugin.status) {
+              formatted.push({ key: "Status", value: plugin.status });
+            }
+
+            if (plugin.connected !== undefined) {
+              formatted.push({ key: "Connected", value: plugin.connected ? "Yes" : "No" });
+            }
+
+            // Add all other fields, excluding some internal ones
+            Object.entries(plugin).forEach(([key, value]) => {
+              if (!["status", "connected", "healthy"].includes(key)) {
+                let displayValue = value;
+
+                // Format different types of values
+                if (typeof value === "boolean") {
+                  displayValue = value ? "Yes" : "No";
+                } else if (typeof value === "number") {
+                  displayValue = value.toLocaleString();
+                } else if (value && typeof value === "object") {
+                  displayValue = JSON.stringify(value, null, 2);
+                } else if (value === null || value === undefined) {
+                  displayValue = "N/A";
+                }
+
+                formatted.push({
+                  key: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+                  value: displayValue
+                });
+              }
+            });
+
+            return formatted.length > 0 ? formatted : [{ key: "Status", value: "Available" }];
+          },
+
+          formatLastUpdate() {
+            if (!this.lastUpdate) return "Never";
+
+            const now = new Date();
+            const diffMs = now - this.lastUpdate;
+            const diffSecs = Math.floor(diffMs / 1000);
+
+            if (diffSecs < 60) {
+              return `${diffSecs} seconds ago`;
+            } else if (diffSecs < 3600) {
+              return `${Math.floor(diffSecs / 60)} minutes ago`;
+            } else {
+              return this.lastUpdate.toLocaleTimeString();
             }
           }
         };
