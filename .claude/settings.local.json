@@ -32,7 +32,10 @@
       "mcp__playwright__browser_evaluate",
       "mcp__playwright__browser_console_messages",
       "mcp__playwright__browser_wait_for",
-      "mcp__playwright__browser_close"
+      "mcp__playwright__browser_close",
+      "mcp__playwright__browser_type",
+      "WebFetch(domain:lucide.dev)",
+      "WebFetch(domain:icones.js.org)"
     ],
     "deny": [
       "Read(.env)",
@@ -46,7 +49,9 @@
       "Read(./mcp/**)",
       "Read(./venv/**)"
     ],
-    "ask": ["Bash(python:*)"]
+    "ask": [
+      "Bash(python:*)"
+    ]
   },
   "contextFileName": "docs/AGENTS.md"
 }
