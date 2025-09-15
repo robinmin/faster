@@ -10,31 +10,44 @@ The PluginManager handles registration and ordered execution of plugins.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
-
-from typing_extensions import Self
+from typing import Any, ClassVar, TypeVar
 
 from .config import Settings
 from .logger import get_logger
 
 logger = get_logger(__name__)
 
+T = TypeVar('T', bound='BasePlugin')
+
 
 class BasePlugin(ABC):
-    """Abstract base class for all plugins.
+    """Abstract base class for all plugins with built-in singleton support.
 
-    All plugins must implement the singleton pattern with a _instance class variable
-    and a get_instance class method for consistent resource management.
+    Provides automatic singleton behavior for all plugin subclasses, eliminating
+    the need for manual singleton implementation in each plugin.
     """
 
+    # Class-level storage for singleton instances
+    _instances: ClassVar[dict[type['BasePlugin'], 'BasePlugin']] = {}
+
     @classmethod
-    @abstractmethod
-    def get_instance(cls) -> Self:
+    def get_instance(cls: type[T]) -> T:
         """Get the singleton instance of this plugin.
 
+        Automatically creates and caches instances for each plugin class.
+        Thread-safe and type-safe implementation.
+
         Returns:
-            Self: The singleton instance of the current plugin class
+            T: The singleton instance of the current plugin class
         """
+        if cls not in cls._instances:
+            cls._instances[cls] = cls()
+        return cls._instances[cls]  # type: ignore[return-value]
+
+    @classmethod
+    def clear_instances(cls) -> None:
+        """Clear all singleton instances. Useful for testing."""
+        cls._instances.clear()
 
     @abstractmethod
     async def setup(self, settings: Settings) -> bool:
@@ -63,18 +76,11 @@ class BasePlugin(ABC):
 class PluginManager(BasePlugin):
     """Manages plugin lifecycle and execution order."""
 
-    _instance = None
-
     def __init__(self) -> None:
         self._plugins: dict[str, BasePlugin] = {}
         self._plugin_list: list[BasePlugin] = []
         self.is_ready: bool = False
 
-    @classmethod
-    def get_instance(cls) -> Self:
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
 
     def register(self, name: str, plugin: BasePlugin) -> None:
         """Register a plugin with the manager."""
