@@ -122,9 +122,10 @@ async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     db_health = plugin_health.get("database", {})
     redis_health = plugin_health.get("redis", {})
     sentry_health = plugin_health.get("sentry", {})
+    auth_health = plugin_health.get("auth", {})
 
     # Refresh latest status info
-    app.state.latest_status_info = {"db": db_health, "redis": redis_health, "sentry": sentry_health}
+    app.state.latest_status_info = {"db": db_health, "redis": redis_health, "sentry": sentry_health, "auth": auth_health}
 
 
 ###############################################################################
