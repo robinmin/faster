@@ -1,9 +1,17 @@
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from functools import lru_cache
+from typing import Any, TypedDict
 
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+from starlette.routing import Match
+
+from ..config import Settings
 from ..database import DBSession, get_transaction
 from ..exceptions import DBError
 from ..logger import get_logger
+from ..plugins import BasePlugin
 from ..redisex import (
     MapCategory,
     blacklist_add,
@@ -18,43 +26,270 @@ from .models import UserProfileData
 from .repositories import AuthRepository
 from .schemas import User
 
+
+class AuthServiceConfig(TypedDict):
+    """Configuration for AuthService containing only the needed settings."""
+
+    auth_enabled: bool
+    supabase_url: str | None
+    supabase_anon_key: str | None
+    supabase_service_key: str | None
+    supabase_jwks_url: str | None
+    supabase_audience: str | None
+    jwks_cache_ttl_seconds: int
+    auto_refresh_jwks: bool
+    user_cache_ttl_seconds: int
+    is_debug: bool
+
+
 logger = get_logger(__name__)
 
 
-class AuthService:
-    def __init__(
-        self,
-        supabase_url: str = "",
-        supabase_anon_key: str = "",
-        supabase_service_key: str = "",
-        supabase_jwks_url: str = "",
-        supabase_audience: str = "",
-        auto_refresh_jwks: bool = True,
-        jwks_cache_ttl_seconds: int = 3600,
-        user_cache_ttl_seconds: int = 3600,
-    ):
-        self._jwks_cache_ttl_seconds = jwks_cache_ttl_seconds
-        self._user_cache_ttl_seconds = user_cache_ttl_seconds
+class AuthService(BasePlugin):
+    def __init__(self) -> None:
+        # Lazy initialization - actual setup happens in setup() method
+        self._auth_client: AuthProxy | None = None
+        self._repository: AuthRepository | None = None
 
-        self._supabase_url = supabase_url
-        self._supabase_anon_key = supabase_anon_key
-        self._supabase_service_key = supabase_service_key
-        self._supabase_jwks_url = supabase_jwks_url
-        self._supabase_audience = supabase_audience
-        self._auto_refresh_jwks = auto_refresh_jwks
+        # In-memory caches for performance
+        self._tag_role_cache: dict[str, list[str]] = {}
+        self._route_cache: dict[str, dict[str, Any]] = {}
+        self._route_finder: Callable[[str, str], dict[str, Any] | None] | None = None
 
-        self._auth_client = AuthProxy(
-            supabase_url=self._supabase_url,
-            supabase_anon_key=self._supabase_anon_key,
-            supabase_service_key=self._supabase_service_key,
-            supabase_jwks_url=self._supabase_jwks_url,
-            supabase_audience=self._supabase_audience,
-            cache_ttl=self._jwks_cache_ttl_seconds,
-            auto_refresh_jwks=self._auto_refresh_jwks,
-        )
+        # Configuration storage - only cache needed settings
+        self._config: AuthServiceConfig | None = None
+        self._is_setup: bool = False
 
-        self._repository = AuthRepository()
-        self._tag_role_cached: dict[str, list[str]] | None = None
+    # -----------------------------
+    # Plugin interface implementation
+    # -----------------------------
+    async def setup(self, settings: Settings) -> bool:
+        """Initialize the AuthService with configuration."""
+        try:
+            # Extract only the needed settings to save memory and prevent abuse
+            self._config = AuthServiceConfig(
+                auth_enabled=settings.auth_enabled,
+                supabase_url=settings.supabase_url,
+                supabase_anon_key=settings.supabase_anon_key,
+                supabase_service_key=settings.supabase_service_key,
+                supabase_jwks_url=settings.supabase_jwks_url,
+                supabase_audience=settings.supabase_audience,
+                jwks_cache_ttl_seconds=settings.jwks_cache_ttl_seconds,
+                auto_refresh_jwks=settings.auto_refresh_jwks,
+                user_cache_ttl_seconds=settings.user_cache_ttl_seconds,
+                is_debug=settings.is_debug,
+            )
+
+            if not self._config["auth_enabled"]:
+                logger.info("Auth is disabled, AuthService will be available but not active")
+                self._is_setup = True
+                return True
+
+            # Initialize auth proxy
+            jwks_url = self._config["supabase_jwks_url"]
+            if not jwks_url:
+                jwks_url = (self._config["supabase_url"] or "") + "/auth/v1/.well-known/jwks.json"
+
+            self._auth_client = AuthProxy(
+                supabase_url=self._config["supabase_url"] or "",
+                supabase_anon_key=self._config["supabase_anon_key"] or "",
+                supabase_service_key=self._config["supabase_service_key"] or "",
+                supabase_jwks_url=jwks_url,
+                supabase_audience=self._config["supabase_audience"] or "",
+                cache_ttl=self._config["jwks_cache_ttl_seconds"],
+                auto_refresh_jwks=self._config["auto_refresh_jwks"],
+            )
+
+            # Initialize repository
+            self._repository = AuthRepository()
+
+            self._is_setup = True
+            logger.info("AuthService setup completed successfully")
+
+            # Trigger health check to load initial data
+            _ = await self.check_health()
+            return True
+
+        except Exception as e:
+            logger.error(f"AuthService setup failed: {e}")
+            return False
+
+    def set_test_config(self, config: AuthServiceConfig) -> None:
+        """Set configuration for testing purposes. Only use in tests."""
+        self._config = config
+        self._is_setup = True
+
+    async def teardown(self) -> bool:
+        """Clean up AuthService resources."""
+        try:
+            # Clear caches
+            self._tag_role_cache.clear()
+            self._route_cache.clear()
+            self._route_finder = None
+
+            # Clear auth client cache if exists
+            if self._auth_client:
+                self._auth_client.clear_jwks_cache()
+
+            self._is_setup = False
+            logger.info("AuthService teardown completed successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"AuthService teardown failed: {e}")
+            return False
+
+    async def check_health(self) -> dict[str, Any]:
+        """Check AuthService health and refresh cached data."""
+        if not self._is_setup:
+            return {"status": "not_setup", "auth_enabled": False}
+
+        health_status = {
+            "status": "healthy",
+            "auth_enabled": self._config["auth_enabled"] if self._config else False,
+            "tag_role_cache_size": len(self._tag_role_cache),
+            "route_cache_size": len(self._route_cache),
+        }
+
+        try:
+            # Refresh tag-role mappings from Redis
+            if self._config and self._config["auth_enabled"]:
+                all_tag_data = await sysmap_get(str(MapCategory.TAG_ROLE))
+                if all_tag_data:
+                    self._tag_role_cache = all_tag_data
+                    logger.debug(f"Refreshed tag-role cache with {len(self._tag_role_cache)} entries")
+                    # Update the cache size in health status after refresh
+                    health_status["tag_role_cache_size"] = len(self._tag_role_cache)
+
+                # Get JWKS cache info if auth client exists
+                if self._auth_client:
+                    jwks_info = self._auth_client.get_jwks_cache_info()
+                    health_status["jwks_cache"] = jwks_info
+
+        except Exception as e:
+            logger.error(f"Error during AuthService health check: {e}")
+            health_status["status"] = "error"
+            health_status["error"] = str(e)
+
+        return health_status
+
+    def collect_router_info(self, app: FastAPI) -> list[dict[str, Any]]:
+        """
+        Collect all router information from FastAPI app.
+        Combines functionality from get_all_endpoints and route finding.
+        """
+        endpoints: list[dict[str, Any]] = []
+
+        for route in app.routes:
+            if isinstance(route, APIRoute):
+                endpoint_info = {
+                    "path": route.path,
+                    "methods": list(route.methods),
+                    "tags": route.tags or [],
+                    "name": route.name,
+                    "endpoint_func": route.endpoint.__name__,
+                    "path_template": route.path,
+                }
+                endpoints.append(endpoint_info)
+
+        return endpoints
+
+    def create_route_finder(self, app: FastAPI) -> Callable[[str, str], dict[str, Any] | None]:
+        """
+        Create a cached route finder function for fast route matching.
+        Replaces the make_route_finder functionality from middlewares.
+        """
+
+        @lru_cache(maxsize=4096)
+        def _find_route(method: str, path: str) -> dict[str, Any] | None:
+            scope = {"type": "http", "method": method, "path": path, "root_path": getattr(app, "root_path", "")}
+            for route in app.routes:
+                try:
+                    match, child_scope = route.matches(scope)
+                except Exception:
+                    continue
+                if match is Match.FULL:
+                    return {
+                        "method": method,
+                        "path": path,
+                        "path_template": getattr(route, "path", None),
+                        "tags": getattr(route, "tags", []),
+                        "path_params": child_scope.get("path_params", {}) if child_scope else {},
+                    }
+            return None
+
+        self._route_finder = _find_route
+        return _find_route
+
+    def find_route(self, method: str, path: str) -> dict[str, Any] | None:
+        """
+        Find route information for given method and path using cached finder.
+        """
+        if not self._route_finder:
+            logger.error("Route finder not initialized. Call create_route_finder first.")
+            return None
+        return self._route_finder(method, path)
+
+    def log_router_info(self, endpoints: list[dict[str, Any]]) -> None:
+        """
+        Log router information for debugging purposes.
+        """
+        if self._config and self._config["is_debug"]:
+            logger.debug("=========================================================")
+            logger.debug("All available URLs:")
+            for endpoint in endpoints:
+                logger.debug(
+                    f"  [{'/'.join(endpoint['methods'])}] {endpoint['path']} - {endpoint['name']} \t# {', '.join(endpoint['tags'])} "
+                )
+            logger.debug("=========================================================")
+
+    def set_tag_role_mapping(self, tag_role_mapping: dict[str, list[str]]) -> None:
+        """
+        Set tag-role mapping from external source.
+        Allows injection of mappings from outside the auth module.
+        """
+        self._tag_role_cache.update(tag_role_mapping)
+        logger.debug(f"Updated tag-role cache with {len(tag_role_mapping)} mappings")
+
+    def get_tag_role_mapping(self) -> dict[str, list[str]]:
+        """
+        Get current tag-role mapping.
+        """
+        return self._tag_role_cache.copy()
+
+    async def get_roles_by_tags(self, tags: list[str]) -> set[str]:
+        """
+        Return set of roles for a given list of tags.
+        Uses in-memory cache for better performance.
+        """
+        if not tags:
+            return set()
+
+        required: set[str] = set()
+        for t in tags:
+            if t in self._tag_role_cache:
+                roles = self._tag_role_cache[t]
+                if isinstance(roles, list):
+                    r: list[str] = [str(role) for role in roles]
+                else:
+                    r = [str(roles)]
+                logger.debug(f"[RBAC] - tag: {t}, roles: {r}")
+                required |= set(r)
+            else:
+                logger.debug(f"[RBAC] - tag: {t}, roles: []")
+        return required
+
+    def clear_tag_role_cache(self) -> None:
+        """
+        Clear the cached tag-role mappings.
+        """
+        self._tag_role_cache.clear()
+
+    def is_tag_role_cache_initialized(self) -> bool:
+        """
+        Check if the tag-role cache has data.
+        """
+        return len(self._tag_role_cache) > 0
 
     async def process_user_login(self, token: str | None, user_profile: UserProfileData) -> User:
         """
@@ -94,49 +329,6 @@ class AuthService:
             logger.error(f"Failed to process logout for user {user_id}: {e}")
             raise
 
-    async def get_roles_by_tags(self, tags: list[str]) -> set[str]:
-        """
-        Return set of roles for a given list of tags.
-        Uses lazy initialization to cache all tag-role mappings.
-        """
-        if not tags:
-            return set()
-
-        # Lazy initialization: load all tag roles if not cached
-        if self._tag_role_cached is None:
-            all_tag_data = await sysmap_get(str(MapCategory.TAG_ROLE))
-            self._tag_role_cached = all_tag_data if all_tag_data else {}
-
-        required: set[str] = set()
-        for t in tags:
-            if t in self._tag_role_cached:
-                roles = self._tag_role_cached[t]
-                # roles is now already a list[str] from the new sysmap_get implementation
-                if isinstance(roles, list):
-                    r: list[str] = [str(role) for role in roles]
-                else:
-                    # Fallback for backward compatibility
-                    r = [str(roles)]
-                logger.debug(f"[RBAC] - tag: {t}, roles: {r}")
-                required |= set(r)
-            else:
-                logger.debug(f"[RBAC] - tag: {t}, roles: []")
-        return required
-
-    def clear_tag_role_cache(self) -> None:
-        """
-        Clear the cached tag-role mappings.
-        Useful for testing or when tag-role mappings need to be refreshed.
-        """
-        self._tag_role_cached = None
-
-    def is_tag_role_cache_initialized(self) -> bool:
-        """
-        Check if the tag-role cache has been initialized.
-        Useful for testing purposes.
-        """
-        return self._tag_role_cached is not None
-
     async def check_access(self, user_id: str, tags: list[str]) -> bool:
         """Check if user has access to a given list of tags."""
         user_roles = set(await self.get_roles(user_id))
@@ -169,17 +361,21 @@ class AuthService:
                 "created_at": user_profile.created_at,
                 "updated_at": user_profile.updated_at,
             }
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                raise DBError("Repository not available")
             user = await self._repository.create_or_update_user(session, user_data)
 
             # Save metadata
-            if user_profile.app_metadata:
-                await self._repository.create_or_update_user_metadata(
-                    session, user_profile.id, "app", user_profile.app_metadata
-                )
-            if user_profile.user_metadata:
-                await self._repository.create_or_update_user_metadata(
-                    session, user_profile.id, "user", user_profile.user_metadata
-                )
+            if self._repository:
+                if user_profile.app_metadata:
+                    await self._repository.create_or_update_user_metadata(
+                        session, user_profile.id, "app", user_profile.app_metadata
+                    )
+                if user_profile.user_metadata:
+                    await self._repository.create_or_update_user_metadata(
+                        session, user_profile.id, "user", user_profile.user_metadata
+                    )
 
             # Identities are now handled as part of simplified UserProfileData model
 
@@ -203,17 +399,21 @@ class AuthService:
             "created_at": user_profile.created_at,
             "updated_at": user_profile.updated_at,
         }
+        if not self._repository:
+            logger.error("AuthService repository not initialized")
+            raise DBError("Repository not available")
         user = await self._repository.create_or_update_user(session, user_data)
 
         # Save metadata
-        if user_profile.app_metadata:
-            await self._repository.create_or_update_user_metadata(
-                session, user_profile.id, "app", user_profile.app_metadata
-            )
-        if user_profile.user_metadata:
-            await self._repository.create_or_update_user_metadata(
-                session, user_profile.id, "user", user_profile.user_metadata
-            )
+        if self._repository:
+            if user_profile.app_metadata:
+                await self._repository.create_or_update_user_metadata(
+                    session, user_profile.id, "app", user_profile.app_metadata
+                )
+            if user_profile.user_metadata:
+                await self._repository.create_or_update_user_metadata(
+                    session, user_profile.id, "user", user_profile.user_metadata
+                )
 
         # Identities are now handled as part of simplified UserProfileData model
 
@@ -224,9 +424,12 @@ class AuthService:
     ###########################################################################
     async def get_user_id_from_token(self, token: str) -> str | None:
         """Get user ID from JWT token."""
+        if not self._auth_client:
+            logger.error("AuthService not properly initialized")
+            return None
         return await self._auth_client.get_user_id_from_token(token)
 
-    async def get_user_by_id(  # noqa: C901, PLR0912
+    async def get_user_by_id(  # noqa: C901, PLR0912, PLR0911
         self, user_id: str, from_cache: bool = True, session: DBSession | None = None
     ) -> UserProfileData | None:
         """
@@ -256,6 +459,9 @@ class AuthService:
 
         # Step 2: Try to load from local database
         try:
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return None
             db_profile = await self._repository.get_user_info(user_id, session)
             if db_profile:
                 logger.debug(f"User profile retrieved from database for user ID: {user_id}")
@@ -264,7 +470,9 @@ class AuthService:
                 if from_cache:
                     try:
                         profile_json = db_profile.model_dump_json()
-                        cache_success = await set_user_profile(user_id, profile_json, self._user_cache_ttl_seconds)
+                        cache_success = await set_user_profile(
+                            user_id, profile_json, self._config["user_cache_ttl_seconds"] if self._config else 3600
+                        )
                         if cache_success:
                             logger.debug(f"Updated Redis cache with database data for user ID: {user_id}")
                         else:
@@ -280,17 +488,21 @@ class AuthService:
 
         # Step 3: Fallback to Supabase Auth
         try:
+            if not self._auth_client:
+                logger.error("AuthService not properly initialized")
+                return None
             supabase_profile = await self._auth_client.get_user_by_id(user_id)
             if supabase_profile:
                 logger.info(f"User profile retrieved from Supabase Auth for user ID: {user_id}")
 
                 # Update local database with Supabase data
                 try:
-                    db_success = await self._repository.set_user_info(supabase_profile, session)
-                    if db_success:
-                        logger.debug(f"Updated database with Supabase data for user ID: {user_id}")
-                    else:
-                        logger.warning(f"Failed to update database for user ID: {user_id}")
+                    if self._repository:
+                        db_success = await self._repository.set_user_info(supabase_profile, session)
+                        if db_success:
+                            logger.debug(f"Updated database with Supabase data for user ID: {user_id}")
+                        else:
+                            logger.warning(f"Failed to update database for user ID: {user_id}")
                 except DBError as e:
                     logger.warning(f"Error updating database from Supabase: {e}")
                 except Exception as e:
@@ -300,7 +512,9 @@ class AuthService:
                 if from_cache:
                     try:
                         profile_json = supabase_profile.model_dump_json()
-                        cache_success = await set_user_profile(user_id, profile_json, self._user_cache_ttl_seconds)
+                        cache_success = await set_user_profile(
+                            user_id, profile_json, self._config["user_cache_ttl_seconds"] if self._config else 3600
+                        )
                         if cache_success:
                             logger.debug(f"Updated Redis cache with Supabase data for user ID: {user_id}")
                         else:
@@ -317,6 +531,9 @@ class AuthService:
 
     async def get_user_by_token(self, token: str) -> UserProfileData | None:
         """Authenticate JWT token and return user profile data."""
+        if not self._auth_client:
+            logger.error("AuthService not properly initialized")
+            return None
         return await self._auth_client.get_user_by_token(token)
 
     ###########################################################################
@@ -326,10 +543,16 @@ class AuthService:
         """
         Check if a user has completed onboarding by checking if they have a profile.
         """
+        if not self._repository:
+            logger.error("AuthService repository not initialized")
+            return False
         return await self._repository.check_user_profile_exists(user_id)
 
     async def get_user_by_auth_id(self, auth_id: str) -> User | None:
         """Get user from database by Supabase auth ID."""
+        if not self._repository:
+            logger.error("AuthService repository not initialized")
+            return None
         async with await get_transaction(readonly=True) as session:
             return await self._repository.get_user_by_auth_id(session, auth_id)
 
@@ -353,6 +576,9 @@ class AuthService:
 
         # Get from database if cache miss or cache disabled
         try:
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return []
             db_roles = await self._repository.get_roles(user_id)
             # logger.debug(f"Retrieved roles from database for user {user_id}: {db_roles}")
 
@@ -385,6 +611,9 @@ class AuthService:
             return False
 
         try:
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return False
             # Set roles in database
             db_success = await self._repository.set_roles(user_id, roles)
             if not db_success:
@@ -411,7 +640,9 @@ class AuthService:
         Returns True for new users or users not updated within 24 hours.
         """
         try:
-            # Check if user exists in database and get last update time
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return True  # Assume needs update if can't check
             # Use a fresh session to avoid session binding issues in background tasks
             async with await get_transaction() as session:
                 db_user = await self._repository.get_user_by_auth_id(session, user.id)
@@ -509,6 +740,9 @@ class AuthService:
         Log a user action/event to the AUTH_USER_ACTION table.
         """
         try:
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return False
             return await self._repository.log_event(
                 event_type=event_type,
                 event_name=event_name,
