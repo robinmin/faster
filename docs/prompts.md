@@ -756,3 +756,30 @@ Let's focus on how to refactory and simplify class AuthMiddleware. Here comes so
 - For these existing unit tests, you need to evalueate them one by one to decide to keep it or drop it.
 
 - Make sure `make lint` and `make test` all pass before you finish this task.
+
+
+## Enhance Sys Health
+
+### Background
+As we already enhance the plugin mechanism and transfer class AuthService as another core plugin. We need to leverage these enhancements to referctory '/health' again, and add an additional menu item and virtual page 'Sys Health'.
+
+### Tasks
+- Based on current plugin solution, enhance '/health' (function check_health in file @faster/core/routers.py), and its dependencies(for example, check_all_resources and etc).
+
+- I already find a issue for the initial plugin status in the application log like this:
+```
+15 13:59:15.236 [info    ] =========================================================
+15 13:59:15.237 [info    ]      We are running 'faster' - 0.0.1 on development in DEBUG mode.
+15 13:59:15.237 [info    ]      DB      : {'master': True, 'replica': False}
+15 13:59:15.238 [info    ]      Redis   : {'provider': 'upstash', 'connected': True, 'ping': True, 'error': None}
+15 13:59:15.239 [info    ]      Sentry  : {'status': True, 'configured': True, 'initialized': True}
+15 13:59:15.239 [info    ]      Auth    : {}
+15 13:59:15.239 [debug   ] =========================================================
+```
+There must be some ready to caused that Auth plugin's status shown nothing. Find the root cause and fix it.
+
+- In @faster/resources/dev-admin.html, add a new menu item 'Sys Health', and a new added virtual page 'Sys Health'. Click the menu item, the navigate the user to this new virtual page.
+- In virtual page 'Sys Health',use a well design solution to show the status of thse plugin(All data come from the response data's `data` attribute from '/health').
+
+- Enhance the relevant unit tests, make sure both `make lint` and `make test` pass.
+- Use MCP playwright to access frontend via `http://127.0.0.1:8000/dev/admin` to verify every functionalities are working well. In case of any web console errors/warnings, fix all of them if possible.
