@@ -709,3 +709,50 @@ Fix this one.
 
 Let's do some change on page 'App State' in file @faster/resources/dev-admin.html:
 - Replace current section of 'No Data State' with a mockup-code daisy UI componeent to show the 'data' part of the response data of request '/dev/app_state'
+
+
+### Refactory AuthPlugin
+#### Backeend
+As of today, the auth module is working as expect. It's time for us to do some refactory work to enhance the code quality and the extendability for further works.
+
+#### Current Issues
+- AuthService instance has been create multiple times
+- Some key authentication related data's preparation is not very concistance/duplicated:
+  - make_route_finder in file @faster/core/auth/middlewares.py vs get_all_endpoints in file @faster/core/utilities.py
+- Some mission critical data used unnecessary redis cache: for example:
+  - store tag_role mapping in redis
+  - store JWKS in redis
+- Some internal used data cached in app.state or request.state, may be migrated into AuthService or AuthService's component for example AuthProxy, should make a better cohesion and performance.
+
+#### Solution & Goal
+- Make class AuthService inhireted from interface BasePlugin. It will make class AuthService as singleton. and add responsibility to implement three methods: `setup`, `teardown`, `check_health`.
+- Of course, as AuthService is a plugin now, we also need to enhance its `__init__` method for lazy intialization. That means you also need to adjust to @faster/core/bootstrap.py to setup AuthService as a plugin, and use get_instance in @faster/core/routers.py to call methods in stead of create another instance.
+- In setup, we use `settings` arguments to prepare to create real things. and trigger to call `check_health`.
+- We treat `check_health` to refresh data. It will give us a extral benifit google forward to refresh data on the fly.
+- In case of anything need to clean up, we need to put them all in `teardown`.
+- Add a set of method to collect router information(mix both make_route_finder in file @faster/core/auth/middlewares.py and get_all_endpoints in file @faster/core/utilities.py), filter router information(as we've done in make_route_finder), and show in log(as we've done in check_all_resources in @faster/core/bootstrap.py). Use these new define methods replace current one, help to centralized the operations on these router information. Do not forget to lear the way from function make_route_finder in @faster/core/auth/middlewares.py. we also need to get rid of it, for the same reason.
+- Get rid of to store tag_role information in redis, but just add a dict variable on class make_route_finder. Of course, we also need to add some helper methods to open a way to inject the mapping data from outside on both class AuthService and class AuthMiddleware(It is prepared out side of auth module.)
+- For the same reason, add another dict containter to cache JWKS information in AuthProxy.
+- Adjust the function of Settings.auth_enabled: As AuthService already be re-defined the core component, we can not disable it really now. But we can use is as a option in method AuthMiddleware.dispatch to bypass the authorization checking, for example for debugging or something like that.
+
+This task will be implement two steps: 1, Clarification and enhance the requirment itself. 2, Implement them all and make sure the data quality with tools `make lint` and `make test` all pass. Let's begin the first step.
+
+
+A few things need to be fixed or comfirmed:
+- As instance variable _instance and class method get_instance already defined on fater class AuthService, do we realy need to implement it again? If yes, keep it. If no, remove them.
+- in faster/core/auth/routers.py, no global `auth_service` will be better, help to adjustment it.
+- As we already make class AuthService as a singletone, do we still need to attach router information on `app.state` as `app.state.endpoints`?  You nedd to re-evaluate it. In case of not, we need to change the relevant code properiate.
+- As we already centralize all router information related things into class AuthService, you'd better to concider whether we still need function get_all_endpoints aand its relevant utilities functions or not. Do some cleanup and enhancement work on it.
+
+
+Let's focus on how to refactory and simplify class AuthMiddleware. Here comes some point I found. Your need to comfirm or reject them one by one. Meanwhile, you need to do a full code review on it to find any potential issues I just missed. Here comes mine:
+- we do need a place to inject `tag_role` mapping into module auth, but it must not be to add a new proxy call `set_tag_role_mapping` on class AuthMiddleware. It cannot help to do this, but just add a new method. That's it. It need to be remove and we need to find a place outside of module auth to call `AuthService.set_tag_role_mapping`.
+- As `_is_allowed_path` is just defined and call both only once, and with very simple logic here. I suggest merge it to `_handle_allowed_path`, and rename `_handle_allowed_path` as `_check_allowed_path`.
+- For the same reason, it looks like no need to create a seperate method `_is_public_endpoint` to check it. just apply the logic directly. It will be more clear.
+
+
+- As we've done these dramatic refactory on @faster/core/auth/middlewares.py and @faster/core/auth/services.py. You'd better to re-generate a set of full comprtehensive unit tests for both of them in @tests/core/test_auth_middlewares.py and @tests/core/test_auth_services.py.
+
+- For these existing unit tests, you need to evalueate them one by one to decide to keep it or drop it.
+
+- Make sure `make lint` and `make test` all pass before you finish this task.
