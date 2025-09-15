@@ -10,7 +10,6 @@ from sqlalchemy.schema import CreateIndex, CreateTable
 from sqlmodel import SQLModel, create_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql.expression import Select
-from typing_extensions import Self
 
 from .config import Settings
 from .exceptions import DBError
@@ -39,8 +38,6 @@ class DatabaseManager(BasePlugin):
     Acts as a wrapper to hide implementation details from client code.
     """
 
-    _instance = None
-
     def __init__(self) -> None:
         self.master_engine: AsyncEngine | None = None
         self.replica_engine: AsyncEngine | None = None
@@ -48,11 +45,6 @@ class DatabaseManager(BasePlugin):
         self.replica_session: async_sessionmaker[DBSession] | None = None
         self.is_ready: bool = False
 
-    @classmethod
-    def get_instance(cls) -> Self:
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
 
     def _make_engine(self, url: str, pool_size: int, max_overflow: int, echo: bool) -> AsyncEngine:
         engine_kwargs: EngineKwargs = {"echo": echo, "future": True}
