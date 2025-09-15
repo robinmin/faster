@@ -1,6 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
-from ..config import Settings
 from ..logger import get_logger
 from ..models import AppResponseDict
 from ..redisex import blacklist_delete
@@ -21,26 +20,17 @@ router = APIRouter(prefix=url_prefix, tags=["auth"])
 #     PROFILE = url_prefix + "/profile"
 
 
-# Initialize settings and auth service
-settings = Settings()
-jwks_url = settings.supabase_jwks_url
-if not jwks_url and settings.supabase_url:
-    jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-
-auth_service = AuthService(
-    supabase_url=settings.supabase_url or "",
-    supabase_anon_key=settings.supabase_anon_key or "",
-    supabase_service_key=settings.supabase_service_key or "",
-    supabase_jwks_url=jwks_url or "",
-    supabase_audience=settings.supabase_audience or "",
-    auto_refresh_jwks=settings.auto_refresh_jwks,
-    jwks_cache_ttl_seconds=settings.jwks_cache_ttl_seconds,
-    user_cache_ttl_seconds=settings.user_cache_ttl_seconds,
-)
+def get_auth_service() -> AuthService:
+    """Dependency to get the AuthService singleton instance."""
+    return AuthService.get_instance()
 
 
 @router.get("/onboarding", include_in_schema=False, response_model=None)
-async def onboarding(request: Request, user: UserProfileData | None = Depends(get_current_user)) -> AppResponseDict:
+async def onboarding(
+    request: Request,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
     """
     Onboarding page for new users.
     Redirects existing users to the dashboard.
@@ -71,7 +61,11 @@ async def onboarding(request: Request, user: UserProfileData | None = Depends(ge
 
 
 @router.get("/dashboard", include_in_schema=False, response_model=None)
-async def dashboard(request: Request, user: UserProfileData | None = Depends(get_current_user)) -> AppResponseDict:
+async def dashboard(
+    request: Request,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
     """
     Dashboard page for existing users.
     Redirects non-authenticated users to the login page.
@@ -106,6 +100,7 @@ async def on_callback(
     request: Request,
     background_tasks: BackgroundTasks,
     user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
 ) -> AppResponseDict:
     """
     Centralized callback endpoint for handling authenticated Supabase auth state change events.
@@ -146,13 +141,13 @@ async def on_callback(
     # Route to specific event handlers
     try:
         if event == "SIGNED_IN":
-            result = await _handle_signed_in(request, background_tasks, user)
+            result = await _handle_signed_in(request, background_tasks, user, auth_service)
         elif event == "SIGNED_OUT":
-            result = await _handle_signed_out(request, background_tasks, user)
+            result = await _handle_signed_out(request, background_tasks, user, auth_service)
         elif event == "TOKEN_REFRESHED":
             result = await _handle_token_refreshed(request, user)
         elif event == "USER_UPDATED":
-            result = await _handle_user_updated(request, background_tasks, user)
+            result = await _handle_user_updated(request, background_tasks, user, auth_service)
         elif event == "PASSWORD_RECOVERY":
             result = await _handle_password_recovery()
         else:
@@ -177,6 +172,7 @@ async def on_notification(
     event: str,
     request: Request,
     background_tasks: BackgroundTasks,
+    auth_service: AuthService = Depends(get_auth_service),
 ) -> AppResponseDict:
     """
     Public notification endpoint for handling Supabase auth state change events that don't require authentication.
@@ -236,7 +232,7 @@ async def _handle_initial_session() -> AppResponseDict:
 
 
 async def _handle_signed_in(
-    request: Request, background_tasks: BackgroundTasks, user: UserProfileData
+    request: Request, background_tasks: BackgroundTasks, user: UserProfileData, auth_service: AuthService
 ) -> AppResponseDict:
     """Handle user sign in."""
 
@@ -258,7 +254,7 @@ async def _handle_signed_in(
 
 
 async def _handle_signed_out(
-    request: Request, background_tasks: BackgroundTasks, user: UserProfileData
+    request: Request, background_tasks: BackgroundTasks, user: UserProfileData, auth_service: AuthService
 ) -> AppResponseDict:
     """Handle user sign out."""
     # Extract token for background processing
@@ -293,7 +289,7 @@ async def _handle_token_refreshed(request: Request, user: UserProfileData) -> Ap
 
 
 async def _handle_user_updated(
-    request: Request, background_tasks: BackgroundTasks, user: UserProfileData
+    request: Request, background_tasks: BackgroundTasks, user: UserProfileData, auth_service: AuthService
 ) -> AppResponseDict:
     """Handle user profile updates."""
     logger.info(f"User profile updated: {user.id}")
