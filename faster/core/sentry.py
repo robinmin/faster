@@ -30,8 +30,6 @@ logger = get_logger(__name__)
 
 
 class SentryManager(BasePlugin):
-    _instance: "SentryManager | None" = None
-
     def __init__(self) -> None:
         self.dsn: str | None = None
         self.trace_sample_rate: float = 0.1
@@ -39,11 +37,6 @@ class SentryManager(BasePlugin):
         self.environment: str = "development"
         self.is_ready: bool = False
 
-    @classmethod
-    def get_instance(cls) -> "SentryManager":
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
 
     def before_send(self, event: Event, hint: dict[str, Any]) -> Event | None:
         """Filter and modify events before sending to Sentry."""
