@@ -78,17 +78,17 @@ def test_user_management_buttons(html_content: str) -> None:
 def test_modals_structure(html_content: str) -> None:
     """Test that required modals are present."""
     # Check for password change modal
-    assert 'x-show="showPasswordChangeModal"' in html_content
+    assert 'x-if="showPasswordChangeModal"' in html_content
 
     # Check for deactivate account modal
-    assert 'x-show="showDeactivateModal"' in html_content
+    assert 'x-if="showDeactivateModal"' in html_content
 
     # Check for delete account modal
-    assert 'x-show="showDeleteModal"' in html_content
+    assert 'x-if="showDeleteModal"' in html_content
 
     # Check for user management modals
-    assert 'x-show="showGrantRoleModal"' in html_content
-    assert 'x-show="showRevokeRoleModal"' in html_content
+    assert 'x-if="showGrantRoleModal"' in html_content
+    assert 'x-if="showRevokeRoleModal"' in html_content
 
 
 def test_javascript_functions_present(html_content: str) -> None:
