@@ -385,7 +385,7 @@ class TestAuthServiceUserManagement:
             result = await auth_service.get_user_by_id(TEST_USER_ID, from_cache=True)
 
             assert result == mock_user_profile
-            _ = mock_get_supabase.assert_awaited_once_with(TEST_USER_ID)
+            mock_get_supabase.assert_awaited_once_with(TEST_USER_ID)
 
     @pytest.mark.asyncio
     async def test_get_user_by_id_not_found(
@@ -417,7 +417,7 @@ class TestAuthServiceUserManagement:
             result = await auth_service.get_user_by_token(TEST_TOKEN)
 
             assert result == mock_user_profile
-            _ = mock_method.assert_awaited_once_with(TEST_TOKEN)
+            mock_method.assert_awaited_once_with(TEST_TOKEN)
 
     @pytest.mark.asyncio
     async def test_get_user_id_from_token(self, auth_service: AuthService, mock_auth_client: MagicMock) -> None:
@@ -431,7 +431,7 @@ class TestAuthServiceUserManagement:
             result = await auth_service.get_user_id_from_token(TEST_TOKEN)
 
             assert result == TEST_USER_ID
-            _ = mock_method.assert_awaited_once_with(TEST_TOKEN)
+            mock_method.assert_awaited_once_with(TEST_TOKEN)
 
 
 class TestAuthServiceRoleManagement:
