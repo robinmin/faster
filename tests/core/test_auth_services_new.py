@@ -208,49 +208,32 @@ class TestUserAdministrationMethods:
     @pytest.mark.asyncio
     async def test_ban_user_success(self, auth_service: AuthService) -> None:
         """Test successful user banning."""
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.return_value = True
+        with patch.object(auth_service, "_repository") as mock_repository:
+            mock_repository.ban_user = AsyncMock(return_value=True)
 
-            with patch.object(auth_service, "_repository") as mock_repository:
-                mock_repository.ban_user = AsyncMock(return_value=True)
+            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
+                mock_log_event.return_value = True
 
-                with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                    mock_log_event.return_value = True
+                result = await auth_service.ban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID, "Violation")
 
-                    result = await auth_service.ban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID, "Violation")
-
-                    assert result is True
-                    mock_check_permission.assert_called_once_with(TEST_ADMIN_USER_ID, "ban_user")
-                    mock_repository.ban_user.assert_called_once_with(
-                        TEST_TARGET_USER_ID, TEST_ADMIN_USER_ID, "Violation"
-                    )
-
-    @pytest.mark.asyncio
-    async def test_ban_user_insufficient_permissions(self, auth_service: AuthService) -> None:
-        """Test user banning with insufficient permissions."""
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.return_value = False
-
-            result = await auth_service.ban_user(TEST_USER_ID, TEST_TARGET_USER_ID, "Violation")
-
-            assert result is False
+                assert result is True
+                mock_repository.ban_user.assert_called_once_with(
+                    TEST_TARGET_USER_ID, TEST_ADMIN_USER_ID, "Violation"
+                )
 
     @pytest.mark.asyncio
     async def test_unban_user_success(self, auth_service: AuthService) -> None:
         """Test successful user unbanning."""
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.return_value = True
+        with patch.object(auth_service, "_repository") as mock_repository:
+            mock_repository.unban_user = AsyncMock(return_value=True)
 
-            with patch.object(auth_service, "_repository") as mock_repository:
-                mock_repository.unban_user = AsyncMock(return_value=True)
+            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
+                mock_log_event.return_value = True
 
-                with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                    mock_log_event.return_value = True
+                result = await auth_service.unban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
 
-                    result = await auth_service.unban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
-
-                    assert result is True
-                    mock_repository.unban_user.assert_called_once_with(TEST_TARGET_USER_ID, TEST_ADMIN_USER_ID)
+                assert result is True
+                mock_repository.unban_user.assert_called_once_with(TEST_TARGET_USER_ID, TEST_ADMIN_USER_ID)
 
 
 class TestRoleManagementMethods:
@@ -261,10 +244,7 @@ class TestRoleManagementMethods:
         """Test successful role granting."""
         roles = ["moderator", "editor"]
 
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.return_value = True
-
-            with patch.object(auth_service, "_repository") as mock_repository:
+        with patch.object(auth_service, "_repository") as mock_repository:
                 mock_repository.grant_roles = AsyncMock(return_value=True)
 
                 with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
@@ -288,10 +268,7 @@ class TestRoleManagementMethods:
         """Test successful role revoking."""
         roles = ["moderator"]
 
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.return_value = True
-
-            with patch.object(auth_service, "_repository") as mock_repository:
+        with patch.object(auth_service, "_repository") as mock_repository:
                 mock_repository.revoke_roles = AsyncMock(return_value=True)
 
                 with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
@@ -311,33 +288,20 @@ class TestRoleManagementMethods:
                             )
 
     @pytest.mark.asyncio
-    async def test_get_user_roles_admin_success(self, auth_service: AuthService) -> None:
+    async def test_get_user_roles_by_id_success(self, auth_service: AuthService) -> None:
         """Test successful admin user roles retrieval."""
         expected_roles = ["admin", "user"]
 
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.return_value = True
-
-            with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
+        with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
                 mock_get_roles.return_value = expected_roles
 
                 with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
                     mock_log_event.return_value = True
 
-                    result = await auth_service.get_user_roles_admin(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
+                    result = await auth_service.get_user_roles_by_id(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
 
                     assert result == expected_roles
-                    mock_check_permission.assert_called_once_with(TEST_ADMIN_USER_ID, "view_user_roles")
 
-    @pytest.mark.asyncio
-    async def test_get_user_roles_admin_permission_denied(self, auth_service: AuthService) -> None:
-        """Test admin user roles retrieval with permission denied."""
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.return_value = False
-
-            result = await auth_service.get_user_roles_admin(TEST_USER_ID, TEST_TARGET_USER_ID)
-
-            assert result is None
 
 
 class TestHelperMethods:
@@ -364,35 +328,6 @@ class TestHelperMethods:
 
             assert result is False
 
-    @pytest.mark.asyncio
-    async def test_check_admin_permission_success(self, auth_service: AuthService) -> None:
-        """Test successful admin permission check."""
-        with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
-            mock_get_roles.return_value = ["admin", "user"]
-
-            result = await auth_service._check_admin_permission(TEST_ADMIN_USER_ID, "ban_user")  # type: ignore[reportPrivateUsage, unused-ignore]
-
-            assert result is True
-
-    @pytest.mark.asyncio
-    async def test_check_admin_permission_failure(self, auth_service: AuthService) -> None:
-        """Test failed admin permission check."""
-        with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
-            mock_get_roles.return_value = ["user"]  # No admin roles
-
-            result = await auth_service._check_admin_permission(TEST_USER_ID, "ban_user")  # type: ignore[reportPrivateUsage, unused-ignore]
-
-            assert result is False
-
-    @pytest.mark.asyncio
-    async def test_check_admin_permission_exception(self, auth_service: AuthService) -> None:
-        """Test admin permission check with exception."""
-        with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
-            mock_get_roles.side_effect = Exception("Database error")
-
-            result = await auth_service._check_admin_permission(TEST_USER_ID, "ban_user")  # type: ignore[reportPrivateUsage, unused-ignore]
-
-            assert result is False
 
 
 class TestErrorHandling:
@@ -418,22 +353,3 @@ class TestErrorHandling:
 
             assert result is False
 
-    @pytest.mark.asyncio
-    async def test_ban_user_exception(self, auth_service: AuthService) -> None:
-        """Test user banning with exception."""
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.side_effect = Exception("Permission check error")
-
-            result = await auth_service.ban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID, "Violation")
-
-            assert result is False
-
-    @pytest.mark.asyncio
-    async def test_grant_roles_exception(self, auth_service: AuthService) -> None:
-        """Test role granting with exception."""
-        with patch.object(auth_service, "_check_admin_permission", new_callable=AsyncMock) as mock_check_permission:
-            mock_check_permission.side_effect = Exception("Permission error")
-
-            result = await auth_service.grant_roles(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID, ["moderator"])
-
-            assert result is False
