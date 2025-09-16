@@ -417,7 +417,7 @@ class TestNewAuthEndpoints:
 
         cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
-        with patch.object(AuthService.get_instance(), "get_user_roles_admin", new_callable=AsyncMock) as mock_get_roles:
+        with patch.object(AuthService.get_instance(), "get_user_roles_by_id", new_callable=AsyncMock) as mock_get_roles:
             mock_get_roles.return_value = ["admin", "user"]
 
             response = client.get("/auth/admin/users/target-user-123/roles")
@@ -438,7 +438,7 @@ class TestNewAuthEndpoints:
 
         cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
-        with patch.object(AuthService.get_instance(), "get_user_roles_admin", new_callable=AsyncMock) as mock_get_roles:
+        with patch.object(AuthService.get_instance(), "get_user_roles_by_id", new_callable=AsyncMock) as mock_get_roles:
             mock_get_roles.return_value = None  # Permission denied
 
             response = client.get("/auth/admin/users/target-user-123/roles")
