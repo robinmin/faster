@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import Request
 
 from ..logger import get_logger
@@ -189,3 +191,197 @@ def _is_valid_jwt_format(token: str) -> bool:  # type: ignore[reportUnusedFuncti
         return True
     except Exception:
         return False
+
+
+# =============================================================================
+# Password Validation Utilities
+# =============================================================================
+
+
+def validate_password_strength(password: str | None) -> tuple[bool, list[str]]:
+    """
+    Validate password strength according to security requirements.
+
+    Args:
+        password: Password string to validate
+
+    Returns:
+        Tuple of (is_valid, error_messages)
+        - is_valid: True if password meets all requirements
+        - error_messages: List of validation error messages
+
+    Requirements:
+        - At least 8 characters long
+        - Contains at least one uppercase letter
+        - Contains at least one lowercase letter
+        - Contains at least one digit
+        - Contains at least one special character
+    """
+    errors: list[str] = []
+
+    if not password:
+        errors.append("Password cannot be empty")
+        return False, errors
+
+    if len(password) < 8:
+        errors.append("Password must be at least 8 characters long")
+
+    if not any(c.isupper() for c in password):
+        errors.append("Password must contain at least one uppercase letter")
+
+    if not any(c.islower() for c in password):
+        errors.append("Password must contain at least one lowercase letter")
+
+    if not any(c.isdigit() for c in password):
+        errors.append("Password must contain at least one digit")
+
+    special_chars = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+    if not any(c in special_chars for c in password):
+        errors.append("Password must contain at least one special character")
+
+    return len(errors) == 0, errors
+
+
+def sanitize_email(email: str | None) -> str | None:
+    """
+    Sanitize and validate email address.
+
+    Args:
+        email: Email address to sanitize
+
+    Returns:
+        Sanitized email address if valid, None otherwise
+    """
+    if not email:
+        return None
+
+    # Basic sanitization
+    email = email.strip().lower()
+
+    # Basic email validation (simplified)
+    if "@" not in email or "." not in email:
+        return None
+
+    # Check for basic email format
+    parts = email.split("@")
+    if len(parts) != 2:
+        return None
+
+    local_part, domain_part = parts
+    if not local_part or not domain_part:
+        return None
+
+    # Check domain has at least one dot
+    if "." not in domain_part:
+        return None
+
+    return email
+
+
+# =============================================================================
+# User Data Validation Utilities
+# =============================================================================
+
+
+def validate_user_id(user_id: str | None) -> bool:
+    """
+    Validate user ID format and content.
+
+    Args:
+        user_id: User ID to validate
+
+    Returns:
+        True if user ID is valid, False otherwise
+    """
+    if not user_id:
+        return False
+
+    user_id = user_id.strip()
+
+    # Check minimum length
+    if len(user_id) < 3:
+        return False
+
+    # Check maximum length (reasonable limit)
+    if len(user_id) > 255:
+        return False
+
+    # Allow alphanumeric characters, hyphens, and underscores
+    return all(c.isalnum() or c in "-_" for c in user_id)
+
+
+def validate_role_name(role: str | None) -> bool:
+    """
+    Validate role name format and content.
+
+    Args:
+        role: Role name to validate
+
+    Returns:
+        True if role name is valid, False otherwise
+    """
+    if not role:
+        return False
+
+    role = role.strip()
+
+    # Check minimum length
+    if len(role) < 2:
+        return False
+
+    # Check maximum length
+    if len(role) > 50:
+        return False
+
+    # Allow alphanumeric characters, hyphens, and underscores
+    return all(c.isalnum() or c in "-_" for c in role)
+
+
+# =============================================================================
+# Security Utilities
+# =============================================================================
+
+
+def mask_sensitive_data(data: str, visible_chars: int = 4) -> str:
+    """
+    Mask sensitive data for logging purposes.
+
+    Args:
+        data: Sensitive data to mask
+        visible_chars: Number of characters to keep visible at the end
+
+    Returns:
+        Masked string with only last few characters visible
+    """
+    if not data:
+        return ""
+
+    if len(data) <= visible_chars:
+        return "*" * len(data)
+
+    masked_length = len(data) - visible_chars
+    return "*" * masked_length + data[-visible_chars:]
+
+
+def generate_trace_id() -> str:
+    """
+    Generate a unique trace ID for request tracking.
+
+    Returns:
+        Unique trace ID string
+    """
+    return str(uuid.uuid4())
+
+
+def is_admin_role(role: str) -> bool:
+    """
+    Check if a role is an admin role.
+
+    Args:
+        role: Role name to check
+
+    Returns:
+        True if role is an admin role, False otherwise
+    """
+    admin_roles = {"admin", "super_admin", "system_admin", "root"}
+    return role.lower() in admin_roles
