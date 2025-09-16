@@ -373,15 +373,3 @@ def generate_trace_id() -> str:
     return str(uuid.uuid4())
 
 
-def is_admin_role(role: str) -> bool:
-    """
-    Check if a role is an admin role.
-
-    Args:
-        role: Role name to check
-
-    Returns:
-        True if role is an admin role, False otherwise
-    """
-    admin_roles = {"admin", "super_admin", "system_admin", "root"}
-    return role.lower() in admin_roles
