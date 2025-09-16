@@ -355,3 +355,505 @@ async def profile(request: Request, user: UserProfileData | None = Depends(get_c
         message="User profile retrieved successfully",
         data=profile_data,
     )
+
+
+# =============================================================================
+# Password Management Endpoints
+# =============================================================================
+
+
+@router.post("/password/change", include_in_schema=False, response_model=None)
+async def change_password(
+    request: Request,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Change user password.
+    Requires current password verification.
+    """
+    if not user:
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
+
+    try:
+        body = await request.json()
+        current_password = body.get("current_password")
+        new_password = body.get("new_password")
+
+        if not current_password or not new_password:
+            return AppResponseDict(
+                status="failed",
+                message="Current password and new password are required.",
+                data={},
+            )
+
+        result = await auth_service.change_password(user.id, current_password, new_password)
+
+        if result:
+            return AppResponseDict(
+                status="success",
+                message="Password changed successfully.",
+                data={"user_id": user.id},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Failed to change password. Please verify your current password.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error changing password for user {user.id}: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while changing password.",
+            data={},
+        )
+
+
+@router.post("/password/reset/initiate", include_in_schema=False, response_model=None, tags=["public"])
+async def initiate_password_reset(
+    request: Request,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Initiate password reset process.
+    Public endpoint - sends reset email to user.
+    """
+    try:
+        body = await request.json()
+        email = body.get("email")
+
+        if not email:
+            return AppResponseDict(
+                status="failed",
+                message="Email address is required.",
+                data={},
+            )
+
+        result = await auth_service.initiate_password_reset(email)
+
+        if result:
+            return AppResponseDict(
+                status="success",
+                message="Password reset email sent if account exists.",
+                data={"email": email},
+            )
+        return AppResponseDict(
+            status="success",
+            message="Password reset email sent if account exists.",
+            data={"email": email},
+        )
+
+    except Exception as e:
+        logger.error(f"Error initiating password reset for email: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while processing password reset request.",
+            data={},
+        )
+
+
+@router.post("/password/reset/confirm", include_in_schema=False, response_model=None, tags=["public"])
+async def confirm_password_reset(
+    request: Request,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Confirm password reset with token.
+    Public endpoint - completes password reset process.
+    """
+    try:
+        body = await request.json()
+        token = body.get("token")
+        new_password = body.get("new_password")
+
+        if not token or not new_password:
+            return AppResponseDict(
+                status="failed",
+                message="Reset token and new password are required.",
+                data={},
+            )
+
+        result = await auth_service.confirm_password_reset(token, new_password)
+
+        if result:
+            return AppResponseDict(
+                status="success",
+                message="Password reset completed successfully.",
+                data={},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Invalid or expired reset token.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error confirming password reset: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while resetting password.",
+            data={},
+        )
+
+
+# =============================================================================
+# Account Management Endpoints
+# =============================================================================
+
+
+@router.post("/account/deactivate", include_in_schema=False, response_model=None, tags=["admin"])
+async def deactivate_account(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Deactivate user account.
+    Account can be reactivated later.
+    """
+    if not user:
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
+
+    try:
+        body = await request.json()
+        password = body.get("password")
+
+        if not password:
+            return AppResponseDict(
+                status="failed",
+                message="Password confirmation is required to deactivate account.",
+                data={},
+            )
+
+        result = await auth_service.deactivate_account(user.id, password)
+
+        if result:
+            token = extract_bearer_token_from_request(request)
+            background_tasks.add_task(auth_service.background_process_logout, token, user)
+
+            return AppResponseDict(
+                status="success",
+                message="Account deactivated successfully.",
+                data={"user_id": user.id},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Failed to deactivate account. Please verify your password.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error deactivating account for user {user.id}: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while deactivating account.",
+            data={},
+        )
+
+
+@router.post("/account/delete", include_in_schema=False, response_model=None, tags=["admin"])
+async def delete_account(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Delete user account permanently.
+    This action cannot be undone.
+    """
+    if not user:
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
+
+    try:
+        body = await request.json()
+        password = body.get("password")
+        confirmation = body.get("confirmation")
+
+        if not password or confirmation != "DELETE":
+            return AppResponseDict(
+                status="failed",
+                message="Password and confirmation ('DELETE') are required.",
+                data={},
+            )
+
+        result = await auth_service.delete_account(user.id, password)
+
+        if result:
+            token = extract_bearer_token_from_request(request)
+            background_tasks.add_task(auth_service.background_process_logout, token, user)
+
+            return AppResponseDict(
+                status="success",
+                message="Account deleted successfully.",
+                data={"user_id": user.id},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Failed to delete account. Please verify your password.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error deleting account for user {user.id}: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while deleting account.",
+            data={},
+        )
+
+
+# =============================================================================
+# User Administration Endpoints (Admin Only)
+# =============================================================================
+
+
+@router.post("/admin/users/{target_user_id}/ban", include_in_schema=False, response_model=None, tags=["admin"])
+async def ban_user(
+    target_user_id: str,
+    request: Request,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Ban a user account.
+    Admin only endpoint.
+    """
+    if not user:
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
+
+    try:
+        body = await request.json()
+        reason = body.get("reason", "")
+
+        result = await auth_service.ban_user(user.id, target_user_id, reason)
+
+        if result:
+            return AppResponseDict(
+                status="success",
+                message="User banned successfully.",
+                data={"target_user_id": target_user_id, "banned_by": user.id},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Failed to ban user. Insufficient permissions or user not found.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error banning user {target_user_id} by admin {user.id}: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while banning user.",
+            data={},
+        )
+
+
+@router.post("/admin/users/{target_user_id}/unban", include_in_schema=False, response_model=None, tags=["admin"])
+async def unban_user(
+    target_user_id: str,
+    request: Request,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Unban a user account.
+    Admin only endpoint.
+    """
+    if not user:
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
+
+    try:
+        result = await auth_service.unban_user(user.id, target_user_id)
+
+        if result:
+            return AppResponseDict(
+                status="success",
+                message="User unbanned successfully.",
+                data={"target_user_id": target_user_id, "unbanned_by": user.id},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Failed to unban user. Insufficient permissions or user not found.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error unbanning user {target_user_id} by admin {user.id}: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while unbanning user.",
+            data={},
+        )
+
+
+# =============================================================================
+# Role Management Endpoints (Admin Only)
+# =============================================================================
+
+
+@router.post("/admin/users/{target_user_id}/roles/grant", include_in_schema=False, response_model=None, tags=["admin"])
+async def grant_roles(
+    target_user_id: str,
+    request: Request,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Grant roles to a user.
+    Admin only endpoint.
+    """
+    if not user:
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
+
+    try:
+        body = await request.json()
+        roles = body.get("roles", [])
+
+        if not roles or not isinstance(roles, list):
+            return AppResponseDict(
+                status="failed",
+                message="Roles list is required.",
+                data={},
+            )
+
+        result = await auth_service.grant_roles(user.id, target_user_id, roles)
+
+        if result:
+            return AppResponseDict(
+                status="success",
+                message="Roles granted successfully.",
+                data={"target_user_id": target_user_id, "granted_roles": roles, "granted_by": user.id},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Failed to grant roles. Insufficient permissions or user not found.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error granting roles to user {target_user_id} by admin {user.id}: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while granting roles.",
+            data={},
+        )
+
+
+@router.post("/admin/users/{target_user_id}/roles/revoke", include_in_schema=False, response_model=None, tags=["admin"])
+async def revoke_roles(
+    target_user_id: str,
+    request: Request,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Revoke roles from a user.
+    Admin only endpoint.
+    """
+    if not user:
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
+
+    try:
+        body = await request.json()
+        roles = body.get("roles", [])
+
+        if not roles or not isinstance(roles, list):
+            return AppResponseDict(
+                status="failed",
+                message="Roles list is required.",
+                data={},
+            )
+
+        result = await auth_service.revoke_roles(user.id, target_user_id, roles)
+
+        if result:
+            return AppResponseDict(
+                status="success",
+                message="Roles revoked successfully.",
+                data={"target_user_id": target_user_id, "revoked_roles": roles, "revoked_by": user.id},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Failed to revoke roles. Insufficient permissions or user not found.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error revoking roles from user {target_user_id} by admin {user.id}: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while revoking roles.",
+            data={},
+        )
+
+
+@router.get("/admin/users/{target_user_id}/roles", include_in_schema=False, response_model=None, tags=["admin"])
+async def get_user_roles(
+    target_user_id: str,
+    user: UserProfileData | None = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Get user roles.
+    Admin only endpoint.
+    """
+    if not user:
+        return AppResponseDict(
+            status="failed",
+            message="Authentication required. Please login first.",
+            data={},
+        )
+
+    try:
+        result = await auth_service.get_user_roles_admin(user.id, target_user_id)
+
+        if result is not None:
+            return AppResponseDict(
+                status="success",
+                message="User roles retrieved successfully.",
+                data={"target_user_id": target_user_id, "roles": result},
+            )
+        return AppResponseDict(
+            status="failed",
+            message="Failed to get user roles. Insufficient permissions or user not found.",
+            data={},
+        )
+
+    except Exception as e:
+        logger.error(f"Error getting roles for user {target_user_id} by admin {user.id}: {e}")
+        return AppResponseDict(
+            status="failed",
+            message="An error occurred while retrieving user roles.",
+            data={},
+        )
