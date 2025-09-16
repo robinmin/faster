@@ -208,11 +208,11 @@
                   x-text="isSignUp ? 'Already have an account? Sign in' : 'Need an account? Sign up'"
                 ></span>
               </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </div>
 
     <!-- Main Application -->
     <div x-show="$store.app.currentView === 'app'" class="min-h-screen" x-cloak>
@@ -372,8 +372,8 @@
           </div>
 
           <!-- Profile Page -->
+          <template x-if="$store.app.currentPage === 'profile'">
           <div
-            x-show="$store.app.currentPage === 'profile'"
             x-data="profilePage()"
             x-cloak
           >
@@ -514,11 +514,592 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- Password Management -->
+                <div class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <h2 class="card-title">
+                      <i
+                        data-lucide="lock"
+                        class="w-5 h-5"
+                        aria-hidden="true"
+                      ></i>
+                      Password Management
+                    </h2>
+                    <div class="space-y-4">
+                      <!-- Change Password -->
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Change Password</span>
+                        </label>
+                        <div class="flex gap-2">
+                          <button
+                            @click="showPasswordChangeModal = true"
+                            class="btn btn-outline btn-primary"
+                          >
+                            <i data-lucide="key" class="w-4 h-4"></i>
+                            Change Password
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- Password Reset -->
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Password Reset</span>
+                        </label>
+                        <div class="flex gap-2">
+                          <button
+                            @click="initiatePasswordReset()"
+                            class="btn btn-outline btn-secondary"
+                            :class="{ 'loading': passwordResetLoading }"
+                            :disabled="passwordResetLoading"
+                          >
+                            <i data-lucide="mail" class="w-4 h-4"></i>
+                            Send Reset Email
+                          </button>
+                        </div>
+                        <div class="label">
+                          <span class="label-text-alt text-base-content/60">
+                            Send a password reset email to your account
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Account Operations -->
+                <div class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <h2 class="card-title text-error">
+                      <i
+                        data-lucide="alert-triangle"
+                        class="w-5 h-5"
+                        aria-hidden="true"
+                      ></i>
+                      Account Operations
+                    </h2>
+                    <div class="alert alert-warning mb-4">
+                      <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                      <div>
+                        <h3 class="font-bold">Danger Zone</h3>
+                        <div class="text-xs">
+                          These operations are irreversible. Please proceed with caution.
+                        </div>
+                      </div>
+                    </div>
+                    <div class="space-y-4">
+                      <!-- Deactivate Account -->
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Deactivate Account</span>
+                        </label>
+                        <div class="flex gap-2">
+                          <button
+                            @click="showDeactivateModal = true"
+                            class="btn btn-outline btn-warning"
+                          >
+                            <i data-lucide="user-x" class="w-4 h-4"></i>
+                            Deactivate Account
+                          </button>
+                        </div>
+                        <div class="label">
+                          <span class="label-text-alt text-base-content/60">
+                            Temporarily disable your account
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Delete Account -->
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold text-error">Delete Account</span>
+                        </label>
+                        <div class="flex gap-2">
+                          <button
+                            @click="showDeleteModal = true"
+                            class="btn btn-outline btn-error"
+                          >
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            Delete Account
+                          </button>
+                        </div>
+                        <div class="label">
+                          <span class="label-text-alt text-error">
+                            Permanently delete your account and all associated data
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
               </div>
             </div>
-          </div>
 
-          <!-- App State Page -->
+            <!-- Profile Modals -->
+           <!-- Password Change Modal -->
+           <template x-if="showPasswordChangeModal">
+           <div class="modal modal-open" x-cloak>
+             <div class="modal-box">
+               <h3 class="font-bold text-lg">
+                 <i data-lucide="key" class="w-5 h-5 inline mr-2"></i>
+                 Change Password
+               </h3>
+               <form @submit.prevent="changePassword" class="py-4">
+                 <div class="form-control">
+                   <label class="label" for="current-password">
+                     <span class="label-text">Current Password</span>
+                   </label>
+                   <input
+                     id="current-password"
+                     x-model="passwordForm.current"
+                     type="password"
+                     placeholder="Enter current password"
+                     class="input input-bordered"
+                     required
+                   />
+                 </div>
+                 <div class="form-control">
+                   <label class="label" for="new-password">
+                     <span class="label-text">New Password</span>
+                   </label>
+                   <input
+                     id="new-password"
+                     x-model="passwordForm.new"
+                     type="password"
+                     placeholder="Enter new password"
+                     class="input input-bordered"
+                     required
+                   />
+                 </div>
+                 <div class="form-control">
+                   <label class="label" for="confirm-password">
+                     <span class="label-text">Confirm New Password</span>
+                   </label>
+                   <input
+                     id="confirm-password"
+                     x-model="passwordForm.confirm"
+                     type="password"
+                     placeholder="Confirm new password"
+                     class="input input-bordered"
+                     required
+                   />
+                 </div>
+               </form>
+               <div class="modal-action">
+                 <button
+                   @click="showPasswordChangeModal = false; resetPasswordForm()"
+                   class="btn"
+                 >
+                   Cancel
+                 </button>
+                 <button
+                   @click="changePassword()"
+                   class="btn btn-primary"
+                   :class="{ 'loading': passwordChangeLoading }"
+                   :disabled="passwordChangeLoading"
+                 >
+                   Change Password
+                 </button>
+               </div>
+             </div>
+           </div>
+           </template>
+
+           <!-- Deactivate Account Modal -->
+           <template x-if="showDeactivateModal">
+           <div class="modal modal-open" x-cloak>
+             <div class="modal-box">
+               <h3 class="font-bold text-lg text-warning">
+                 <i data-lucide="user-x" class="w-5 h-5 inline mr-2"></i>
+                 Deactivate Account
+               </h3>
+               <div class="py-4">
+                 <div class="alert alert-warning">
+                   <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                   <div>
+                     <h4 class="font-bold">Are you sure you want to deactivate your account?</h4>
+                     <div class="text-sm">
+                       Your account will be temporarily disabled. You can reactivate it later by contacting support.
+                       Your data will be preserved but you won't be able to access the system.
+                     </div>
+                   </div>
+                 </div>
+                 <div class="form-control mt-4">
+                   <label class="label cursor-pointer">
+                     <span class="label-text">I understand the consequences</span>
+                     <input
+                       type="checkbox"
+                       x-model="deactivateConfirmed"
+                       class="checkbox checkbox-warning"
+                     />
+                   </label>
+                 </div>
+               </div>
+               <div class="modal-action">
+                 <button
+                   @click="showDeactivateModal = false; deactivateConfirmed = false"
+                   class="btn"
+                 >
+                   Cancel
+                 </button>
+                 <button
+                   @click="deactivateAccount()"
+                   class="btn btn-warning"
+                   :class="{ 'loading': deactivateLoading }"
+                   :disabled="deactivateLoading || !deactivateConfirmed"
+                 >
+                   Deactivate Account
+                 </button>
+               </div>
+             </div>
+           </div>
+           </template>
+
+           <!-- Delete Account Modal -->
+           <template x-if="showDeleteModal">
+           <div class="modal modal-open" x-cloak>
+             <div class="modal-box">
+               <h3 class="font-bold text-lg text-error">
+                 <i data-lucide="trash-2" class="w-5 h-5 inline mr-2"></i>
+                 Delete Account
+               </h3>
+               <div class="py-4">
+                 <div class="alert alert-error">
+                   <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                   <div>
+                     <h4 class="font-bold">This action cannot be undone!</h4>
+                     <div class="text-sm">
+                       Your account and all associated data will be permanently deleted.
+                       This includes all your profile information, settings, and any data you've created.
+                     </div>
+                   </div>
+                 </div>
+                 <div class="form-control mt-4">
+                   <label class="label">
+                     <span class="label-text font-semibold">Type "DELETE" to confirm</span>
+                     <input
+                       x-model="deleteConfirmation"
+                       type="text"
+                       placeholder="Type DELETE here"
+                       class="input input-bordered"
+                       :class="{ 'input-error': deleteConfirmation && deleteConfirmation !== 'DELETE' }"
+                     />
+                   </label>
+                 </div>
+               </div>
+               <div class="modal-action">
+                 <button
+                   @click="showDeleteModal = false; deleteConfirmation = ''"
+                   class="btn"
+                 >
+                   Cancel
+                 </button>
+                 <button
+                   @click="deleteAccount()"
+                   class="btn btn-error"
+                   :class="{ 'loading': deleteLoading }"
+                   :disabled="deleteLoading || deleteConfirmation !== 'DELETE'"
+                 >
+                   Delete Account Permanently
+                 </button>
+               </div>
+             </div>
+            </div>
+            </template>
+          </div>
+          </template>
+
+            <!-- User Management Page -->
+            <template x-if="$store.app.currentPage === 'user-management'">
+            <div
+              x-data="userManagementPage()"
+              x-cloak
+            >
+              <div class="max-w-4xl mx-auto space-y-6">
+                <!-- User Management Header -->
+                <div class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <h1 class="card-title">
+                      <i
+                        data-lucide="users"
+                        class="w-6 h-6"
+                        aria-hidden="true"
+                      ></i>
+                      User Management
+                    </h1>
+                    <p class="text-base-content/70">
+                      Manage user accounts, roles, and permissions
+                    </p>
+                  </div>
+                </div>
+
+                <!-- User Search and Actions -->
+                <div class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <h2 class="card-title">
+                      <i
+                        data-lucide="search"
+                        class="w-5 h-5"
+                        aria-hidden="true"
+                      ></i>
+                      User Lookup
+                    </h2>
+
+                    <!-- User ID Input -->
+                    <div class="form-control">
+                      <label class="label">
+                        <span class="label-text font-semibold">Target User ID</span>
+                      </label>
+                      <input
+                        x-model="targetUserId"
+                        @input="validateUserId()"
+                        type="text"
+                        placeholder="Enter user ID (UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+                        class="input input-bordered"
+                        :class="{ 'input-error': userIdError }"
+                        minlength="36"
+                        maxlength="36"
+                        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                        title="Please enter a valid UUID format (36 characters with dashes)"
+                        autocomplete="off"
+                        spellcheck="false"
+                      />
+                      <div class="label" x-show="userIdError">
+                        <span class="label-text-alt text-error" x-text="userIdError"></span>
+                      </div>
+                      <div class="label" x-show="!userIdError && targetUserId.length > 0">
+                        <span class="label-text-alt text-success">✓ Valid UUID format</span>
+                      </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                      <!-- Ban User -->
+                      <div class="form-control">
+                        <button
+                          @click="banUser()"
+                          class="btn btn-outline btn-error"
+                          :class="{ 'loading': banLoading }"
+                          :disabled="banLoading || !targetUserId.trim()"
+                        >
+                          <i data-lucide="user-x" class="w-4 h-4"></i>
+                          Ban User
+                        </button>
+                      </div>
+
+                      <!-- Unban User -->
+                      <div class="form-control">
+                        <button
+                          @click="unbanUser()"
+                          class="btn btn-outline btn-success"
+                          :class="{ 'loading': unbanLoading }"
+                          :disabled="unbanLoading || !targetUserId.trim()"
+                        >
+                          <i data-lucide="user-check" class="w-4 h-4"></i>
+                          Unban User
+                        </button>
+                      </div>
+
+                      <!-- Grant Role -->
+                      <div class="form-control">
+                        <button
+                          @click="showGrantRoleModal = true"
+                          class="btn btn-outline btn-primary"
+                          :disabled="!targetUserId.trim()"
+                        >
+                          <i data-lucide="user-plus" class="w-4 h-4"></i>
+                          Grant Role
+                        </button>
+                      </div>
+
+                      <!-- Revoke Role -->
+                      <div class="form-control">
+                        <button
+                          @click="showRevokeRoleModal = true"
+                          class="btn btn-outline btn-warning"
+                          :disabled="!targetUserId.trim()"
+                        >
+                          <i data-lucide="user-minus" class="w-4 h-4"></i>
+                          Revoke Role
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- View Roles -->
+                    <div class="form-control mt-4">
+                      <button
+                        @click="viewUserRoles()"
+                        class="btn btn-outline"
+                        :class="{ 'loading': viewRolesLoading }"
+                        :disabled="viewRolesLoading || !targetUserId.trim()"
+                      >
+                        <i data-lucide="eye" class="w-4 h-4"></i>
+                        View Roles
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- User Information Display -->
+                <div x-show="userInfo" class="card bg-base-100 shadow-xl">
+                  <div class="card-body">
+                    <h2 class="card-title">
+                      <i
+                        data-lucide="user"
+                        class="w-5 h-5"
+                        aria-hidden="true"
+                      ></i>
+                      User Information
+                    </h2>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">User ID</span>
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg font-mono text-sm" x-text="userInfo?.id || 'N/A'"></div>
+                      </div>
+
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Email</span>
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg" x-text="userInfo?.email || 'N/A'"></div>
+                      </div>
+
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Status</span>
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg flex items-center gap-2">
+                          <span x-text="userInfo?.status || 'Unknown'"></span>
+                          <div
+                            class="badge"
+                            :class="userInfo?.status === 'active' ? 'badge-success' : userInfo?.status === 'banned' ? 'badge-error' : 'badge-warning'"
+                          >
+                            <span x-text="userInfo?.status || 'Unknown'"></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="form-control">
+                        <label class="label">
+                          <span class="label-text font-semibold">Roles</span>
+                        </label>
+                        <div class="bg-base-200 p-3 rounded-lg">
+                          <div x-show="userInfo?.roles && userInfo?.roles.length > 0" class="flex flex-wrap gap-2">
+                            <template x-for="role in userInfo?.roles || []" :key="role">
+                              <span class="badge badge-primary" x-text="role"></span>
+                            </template>
+                          </div>
+                          <span x-show="!userInfo?.roles || userInfo?.roles.length === 0" class="text-base-content/60">No roles assigned</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- User Management Modals -->
+            <!-- Grant Role Modal -->
+            <template x-if="showGrantRoleModal">
+            <div class="modal modal-open" x-cloak>
+              <div class="modal-box">
+                <h3 class="font-bold text-lg">
+                  <i data-lucide="user-plus" class="w-5 h-5 inline mr-2"></i>
+                  Grant Role
+                </h3>
+                <div class="py-4">
+                  <div class="form-control">
+                    <label class="label" for="grant-role-select">
+                      <span class="label-text">Select Role to Grant</span>
+                    </label>
+                    <select
+                      id="grant-role-select"
+                      x-model="selectedRole"
+                      class="select select-bordered"
+                    >
+                      <option value="">Choose a role...</option>
+                      <option value="admin">Admin</option>
+                      <option value="moderator">Moderator</option>
+                      <option value="user">User</option>
+                      <option value="developer">Developer</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="modal-action">
+                  <button
+                    @click="showGrantRoleModal = false; selectedRole = ''"
+                    class="btn"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    @click="grantRole()"
+                    class="btn btn-primary"
+                    :class="{ 'loading': grantRoleLoading }"
+                    :disabled="grantRoleLoading || !selectedRole"
+                  >
+                    Grant Role
+                  </button>
+                </div>
+              </div>
+            </div>
+            </template>
+
+            <!-- Revoke Role Modal -->
+            <template x-if="showRevokeRoleModal">
+            <div class="modal modal-open" x-cloak>
+              <div class="modal-box">
+                <h3 class="font-bold text-lg text-warning">
+                  <i data-lucide="user-minus" class="w-5 h-5 inline mr-2"></i>
+                  Revoke Role
+                </h3>
+                <div class="py-4">
+                  <div class="form-control">
+                    <label class="label" for="revoke-role-select">
+                      <span class="label-text">Select Role to Revoke</span>
+                    </label>
+                    <select
+                      id="revoke-role-select"
+                      x-model="selectedRole"
+                      class="select select-bordered"
+                    >
+                      <option value="">Choose a role...</option>
+                      <option value="admin">Admin</option>
+                      <option value="moderator">Moderator</option>
+                      <option value="user">User</option>
+                      <option value="developer">Developer</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="modal-action">
+                  <button
+                    @click="showRevokeRoleModal = false; selectedRole = ''"
+                    class="btn"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    @click="revokeRole()"
+                    class="btn btn-warning"
+                    :class="{ 'loading': revokeRoleLoading }"
+                    :disabled="revokeRoleLoading || !selectedRole"
+                  >
+                    Revoke Role
+                  </button>
+                </div>
+              </div>
+            </div>
+            </template>
+          </div>
+          </template>
+
+            <!-- App State Page -->
           <div
             x-show="$store.app.currentPage === 'app-state'"
             x-data="appStatePage()"
@@ -1485,6 +2066,10 @@
           if (pageId === "sys-health") {
             return await this.call("/health");
           }
+          // Virtual pages that don't need server data
+          if (pageId === "user-management" || pageId === "dashboard" || pageId === "onboarding") {
+            return { message: `${pageId.charAt(0).toUpperCase() + pageId.slice(1).replace('-', ' ')} Page` };
+          }
           return await this.call(`/auth/${pageId}`);
         },
 
@@ -2060,14 +2645,15 @@
 
       function userMenu() {
         return {
-          menuItems: [
-            { id: "dashboard", label: "Dashboard", icon: "layout-dashboard" },
-            { id: "onboarding", label: "Onboarding", icon: "user-check" },
-            { id: "profile", label: "Profile", icon: "user" },
-            { id: "sys-health", label: "Sys Health", icon: "heart-pulse" },
-            { id: "app-state", label: "App State", icon: "settings" },
-            { id: "request-state", label: "Request State", icon: "send" }
-          ],
+           menuItems: [
+             { id: "dashboard", label: "Dashboard", icon: "layout-dashboard" },
+             { id: "onboarding", label: "Onboarding", icon: "user-check" },
+             { id: "profile", label: "Profile", icon: "user" },
+             { id: "user-management", label: "User Management", icon: "users" },
+             { id: "sys-health", label: "Sys Health", icon: "heart-pulse" },
+             { id: "app-state", label: "App State", icon: "settings" },
+             { id: "request-state", label: "Request State", icon: "send" }
+           ],
 
           async selectMenuItem(item) {
             try {
@@ -2245,26 +2831,44 @@
         };
       }
 
-      function profilePage() {
-        return {
-          personalFields: [],
-          accountFields: [],
-          initialized: false,
+       function profilePage() {
+         return {
+           personalFields: [],
+           accountFields: [],
+           initialized: false,
 
-          init() {
-            if (this.initialized) {
-              // console.log("Profile page already initialized, skipping...");
-              return;
-            }
-            this.initialized = true;
+           // Password management
+           showPasswordChangeModal: false,
+           passwordForm: { current: "", new: "", confirm: "" },
+           passwordChangeLoading: false,
 
-            this.updateFields();
+           // Password reset
+           passwordResetLoading: false,
 
-            // Watch for page data changes
-            this.$watch("$store.app.pageData", () => {
-              this.updateFields();
-            });
-          },
+           // Account deactivation
+           showDeactivateModal: false,
+           deactivateConfirmed: false,
+           deactivateLoading: false,
+
+           // Account deletion
+           showDeleteModal: false,
+           deleteConfirmation: "",
+           deleteLoading: false,
+
+           init() {
+             if (this.initialized) {
+               // console.log("Profile page already initialized, skipping...");
+               return;
+             }
+             this.initialized = true;
+
+             this.updateFields();
+
+             // Watch for page data changes
+             this.$watch("$store.app.pageData", () => {
+               this.updateFields();
+             });
+           },
 
           updateFields() {
             const user = Alpine.store("app").user;
@@ -2348,16 +2952,346 @@
             return profileData?.roles || [];
           },
 
-          formatRole(role) {
-            if (!role) return "";
+           formatRole(role) {
+             if (!role) return "";
 
-            // Return role as-is without case conversion
-            return role;
-          }
-        };
-      }
+             // Return role as-is without case conversion
+             return role;
+           },
 
-      function appStatePage() {
+           // Password Management Functions
+           async changePassword() {
+             if (this.passwordChangeLoading) return;
+
+             // Validate form
+             if (!this.passwordForm.current || !this.passwordForm.new || !this.passwordForm.confirm) {
+               toastService.show("All password fields are required", "error");
+               return;
+             }
+
+             if (this.passwordForm.new !== this.passwordForm.confirm) {
+               toastService.show("New passwords do not match", "error");
+               return;
+             }
+
+             if (this.passwordForm.new.length < 8) {
+               toastService.show("New password must be at least 8 characters", "error");
+               return;
+             }
+
+             this.passwordChangeLoading = true;
+
+             try {
+               await apiService.call("/auth/password/change", {
+                 method: "POST",
+                 data: {
+                   current_password: this.passwordForm.current,
+                   new_password: this.passwordForm.new
+                 }
+               });
+
+               toastService.show("Password changed successfully", "success");
+               this.showPasswordChangeModal = false;
+               this.resetPasswordForm();
+             } catch (error) {
+               console.error("Password change failed:", error);
+               toastService.show(`Password change failed: ${error.message}`, "error");
+             } finally {
+               this.passwordChangeLoading = false;
+             }
+           },
+
+           resetPasswordForm() {
+             this.passwordForm = { current: "", new: "", confirm: "" };
+           },
+
+           async initiatePasswordReset() {
+             if (this.passwordResetLoading) return;
+
+             this.passwordResetLoading = true;
+
+             try {
+               await apiService.call("/auth/password/reset/initiate", {
+                 method: "POST",
+                 data: { email: Alpine.store("app").user?.email }
+               });
+
+               toastService.show("Password reset email sent successfully", "success");
+             } catch (error) {
+               console.error("Password reset failed:", error);
+               toastService.show(`Password reset failed: ${error.message}`, "error");
+             } finally {
+               this.passwordResetLoading = false;
+             }
+           },
+
+           // Account Operations Functions
+           async deactivateAccount() {
+             if (this.deactivateLoading || !this.deactivateConfirmed) return;
+
+             this.deactivateLoading = true;
+
+             try {
+               await apiService.call("/auth/account/deactivate", {
+                 method: "POST"
+               });
+
+               toastService.show("Account deactivated successfully", "success");
+               this.showDeactivateModal = false;
+               this.deactivateConfirmed = false;
+
+               // Sign out the user
+               setTimeout(() => {
+                 window.location.reload();
+               }, 2000);
+             } catch (error) {
+               console.error("Account deactivation failed:", error);
+               toastService.show(`Account deactivation failed: ${error.message}`, "error");
+             } finally {
+               this.deactivateLoading = false;
+             }
+           },
+
+           async deleteAccount() {
+             if (this.deleteLoading || this.deleteConfirmation !== "DELETE") return;
+
+             this.deleteLoading = true;
+
+             try {
+               await apiService.call("/auth/account/delete", {
+                 method: "POST"
+               });
+
+               toastService.show("Account deleted successfully", "success");
+               this.showDeleteModal = false;
+               this.deleteConfirmation = "";
+
+               // Sign out the user
+               setTimeout(() => {
+                 window.location.reload();
+               }, 2000);
+             } catch (error) {
+               console.error("Account deletion failed:", error);
+               toastService.show(`Account deletion failed: ${error.message}`, "error");
+             } finally {
+               this.deleteLoading = false;
+             }
+           }
+         };
+       }
+
+       function userManagementPage() {
+         return {
+           targetUserId: "",
+           userIdError: "",
+           userInfo: null,
+
+           // Loading states
+           banLoading: false,
+           unbanLoading: false,
+           grantRoleLoading: false,
+           revokeRoleLoading: false,
+           viewRolesLoading: false,
+
+           // Modals
+           showGrantRoleModal: false,
+           showRevokeRoleModal: false,
+           selectedRole: "",
+
+           // Validation functions
+           validateUserId() {
+             const userId = this.targetUserId.trim();
+             this.userIdError = "";
+
+             if (!userId) {
+               return;
+             }
+
+             // Check length
+             if (userId.length !== 36) {
+               this.userIdError = "User ID must be exactly 36 characters long";
+               return;
+             }
+
+             // Check UUID format (8-4-4-4-12 pattern with hyphens)
+             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+             if (!uuidRegex.test(userId)) {
+               this.userIdError = "Invalid UUID format. Expected: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+               return;
+             }
+
+             // Clear error if validation passes
+             this.userIdError = "";
+           },
+
+           // User management functions
+           async banUser() {
+             if (this.banLoading || !this.targetUserId.trim()) return;
+
+             // Validate user ID format before making API call
+             this.validateUserId();
+             if (this.userIdError) {
+               toastService.show(this.userIdError, "error");
+               return;
+             }
+
+             if (!confirm(`Are you sure you want to ban user ${this.targetUserId}?`)) {
+               return;
+             }
+
+             this.banLoading = true;
+             this.userIdError = "";
+
+             try {
+               await apiService.call(`/auth/admin/users/${this.targetUserId}/ban`, {
+                 method: "POST"
+               });
+
+               toastService.show(`User ${this.targetUserId} has been banned`, "success");
+               await this.viewUserRoles(); // Refresh user info
+             } catch (error) {
+               console.error("Ban user failed:", error);
+               this.userIdError = error.message || "Failed to ban user";
+               toastService.show(`Failed to ban user: ${error.message}`, "error");
+             } finally {
+               this.banLoading = false;
+             }
+           },
+
+           async unbanUser() {
+             if (this.unbanLoading || !this.targetUserId.trim()) return;
+
+             // Validate user ID format before making API call
+             this.validateUserId();
+             if (this.userIdError) {
+               toastService.show(this.userIdError, "error");
+               return;
+             }
+
+             if (!confirm(`Are you sure you want to unban user ${this.targetUserId}?`)) {
+               return;
+             }
+
+             this.unbanLoading = true;
+             this.userIdError = "";
+
+             try {
+               await apiService.call(`/auth/admin/users/${this.targetUserId}/unban`, {
+                 method: "POST"
+               });
+
+               toastService.show(`User ${this.targetUserId} has been unbanned`, "success");
+               await this.viewUserRoles(); // Refresh user info
+             } catch (error) {
+               console.error("Unban user failed:", error);
+               this.userIdError = error.message || "Failed to unban user";
+               toastService.show(`Failed to unban user: ${error.message}`, "error");
+             } finally {
+               this.unbanLoading = false;
+             }
+           },
+
+           async grantRole() {
+             if (this.grantRoleLoading || !this.selectedRole || !this.targetUserId.trim()) return;
+
+             // Validate user ID format before making API call
+             this.validateUserId();
+             if (this.userIdError) {
+               toastService.show(this.userIdError, "error");
+               return;
+             }
+
+             this.grantRoleLoading = true;
+
+             try {
+               await apiService.call(`/auth/admin/users/${this.targetUserId}/roles/grant`, {
+                 method: "POST",
+                 data: { role: this.selectedRole }
+               });
+
+               toastService.show(`Role "${this.selectedRole}" granted to user ${this.targetUserId}`, "success");
+               this.showGrantRoleModal = false;
+               this.selectedRole = "";
+               await this.viewUserRoles(); // Refresh user info
+             } catch (error) {
+               console.error("Grant role failed:", error);
+               toastService.show(`Failed to grant role: ${error.message}`, "error");
+             } finally {
+               this.grantRoleLoading = false;
+             }
+           },
+
+           async revokeRole() {
+             if (this.revokeRoleLoading || !this.selectedRole || !this.targetUserId.trim()) return;
+
+             // Validate user ID format before making API call
+             this.validateUserId();
+             if (this.userIdError) {
+               toastService.show(this.userIdError, "error");
+               return;
+             }
+
+             if (!confirm(`Are you sure you want to revoke the "${this.selectedRole}" role from user ${this.targetUserId}?`)) {
+               return;
+             }
+
+             this.revokeRoleLoading = true;
+
+             try {
+               await apiService.call(`/auth/admin/users/${this.targetUserId}/roles/revoke`, {
+                 method: "POST",
+                 data: { role: this.selectedRole }
+               });
+
+               toastService.show(`Role "${this.selectedRole}" revoked from user ${this.targetUserId}`, "success");
+               this.showRevokeRoleModal = false;
+               this.selectedRole = "";
+               await this.viewUserRoles(); // Refresh user info
+             } catch (error) {
+               console.error("Revoke role failed:", error);
+               toastService.show(`Failed to revoke role: ${error.message}`, "error");
+             } finally {
+               this.revokeRoleLoading = false;
+             }
+           },
+
+           async viewUserRoles() {
+             if (this.viewRolesLoading || !this.targetUserId.trim()) return;
+
+             // Validate user ID format before making API call
+             this.validateUserId();
+             if (this.userIdError) {
+               toastService.show(this.userIdError, "error");
+               return;
+             }
+
+             this.viewRolesLoading = true;
+             this.userIdError = "";
+
+             try {
+               const data = await apiService.call(`/auth/admin/users/${this.targetUserId}/roles`);
+
+               this.userInfo = {
+                 id: data.data?.id || this.targetUserId,
+                 email: data.data?.email || "N/A",
+                 status: data.data?.status || "unknown",
+                 roles: data.data?.roles || []
+               };
+
+               toastService.show("User information loaded successfully", "success");
+             } catch (error) {
+               console.error("View user roles failed:", error);
+               this.userIdError = error.message || "Failed to load user information";
+               this.userInfo = null;
+               toastService.show(`Failed to load user information: ${error.message}`, "error");
+             } finally {
+               this.viewRolesLoading = false;
+             }
+           }
+         };
+       }
+
+       function appStatePage() {
         return {
           appStateData: null,
           loading: false,
