@@ -783,3 +783,28 @@ There must be some ready to caused that Auth plugin's status shown nothing. Find
 
 - Enhance the relevant unit tests, make sure both `make lint` and `make test` pass.
 - Use MCP playwright to access frontend via `http://127.0.0.1:8000/dev/admin` to verify every functionalities are working well. In case of any web console errors/warnings, fix all of them if possible.
+
+### enahnce virtual page 'Profile'
+As we already add some new endpoints as shown bellow, we need to do some enhancements on virtual page 'Profile'. Use the following endpints:
+- @router.post("/password/change", include_in_schema=False, response_model=None)
+- @router.post("/password/reset/initiate", include_in_schema=False, response_model=None, tags=["public"])
+- @router.post("/password/reset/confirm", include_in_schema=False, response_model=None, tags=["public"])
+- @router.post("/account/deactivate", include_in_schema=False, response_model=None, tags=["admin"])
+- @router.post("/account/delete", include_in_schema=False, response_model=None, tags=["admin"])
+
+As these are very critical operation, so we need add a comfirmation action before to do the real work.
+
+### Add new  virtual page 'User Management'
+- add a new menu item 'User Mangement' and a new virtual page 'User Mangement'.
+- Design a virtual page 'User Mangement' and implement it. As this is a simple management tool for administrator/developer, we do not want to involve to list users and pickup particurlar user and etc. Our operation all based on a inputed user id, and then based it to do the further operations.
+- It should involve the following endpoints:
+  - @router.post("/admin/users/{target_user_id}/ban", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.post("/admin/users/{target_user_id}/unban", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.post("/admin/users/{target_user_id}/roles/grant", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.post("/admin/users/{target_user_id}/roles/revoke", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.get("/admin/users/{target_user_id}/roles", include_in_schema=False, response_model=None, tags=["admin"])
+
+As these are very critical operation, so we need add a comfirmation action before to do the real work.
+
+
+After both of these two requirements, you need to use playwright to verify each function points are working as expect or not. In case of any issue or web console errors, you also need to fix all of them.
