@@ -2120,18 +2120,34 @@
             try {
               const supabase = Alpine.store("app").supabase;
               if (supabase) {
-                // Capture current session before sign out (for backend notification)
-                const {
-                  data: { session }
-                } = await supabase.auth.getSession();
-                if (session?.access_token) {
-                  // Store the access token temporarily for the SIGNED_OUT event
-                  window.pendingSignOutToken = session.access_token;
+                try {
+                  // Capture current session before sign out (for backend notification)
+                  const {
+                    data: { session }
+                  } = await supabase.auth.getSession();
+                  if (session?.access_token) {
+                    // Store the access token temporarily for the SIGNED_OUT event
+                    window.pendingSignOutToken = session.access_token;
+                  }
+                } catch (sessionError) {
+                  // If getting session fails, continue with logout anyway
+                  console.warn("Could not get session for logout:", sessionError);
                 }
 
                 // This will trigger the auth state change handler which will handle backend notification
                 const { error } = await supabase.auth.signOut();
-                if (error) throw error;
+                if (error) {
+                  // If signOut fails due to missing session, treat as already signed out
+                  if (error.message.includes("session missing") || error.message.includes("Auth session missing")) {
+                    console.warn("Session already missing, proceeding with local logout");
+                    // Force local logout
+                    Alpine.store("app").user = null;
+                    Alpine.store("app").currentView = "auth";
+                    toastService.show("Signed out successfully", "info");
+                    return;
+                  }
+                  throw error;
+                }
               } else {
                 // Fallback if no supabase
                 Alpine.store("app").user = null;
@@ -2140,7 +2156,14 @@
               }
             } catch (error) {
               console.error("Logout failed:", error);
-              toastService.show(`Logout failed: ${error.message}`, "error");
+              // For auth session missing errors, treat as already logged out
+              if (error.message.includes("session missing") || error.message.includes("Auth session missing")) {
+                Alpine.store("app").user = null;
+                Alpine.store("app").currentView = "auth";
+                toastService.show("Signed out successfully", "info");
+              } else {
+                toastService.show(`Logout failed: ${error.message}`, "error");
+              }
             } finally {
               this.isSigningOut = false;
             }
