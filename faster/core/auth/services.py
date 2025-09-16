@@ -766,3 +766,512 @@ class AuthService(BasePlugin):
             # Never re-raise exceptions to avoid disrupting the main application flow
             # Event logging is for tracking/analytics and should not interfere with core functionality
             return False
+
+    # =============================================================================
+    # Password Management Methods
+    # =============================================================================
+
+    async def change_password(self, user_id: str, current_password: str, new_password: str) -> bool:
+        """
+        Change user password with current password verification.
+
+        Args:
+            user_id: User's authentication ID
+            current_password: Current password for verification
+            new_password: New password to set
+
+        Returns:
+            True if password changed successfully, False otherwise
+        """
+        try:
+            if not self._auth_client:
+                logger.error("AuthService not properly initialized")
+                return False
+
+            # Use auth proxy to change password via Supabase
+            result = await self._auth_client.change_password(user_id, current_password, new_password)
+
+            if result:
+                logger.info(f"Password changed successfully for user {user_id}")
+                # Log the password change event
+                _ = await self.log_event(
+                    event_type="auth",
+                    event_name="password_changed",
+                    event_source="user_action",
+                    user_auth_id=user_id,
+                    event_payload={"status": "success"},
+                )
+            else:
+                logger.warning(f"Password change failed for user {user_id}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error changing password for user {user_id}: {e}")
+            return False
+
+    async def initiate_password_reset(self, email: str) -> bool:
+        """
+        Initiate password reset process by sending reset email.
+
+        Args:
+            email: Email address to send reset link to
+
+        Returns:
+            True if reset email sent successfully, False otherwise
+        """
+        try:
+            if not self._auth_client:
+                logger.error("AuthService not properly initialized")
+                return False
+
+            # Use auth proxy to initiate password reset via Supabase
+            result = await self._auth_client.initiate_password_reset(email)
+
+            if result:
+                logger.info(f"Password reset initiated for email {email}")
+                # Log the password reset initiation event
+                _ = await self.log_event(
+                    event_type="auth",
+                    event_name="password_reset_initiated",
+                    event_source="user_action",
+                    event_payload={"email": email, "status": "success"},
+                )
+            else:
+                logger.warning(f"Password reset initiation failed for email {email}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error initiating password reset for email {email}: {e}")
+            return False
+
+    async def confirm_password_reset(self, token: str, new_password: str) -> bool:
+        """
+        Confirm password reset with token and set new password.
+
+        Args:
+            token: Password reset token
+            new_password: New password to set
+
+        Returns:
+            True if password reset completed successfully, False otherwise
+        """
+        try:
+            if not self._auth_client:
+                logger.error("AuthService not properly initialized")
+                return False
+
+            # Use auth proxy to confirm password reset via Supabase
+            result = await self._auth_client.confirm_password_reset(token, new_password)
+
+            if result:
+                logger.info("Password reset confirmed successfully")
+                # Log the password reset completion event
+                _ = await self.log_event(
+                    event_type="auth",
+                    event_name="password_reset_completed",
+                    event_source="user_action",
+                    event_payload={"status": "success"},
+                )
+            else:
+                logger.warning("Password reset confirmation failed")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error confirming password reset: {e}")
+            return False
+
+    # =============================================================================
+    # Account Management Methods
+    # =============================================================================
+
+    async def deactivate_account(self, user_id: str, password: str) -> bool:
+        """
+        Deactivate user account with password verification.
+        Account can be reactivated later.
+
+        Args:
+            user_id: User's authentication ID
+            password: Password for verification
+
+        Returns:
+            True if account deactivated successfully, False otherwise
+        """
+        try:
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return False
+
+            # Verify password before deactivation
+            if not await self._verify_user_password(user_id, password):
+                logger.warning(f"Password verification failed for account deactivation: {user_id}")
+                return False
+
+            # Deactivate account in database
+            result = await self._repository.deactivate_account(user_id)
+
+            if result:
+                logger.info(f"Account deactivated successfully for user {user_id}")
+                # Log the account deactivation event
+                _ = await self.log_event(
+                    event_type="auth",
+                    event_name="account_deactivated",
+                    event_source="user_action",
+                    user_auth_id=user_id,
+                    event_payload={"status": "success"},
+                )
+            else:
+                logger.warning(f"Account deactivation failed for user {user_id}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error deactivating account for user {user_id}: {e}")
+            return False
+
+    async def delete_account(self, user_id: str, password: str) -> bool:
+        """
+        Delete user account permanently with password verification.
+        This action cannot be undone.
+
+        Args:
+            user_id: User's authentication ID
+            password: Password for verification
+
+        Returns:
+            True if account deleted successfully, False otherwise
+        """
+        try:
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return False
+
+            # Verify password before deletion
+            if not await self._verify_user_password(user_id, password):
+                logger.warning(f"Password verification failed for account deletion: {user_id}")
+                return False
+
+            # Delete account in database (soft delete)
+            result = await self._repository.delete_account(user_id)
+
+            if result:
+                logger.info(f"Account deleted successfully for user {user_id}")
+                # Log the account deletion event
+                _ = await self.log_event(
+                    event_type="auth",
+                    event_name="account_deleted",
+                    event_source="user_action",
+                    user_auth_id=user_id,
+                    event_payload={"status": "success"},
+                )
+
+                # Also delete from Supabase Auth if possible
+                try:
+                    if self._auth_client:
+                        _ = await self._auth_client.delete_user(user_id)
+                        logger.info(f"User deleted from Supabase Auth: {user_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete user from Supabase Auth: {e}")
+
+            else:
+                logger.warning(f"Account deletion failed for user {user_id}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error deleting account for user {user_id}: {e}")
+            return False
+
+    # =============================================================================
+    # User Administration Methods (Admin Only)
+    # =============================================================================
+
+    async def ban_user(self, admin_user_id: str, target_user_id: str, reason: str = "") -> bool:
+        """
+        Ban a user account (admin only).
+
+        Args:
+            admin_user_id: Admin user ID performing the action
+            target_user_id: User ID to ban
+            reason: Reason for banning
+
+        Returns:
+            True if user banned successfully, False otherwise
+        """
+        try:
+            # Check if admin has permission to ban users
+            if not await self._check_admin_permission(admin_user_id, "ban_user"):
+                logger.warning(f"User {admin_user_id} attempted to ban user {target_user_id} without permission")
+                return False
+
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return False
+
+            # Ban user in database
+            result = await self._repository.ban_user(target_user_id, admin_user_id, reason)
+
+            if result:
+                logger.info(f"User {target_user_id} banned by admin {admin_user_id}")
+                # Log the ban event
+                _ = await self.log_event(
+                    event_type="admin",
+                    event_name="user_banned",
+                    event_source="admin_action",
+                    user_auth_id=admin_user_id,
+                    event_payload={"target_user_id": target_user_id, "reason": reason, "status": "success"},
+                )
+            else:
+                logger.warning(f"Failed to ban user {target_user_id} by admin {admin_user_id}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error banning user {target_user_id} by admin {admin_user_id}: {e}")
+            return False
+
+    async def unban_user(self, admin_user_id: str, target_user_id: str) -> bool:
+        """
+        Unban a user account (admin only).
+
+        Args:
+            admin_user_id: Admin user ID performing the action
+            target_user_id: User ID to unban
+
+        Returns:
+            True if user unbanned successfully, False otherwise
+        """
+        try:
+            # Check if admin has permission to unban users
+            if not await self._check_admin_permission(admin_user_id, "unban_user"):
+                logger.warning(f"User {admin_user_id} attempted to unban user {target_user_id} without permission")
+                return False
+
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return False
+
+            # Unban user in database
+            result = await self._repository.unban_user(target_user_id, admin_user_id)
+
+            if result:
+                logger.info(f"User {target_user_id} unbanned by admin {admin_user_id}")
+                # Log the unban event
+                _ = await self.log_event(
+                    event_type="admin",
+                    event_name="user_unbanned",
+                    event_source="admin_action",
+                    user_auth_id=admin_user_id,
+                    event_payload={"target_user_id": target_user_id, "status": "success"},
+                )
+            else:
+                logger.warning(f"Failed to unban user {target_user_id} by admin {admin_user_id}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error unbanning user {target_user_id} by admin {admin_user_id}: {e}")
+            return False
+
+    # =============================================================================
+    # Role Management Methods (Admin Only)
+    # =============================================================================
+
+    async def grant_roles(self, admin_user_id: str, target_user_id: str, roles: list[str]) -> bool:
+        """
+        Grant roles to a user (admin only).
+
+        Args:
+            admin_user_id: Admin user ID performing the action
+            target_user_id: User ID to grant roles to
+            roles: List of roles to grant
+
+        Returns:
+            True if roles granted successfully, False otherwise
+        """
+        try:
+            # Check if admin has permission to grant roles
+            if not await self._check_admin_permission(admin_user_id, "grant_roles"):
+                logger.warning(
+                    f"User {admin_user_id} attempted to grant roles to user {target_user_id} without permission"
+                )
+                return False
+
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return False
+
+            # Grant roles in database
+            result = await self._repository.grant_roles(target_user_id, roles, admin_user_id)
+
+            if result:
+                logger.info(f"Roles {roles} granted to user {target_user_id} by admin {admin_user_id}")
+                # Log the role grant event
+                _ = await self.log_event(
+                    event_type="admin",
+                    event_name="roles_granted",
+                    event_source="admin_action",
+                    user_auth_id=admin_user_id,
+                    event_payload={"target_user_id": target_user_id, "granted_roles": roles, "status": "success"},
+                )
+
+                # Update cache with new roles
+                current_roles = await self.get_roles(target_user_id, from_cache=False)
+                updated_roles = list(set(current_roles + roles))
+                _ = await user2role_set(target_user_id, updated_roles)
+
+            else:
+                logger.warning(f"Failed to grant roles {roles} to user {target_user_id} by admin {admin_user_id}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error granting roles {roles} to user {target_user_id} by admin {admin_user_id}: {e}")
+            return False
+
+    async def revoke_roles(self, admin_user_id: str, target_user_id: str, roles: list[str]) -> bool:
+        """
+        Revoke roles from a user (admin only).
+
+        Args:
+            admin_user_id: Admin user ID performing the action
+            target_user_id: User ID to revoke roles from
+            roles: List of roles to revoke
+
+        Returns:
+            True if roles revoked successfully, False otherwise
+        """
+        try:
+            # Check if admin has permission to revoke roles
+            if not await self._check_admin_permission(admin_user_id, "revoke_roles"):
+                logger.warning(
+                    f"User {admin_user_id} attempted to revoke roles from user {target_user_id} without permission"
+                )
+                return False
+
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return False
+
+            # Revoke roles in database
+            result = await self._repository.revoke_roles(target_user_id, roles, admin_user_id)
+
+            if result:
+                logger.info(f"Roles {roles} revoked from user {target_user_id} by admin {admin_user_id}")
+                # Log the role revoke event
+                _ = await self.log_event(
+                    event_type="admin",
+                    event_name="roles_revoked",
+                    event_source="admin_action",
+                    user_auth_id=admin_user_id,
+                    event_payload={"target_user_id": target_user_id, "revoked_roles": roles, "status": "success"},
+                )
+
+                # Update cache with remaining roles
+                current_roles = await self.get_roles(target_user_id, from_cache=False)
+                updated_roles = [role for role in current_roles if role not in roles]
+                _ = await user2role_set(target_user_id, updated_roles)
+
+            else:
+                logger.warning(f"Failed to revoke roles {roles} from user {target_user_id} by admin {admin_user_id}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error revoking roles {roles} from user {target_user_id} by admin {admin_user_id}: {e}")
+            return False
+
+    async def get_user_roles_admin(self, admin_user_id: str, target_user_id: str) -> list[str] | None:
+        """
+        Get user roles (admin only endpoint).
+
+        Args:
+            admin_user_id: Admin user ID performing the action
+            target_user_id: User ID to get roles for
+
+        Returns:
+            List of roles if successful, None if permission denied or error
+        """
+        try:
+            # Check if admin has permission to view user roles
+            if not await self._check_admin_permission(admin_user_id, "view_user_roles"):
+                logger.warning(
+                    f"User {admin_user_id} attempted to view roles for user {target_user_id} without permission"
+                )
+                return None
+
+            # Get roles using existing method
+            roles = await self.get_roles(target_user_id, from_cache=True)
+
+            logger.info(f"Roles for user {target_user_id} retrieved by admin {admin_user_id}")
+            # Log the role view event
+            _ = await self.log_event(
+                event_type="admin",
+                event_name="user_roles_viewed",
+                event_source="admin_action",
+                user_auth_id=admin_user_id,
+                event_payload={"target_user_id": target_user_id, "status": "success"},
+            )
+
+            return roles
+
+        except Exception as e:
+            logger.error(f"Error getting roles for user {target_user_id} by admin {admin_user_id}: {e}")
+            return None
+
+    # =============================================================================
+    # Helper Methods
+    # =============================================================================
+
+    async def _verify_user_password(self, user_id: str, password: str) -> bool:
+        """
+        Verify user password using Supabase Auth.
+
+        Args:
+            user_id: User's authentication ID
+            password: Password to verify
+
+        Returns:
+            True if password is correct, False otherwise
+        """
+        try:
+            if not self._auth_client:
+                logger.error("AuthService not properly initialized")
+                return False
+
+            # Use auth proxy to verify password via Supabase
+            result = await self._auth_client.verify_password(user_id, password)
+            return result
+
+        except Exception as e:
+            logger.error(f"Error verifying password for user {user_id}: {e}")
+            return False
+
+    async def _check_admin_permission(self, user_id: str, permission: str) -> bool:
+        """
+        Check if user has admin permission to perform specific action.
+
+        Args:
+            user_id: User ID to check permissions for
+            permission: Specific permission to check
+
+        Returns:
+            True if user has permission, False otherwise
+        """
+        try:
+            # Get user roles
+            user_roles = await self.get_roles(user_id)
+
+            # Define admin roles that can perform various actions
+            admin_roles = {"admin", "super_admin", "system_admin"}
+
+            # Check if user has any admin role
+            # For now, all admin roles can perform all admin actions
+            # This can be extended with more granular permissions later
+            return any(role in admin_roles for role in user_roles)
+
+        except Exception as e:
+            logger.error(f"Error checking admin permission for user {user_id}: {e}")
+            return False
