@@ -2,7 +2,6 @@
 
 from faster.core.auth.utilities import (
     generate_trace_id,
-    is_admin_role,
     mask_sensitive_data,
     sanitize_email,
     validate_password_strength,
@@ -345,44 +344,6 @@ class TestSecurityUtilities:
 
         assert len(trace_ids) == 100  # All should be unique
 
-    def test_is_admin_role_admin(self) -> None:
-        """Test admin role detection with admin role."""
-        assert is_admin_role("admin") is True
-
-    def test_is_admin_role_super_admin(self) -> None:
-        """Test admin role detection with super_admin role."""
-        assert is_admin_role("super_admin") is True
-
-    def test_is_admin_role_system_admin(self) -> None:
-        """Test admin role detection with system_admin role."""
-        assert is_admin_role("system_admin") is True
-
-    def test_is_admin_role_root(self) -> None:
-        """Test admin role detection with root role."""
-        assert is_admin_role("root") is True
-
-    def test_is_admin_role_case_insensitive(self) -> None:
-        """Test admin role detection is case insensitive."""
-        assert is_admin_role("ADMIN") is True
-        assert is_admin_role("Admin") is True
-        assert is_admin_role("aDmIn") is True
-
-    def test_is_admin_role_non_admin(self) -> None:
-        """Test admin role detection with non-admin roles."""
-        assert is_admin_role("user") is False
-        assert is_admin_role("moderator") is False
-        assert is_admin_role("editor") is False
-        assert is_admin_role("viewer") is False
-
-    def test_is_admin_role_empty(self) -> None:
-        """Test admin role detection with empty role."""
-        assert is_admin_role("") is False
-
-    def test_is_admin_role_similar_names(self) -> None:
-        """Test admin role detection with similar but non-admin names."""
-        assert is_admin_role("administrator") is False
-        assert is_admin_role("admin_user") is False
-        assert is_admin_role("user_admin") is False
 
 
 class TestEdgeCases:
