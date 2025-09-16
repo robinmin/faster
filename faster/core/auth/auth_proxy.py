@@ -373,3 +373,145 @@ class AuthProxy:
         except Exception as e:
             logger.error(f"Failed to get user profile for token: {e}")
             return None
+
+    # =============================================================================
+    # Password Management Methods
+    # =============================================================================
+
+    async def change_password(self, user_id: str, current_password: str, new_password: str) -> bool:
+        """
+        Change user password via Supabase Auth.
+
+        Args:
+            user_id: User's authentication ID
+            current_password: Current password for verification
+            new_password: New password to set
+
+        Returns:
+            True if password changed successfully, False otherwise
+        """
+        try:
+            # Use service client to update user password
+            response = self.service_client.auth.admin.update_user_by_id(user_id, {"password": new_password})
+
+            if response.user:
+                logger.info(f"Password changed successfully for user {user_id}")
+                return True
+            logger.warning(f"Failed to change password for user {user_id}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error changing password via Supabase for user {user_id}: {e}")
+            return False
+
+    async def initiate_password_reset(self, email: str) -> bool:
+        """
+        Initiate password reset via Supabase Auth.
+
+        Args:
+            email: Email address to send reset link to
+
+        Returns:
+            True if reset email sent successfully, False otherwise
+        """
+        try:
+            # Use client (not service client) for password reset
+            self.client.auth.reset_password_email(email)
+
+            # Supabase password reset typically returns success even if email doesn't exist
+            # for security reasons
+            logger.info(f"Password reset initiated for email {email}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error initiating password reset via Supabase for email {email}: {e}")
+            return False
+
+    async def confirm_password_reset(self, token: str, new_password: str) -> bool:
+        """
+        Confirm password reset via Supabase Auth.
+
+        Args:
+            token: Password reset token
+            new_password: New password to set
+
+        Returns:
+            True if password reset completed successfully, False otherwise
+        """
+        try:
+            # Use client to verify session and update password
+            response = self.client.auth.update_user({"password": new_password})
+
+            if response.user:
+                logger.info("Password reset confirmed successfully")
+                return True
+            logger.warning("Failed to confirm password reset")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error confirming password reset via Supabase: {e}")
+            return False
+
+    async def verify_password(self, user_id: str, password: str) -> bool:
+        """
+        Verify user password via Supabase Auth.
+
+        Args:
+            user_id: User's authentication ID
+            password: Password to verify
+
+        Returns:
+            True if password is correct, False otherwise
+        """
+        try:
+            # Get user details to extract email
+            response = self.service_client.auth.admin.get_user_by_id(user_id)
+            if not response.user or not response.user.email:
+                logger.warning(f"User not found or no email for user {user_id}")
+                return False
+
+            # Attempt to sign in with email and password
+            try:
+                auth_response = self.client.auth.sign_in_with_password(
+                    {"email": response.user.email, "password": password}
+                )
+
+                if auth_response.user and auth_response.user.id == user_id:
+                    logger.debug(f"Password verification successful for user {user_id}")
+                    return True
+                logger.debug(f"Password verification failed for user {user_id}")
+                return False
+
+            except Exception as auth_e:
+                logger.debug(f"Password verification failed for user {user_id}: {auth_e}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error verifying password via Supabase for user {user_id}: {e}")
+            return False
+
+    # =============================================================================
+    # User Management Methods
+    # =============================================================================
+
+    async def delete_user(self, user_id: str) -> bool:
+        """
+        Delete user from Supabase Auth.
+
+        Args:
+            user_id: User's authentication ID
+
+        Returns:
+            True if user deleted successfully, False otherwise
+        """
+        try:
+            # Use service client to delete user
+            self.service_client.auth.admin.delete_user(user_id)
+
+            # Supabase delete user typically doesn't return user data
+            logger.info(f"User deleted from Supabase Auth: {user_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error deleting user via Supabase for user {user_id}: {e}")
+            return False
