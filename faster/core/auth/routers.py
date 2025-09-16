@@ -618,7 +618,7 @@ async def delete_account(
 
 
 # =============================================================================
-# User Administration Endpoints (Admin Only)
+# User Administration Endpoints
 # =============================================================================
 
 
@@ -631,7 +631,6 @@ async def ban_user(
 ) -> AppResponseDict:
     """
     Ban a user account.
-    Admin only endpoint.
     """
     if not user:
         return AppResponseDict(
@@ -676,7 +675,6 @@ async def unban_user(
 ) -> AppResponseDict:
     """
     Unban a user account.
-    Admin only endpoint.
     """
     if not user:
         return AppResponseDict(
@@ -723,7 +721,6 @@ async def grant_roles(
 ) -> AppResponseDict:
     """
     Grant roles to a user.
-    Admin only endpoint.
     """
     if not user:
         return AppResponseDict(
@@ -775,7 +772,6 @@ async def revoke_roles(
 ) -> AppResponseDict:
     """
     Revoke roles from a user.
-    Admin only endpoint.
     """
     if not user:
         return AppResponseDict(
@@ -826,7 +822,6 @@ async def get_user_roles(
 ) -> AppResponseDict:
     """
     Get user roles.
-    Admin only endpoint.
     """
     if not user:
         return AppResponseDict(
@@ -836,7 +831,7 @@ async def get_user_roles(
         )
 
     try:
-        result = await auth_service.get_user_roles_admin(user.id, target_user_id)
+        result = await auth_service.get_user_roles_by_id(user.id, target_user_id)
 
         if result is not None:
             return AppResponseDict(
