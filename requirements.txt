@@ -59,9 +59,7 @@ ecdsa==0.19.1
 email-validator==2.2.0
     # via pydantic
 exceptiongroup==1.3.0
-    # via
-    #   anyio
-    #   pytest
+    # via anyio
 fakeredis==2.31.0
     # via faster (pyproject.toml)
 fastapi==0.116.1
@@ -90,7 +88,6 @@ httpx==0.28.1
     # via
     #   faster (pyproject.toml)
     #   postgrest
-    #   pytest-httpx
     #   storage3
     #   supabase
     #   supabase-auth
@@ -102,8 +99,6 @@ idna==3.10
     #   anyio
     #   email-validator
     #   httpx
-iniconfig==2.1.0
-    # via pytest
 jose==1.0.0
     # via faster (pyproject.toml)
 kombu==5.5.4
@@ -114,9 +109,6 @@ packaging==25.0
     #   deprecation
     #   gunicorn
     #   kombu
-    #   pytest
-pluggy==1.6.0
-    # via pytest
 postgrest==1.1.1
     # via supabase
 prometheus-client==0.22.1
@@ -142,14 +134,8 @@ pydantic-core==2.33.2
     # via pydantic
 pydantic-settings==2.10.1
     # via faster (pyproject.toml)
-pygments==2.19.2
-    # via pytest
 pyjwt==2.10.1
     # via supabase-auth
-pytest==8.4.1
-    # via pytest-httpx
-pytest-httpx==0.35.0
-    # via faster (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via
     #   celery
@@ -207,8 +193,6 @@ supabase-functions==0.10.1
     # via supabase
 tenacity==9.1.2
     # via faster (pyproject.toml)
-tomli==2.2.1
-    # via pytest
 types-docutils==0.22.0.20250822
     # via types-pygments
 types-pexpect==4.9.0.20250809
