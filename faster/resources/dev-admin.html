@@ -1024,10 +1024,9 @@
                       class="select select-bordered"
                     >
                       <option value="">Choose a role...</option>
-                      <option value="admin">Admin</option>
-                      <option value="moderator">Moderator</option>
-                      <option value="user">User</option>
-                      <option value="developer">Developer</option>
+                      <template x-for="role in getAvailableRoles()" :key="role">
+                        <option :value="role" x-text="formatRoleName(role)"></option>
+                      </template>
                     </select>
                   </div>
                 </div>
@@ -1070,10 +1069,9 @@
                       class="select select-bordered"
                     >
                       <option value="">Choose a role...</option>
-                      <option value="admin">Admin</option>
-                      <option value="moderator">Moderator</option>
-                      <option value="user">User</option>
-                      <option value="developer">Developer</option>
+                      <template x-for="role in getAvailableRoles()" :key="role">
+                        <option :value="role" x-text="formatRoleName(role)"></option>
+                      </template>
                     </select>
                   </div>
                 </div>
@@ -1880,7 +1878,8 @@
           user: null,
           config: null,
           supabase: null,
-          pageData: {}
+          pageData: {},
+          availableRoles: []
         });
 
         Alpine.store("auth", {
@@ -2176,13 +2175,24 @@
           store.currentPage = "dashboard";
           toastService.show("Login successful!", "success");
 
-          // Notify backend
-          await apiService.notifyAuthEvent("SIGNED_IN", {
-            session: {
-              user: session.user,
-              access_token: session.access_token
+          // Notify backend and capture response
+          try {
+            const response = await apiService.notifyAuthEvent("SIGNED_IN", {
+              session: {
+                user: session.user,
+                access_token: session.access_token
+              }
+            });
+
+            // Cache available roles if provided (for developer users)
+            if (response?.data?.available_roles) {
+              store.availableRoles = response.data.available_roles;
+              console.log("Cached available roles for developer:", response.data.available_roles);
             }
-          });
+          } catch (error) {
+            console.error("Failed to notify backend about sign in:", error);
+            // Continue with login even if backend notification fails
+          }
         },
 
         async _handleSignedOut(store) {
@@ -3287,6 +3297,19 @@
              } finally {
                this.viewRolesLoading = false;
              }
+           },
+
+           // Helper methods for role management
+           getAvailableRoles() {
+             const availableRoles = Alpine.store("app").availableRoles;
+             // Fallback to common roles if no cached roles available
+             return availableRoles.length > 0 ? availableRoles : ["admin", "moderator", "user", "developer"];
+           },
+
+           formatRoleName(role) {
+             if (!role) return "";
+             // Capitalize first letter and return
+             return role.charAt(0).toUpperCase() + role.slice(1);
            }
          };
        }
