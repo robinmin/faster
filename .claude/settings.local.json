@@ -35,7 +35,8 @@
       "mcp__playwright__browser_close",
       "mcp__playwright__browser_type",
       "WebFetch(domain:lucide.dev)",
-      "WebFetch(domain:icones.js.org)"
+      "WebFetch(domain:icones.js.org)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": [
       "Read(.env)",
