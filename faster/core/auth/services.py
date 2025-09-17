@@ -21,6 +21,7 @@ from ..redisex import (
     user2role_get,
     user2role_set,
 )
+from ..repositories import AppRepository
 from .auth_proxy import AuthProxy
 from .models import UserProfileData
 from .repositories import AuthRepository
@@ -592,6 +593,28 @@ class AuthService(BasePlugin):
             logger.error(f"Failed to get roles for user {user_id}: {e}")
         except Exception as e:
             logger.error(f"Unexpected error getting roles for user {user_id}: {e}")
+        return []
+
+    async def get_all_available_roles(self) -> list[str]:
+        """
+        Get all available roles from system configuration.
+
+        Returns:
+            List of all available role strings from sys_dict with category 'user_role'
+        """
+        try:
+            app_repository = AppRepository()
+            sys_dict_data = await app_repository.get_sys_dict(category="user_role")
+
+            # Extract roles from the sys_dict structure: {"user_role": {key: role_name}}
+            user_role_dict = sys_dict_data.get("user_role", {})
+            roles = list(user_role_dict.values())
+
+            return sorted(roles) if roles else []
+        except DBError as e:
+            logger.error(f"Failed to get available roles from sys_dict: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error getting available roles: {e}")
         return []
 
     async def set_roles(self, user_id: str, roles: list[str], to_cache: bool = True) -> bool:
