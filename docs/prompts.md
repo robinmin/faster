@@ -809,4 +809,38 @@ As these are very critical operation, so we need add a comfirmation action befor
 
 After both of these two requirements, you need to use playwright to verify each function points are working as expect or not. In case of any issue or web console errors, you also need to fix all of them.
 
- >
+
+## Enhance User Management Page
+
+#### Current situations
+ According to the frontend definition in file @faster/resources/dev-admin.html and web view, we need to show the user's basic information in virtual page 'User Management' once user inputed a valid UUID format 'Target User ID'.
+Currently, we only show User ID and Roles. Email and Status fields always invalid.
+
+#### Enhancements/Goal
+- Adjust the URL endpoint from '/admin/users/{target_user_id}/roles' to '/admin/users/{target_user_id}/basic', and rename function `get_user_roles` to `get_user_basic_info`. And change the response of '/admin/users/{target_user_id}/basic' to include email and status fields.
+- At the client side, do the corresponding changes to show email and status fields properly.
+- Adjust the UI layout: show 'View Roles' just after 'Target User ID' and before the action buttons.
+- Rename 'View Roles' to 'View Basic Info'. Before we checked the user's basic information, hide all action buttons to preventing invalid operations.
+- Show 'Ban User' or 'Unban User' based on user's status.
+- Once user click on button 'Ban User' or 'Unban User', popup a confirmation dialog to confirm the action.
+- Merge button 'Grant Role' with button 'Revoke Role' as button 'Adjust Roles'.
+- Once user click on button 'Adjust Roles', show a full list of available roles(available_roles, which already response to client by Supabase event SIGNED_IN) with checkboxes. Check on the role that the user already has.
+- One user must at least one role. Once user uncheck all roles we need to show a warning message `Please select at least one role` to prevent invalid operations.
+- On the otherhand, we also need to check the same logic at the backend instead of relying on client side's checking.
+- At the server side in file @faster/core/auth/routers.py, merge endpoint `/admin/users/{target_user_id}/roles/grant` and `/admin/users/{target_user_id}/roles/revoke` into `/admin/users/{target_user_id}/roles/adjust`. Also merge function `grant_roles` and `revoke_roles` into `adjust_roles`.
+- Implement above enhancements and run frontend and backend tests to ensure everything works as expected.
+
+
+## Remove deactivate_account
+
+#### Backgroud
+As we can see in file @faster/core/auth/repositories.py, both `deactivate_account` and c are do soft deletion on user tables, it's duplicated.
+#### Goal
+We need to concepturely remove the 'delete account' things and do some adjustmeent:
+- In @faster/core/auth/repositories.py, remove current `deactivate_account`, and reename `deactivate_account` as a new `deactivate_account`.
+- In @faster/core/auth/services.py, delete method `delete_account`
+- In @faster/core/auth/routers.py, delete endpint `/account/delete` and method `delete_account`
+- In unit tests, we also need to do the same adjustment: remove `delete_account` related unit test case. And as we changed the core of `deactivate_account`, we also need to enhance and add its unit tests.
+- In the fronend in faster/resources/dev-admin.html, we also need to concepturely remove the 'delete account' things.
+- Finnaly, rename `deactivate_account` as `deactivate`.
+- make sure both `make lint` and `make test` all pass. You also need to user playwright the verify the frontend via http://127.0.0.1:8000/dev/admin and fix all web console errors and warnings if any.
