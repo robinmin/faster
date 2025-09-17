@@ -56,7 +56,6 @@ def test_account_operations_buttons(html_content: str) -> None:
     """Test that account operations buttons are present."""
     # Check for account operations buttons
     assert "Deactivate Account" in html_content
-    assert "Delete Account" in html_content
 
 
 def test_user_management_page_structure(html_content: str) -> None:
@@ -69,8 +68,8 @@ def test_user_management_page_structure(html_content: str) -> None:
 
 def test_user_management_buttons(html_content: str) -> None:
     """Test that user management action buttons are present."""
-    # Check for action buttons
-    buttons = ["Ban User", "Unban User", "Grant Role", "Revoke Role", "View Roles"]
+    # Check for action buttons (updated to reflect new UI)
+    buttons = ["Ban User", "Unban User", "Adjust Roles", "View Basic Info"]
     for button_text in buttons:
         assert button_text in html_content, f"Button '{button_text}' not found"
 
@@ -83,12 +82,10 @@ def test_modals_structure(html_content: str) -> None:
     # Check for deactivate account modal
     assert 'x-if="showDeactivateModal"' in html_content
 
-    # Check for delete account modal
-    assert 'x-if="showDeleteModal"' in html_content
-
-    # Check for user management modals
-    assert 'x-if="showGrantRoleModal"' in html_content
-    assert 'x-if="showRevokeRoleModal"' in html_content
+    # Check for user management modals (updated to reflect new modals)
+    assert 'x-if="showAdjustRolesModal"' in html_content
+    assert 'x-if="showBanConfirmModal"' in html_content
+    assert 'x-if="showUnbanConfirmModal"' in html_content
 
 
 def test_javascript_functions_present(html_content: str) -> None:
@@ -98,13 +95,12 @@ def test_javascript_functions_present(html_content: str) -> None:
         "changePassword()",
         "initiatePasswordReset()",
         "deactivateAccount()",
-        "deleteAccount()",
         "userManagementPage()",
         "banUser()",
         "unbanUser()",
-        "grantRole()",
-        "revokeRole()",
-        "viewUserRoles()",
+        "adjustRoles()",
+        "viewUserBasicInfo()",
+        "openAdjustRolesModal()",
     ]
 
     for func in required_functions:

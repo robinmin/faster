@@ -59,6 +59,8 @@ def auth_service(mock_settings: Settings) -> AuthService:
     """Create an AuthService instance for testing."""
     with patch("faster.core.auth.services.AuthService.setup"):
         service = AuthService()
+        # Mock the repository to avoid database initialization issues
+        service._repository = MagicMock()  # type: ignore[reportPrivateUsage, unused-ignore]
         return service
 
 
@@ -144,62 +146,40 @@ class TestAccountManagementMethods:
     """Test account management service methods."""
 
     @pytest.mark.asyncio
-    async def test_deactivate_account_success(self, auth_service: AuthService) -> None:
-        """Test successful account deactivation."""
+    async def test_deactivate_success(self, auth_service: AuthService) -> None:
+        """Test successful comprehensive account deactivation."""
         with patch.object(auth_service, "_verify_user_password", new_callable=AsyncMock) as mock_verify:
             mock_verify.return_value = True
 
             with patch.object(auth_service, "_repository") as mock_repository:
-                mock_repository.deactivate_account = AsyncMock(return_value=True)
-
-                with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                    mock_log_event.return_value = True
-
-                    result = await auth_service.deactivate_account(TEST_USER_ID, "correct_password")
-
-                    assert result is True
-                    mock_verify.assert_called_once_with(TEST_USER_ID, "correct_password")
-                    mock_repository.deactivate_account.assert_called_once_with(TEST_USER_ID)
-
-    @pytest.mark.asyncio
-    async def test_deactivate_account_wrong_password(self, auth_service: AuthService) -> None:
-        """Test account deactivation with wrong password."""
-        with patch.object(auth_service, "_verify_user_password", new_callable=AsyncMock) as mock_verify:
-            mock_verify.return_value = False
-
-            result = await auth_service.deactivate_account(TEST_USER_ID, "wrong_password")
-
-            assert result is False
-
-    @pytest.mark.asyncio
-    async def test_delete_account_success(self, auth_service: AuthService) -> None:
-        """Test successful account deletion."""
-        with patch.object(auth_service, "_verify_user_password", new_callable=AsyncMock) as mock_verify:
-            mock_verify.return_value = True
-
-            with patch.object(auth_service, "_repository") as mock_repository:
-                mock_repository.delete_account = AsyncMock(return_value=True)
+                mock_repository.deactivate = AsyncMock(return_value=True)
 
                 with patch.object(auth_service, "_auth_client") as mock_auth_client:
                     mock_auth_client.delete_user = AsyncMock(return_value=True)
 
-                    with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                        mock_log_event.return_value = True
+                    with patch.object(auth_service, "refresh_user_cache", new_callable=AsyncMock) as mock_refresh_cache:
+                        mock_refresh_cache.return_value = True
 
-                        result = await auth_service.delete_account(TEST_USER_ID, "correct_password")
+                        with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
+                            mock_log_event.return_value = True
 
-                        assert result is True
-                        mock_repository.delete_account.assert_called_once_with(TEST_USER_ID)
-                        mock_auth_client.delete_user.assert_called_once_with(TEST_USER_ID)
+                            result = await auth_service.deactivate(TEST_USER_ID, "correct_password")
+
+                            assert result is True
+                            mock_verify.assert_called_once_with(TEST_USER_ID, "correct_password")
+                            mock_repository.deactivate.assert_called_once_with(TEST_USER_ID)
+                            mock_auth_client.delete_user.assert_called_once_with(TEST_USER_ID)
+                            mock_refresh_cache.assert_called_once_with(TEST_USER_ID, force_refresh=True)
 
     @pytest.mark.asyncio
-    async def test_delete_account_no_repository(self, auth_service: AuthService) -> None:
-        """Test account deletion with no repository."""
-        auth_service._repository = None  # type: ignore[reportPrivateUsage, unused-ignore]
+    async def test_deactivate_wrong_password(self, auth_service: AuthService) -> None:
+        """Test account deactivation with wrong password."""
+        with patch.object(auth_service, "_verify_user_password", new_callable=AsyncMock) as mock_verify:
+            mock_verify.return_value = False
 
-        result = await auth_service.delete_account(TEST_USER_ID, "password")
+            result = await auth_service.deactivate(TEST_USER_ID, "wrong_password")
 
-        assert result is False
+            assert result is False
 
 
 class TestUserAdministrationMethods:
@@ -208,84 +188,184 @@ class TestUserAdministrationMethods:
     @pytest.mark.asyncio
     async def test_ban_user_success(self, auth_service: AuthService) -> None:
         """Test successful user banning."""
+        # Mock user info for lookup
+        mock_user = MagicMock()
+        mock_user.auth_id = TEST_TARGET_USER_ID
+
         with patch.object(auth_service, "_repository") as mock_repository:
             mock_repository.ban_user = AsyncMock(return_value=True)
+            mock_repository.get_user_by_auth_id = AsyncMock(return_value=mock_user)
 
             with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
                 mock_log_event.return_value = True
 
-                result = await auth_service.ban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID, "Violation")
+                with patch.object(auth_service, "refresh_user_cache", new_callable=AsyncMock) as mock_refresh_cache:
+                    mock_refresh_cache.return_value = True
 
-                assert result is True
-                mock_repository.ban_user.assert_called_once_with(
-                    TEST_TARGET_USER_ID, TEST_ADMIN_USER_ID, "Violation"
-                )
+                    # Mock the database transaction
+                    with patch("faster.core.auth.services.get_transaction") as mock_get_transaction:
+                        mock_session = MagicMock()
+                        mock_get_transaction.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+                        mock_get_transaction.return_value.__aexit__ = AsyncMock(return_value=None)
+
+                        result = await auth_service.ban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID, "Violation")
+
+                        assert result is True
+                        mock_repository.ban_user.assert_called_once_with(
+                            TEST_TARGET_USER_ID, TEST_ADMIN_USER_ID, "Violation"
+                        )
+                        mock_refresh_cache.assert_called_once_with(TEST_TARGET_USER_ID, force_refresh=True)
 
     @pytest.mark.asyncio
     async def test_unban_user_success(self, auth_service: AuthService) -> None:
         """Test successful user unbanning."""
+        # Mock user info for lookup
+        mock_user = MagicMock()
+        mock_user.auth_id = TEST_TARGET_USER_ID
+
         with patch.object(auth_service, "_repository") as mock_repository:
             mock_repository.unban_user = AsyncMock(return_value=True)
+            mock_repository.get_user_by_auth_id = AsyncMock(return_value=mock_user)
 
             with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
                 mock_log_event.return_value = True
 
-                result = await auth_service.unban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
+                with patch.object(auth_service, "refresh_user_cache", new_callable=AsyncMock) as mock_refresh_cache:
+                    mock_refresh_cache.return_value = True
 
-                assert result is True
-                mock_repository.unban_user.assert_called_once_with(TEST_TARGET_USER_ID, TEST_ADMIN_USER_ID)
+                    # Mock the database transaction
+                    with patch("faster.core.auth.services.get_transaction") as mock_get_transaction:
+                        mock_session = MagicMock()
+                        mock_get_transaction.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+                        mock_get_transaction.return_value.__aexit__ = AsyncMock(return_value=None)
+
+                        result = await auth_service.unban_user(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
+
+                        assert result is True
+                        mock_repository.unban_user.assert_called_once_with(TEST_TARGET_USER_ID, TEST_ADMIN_USER_ID)
+                        mock_refresh_cache.assert_called_once_with(TEST_TARGET_USER_ID, force_refresh=True)
+
+
+class TestAuthServiceCacheRefresh:
+    """Tests for cache refresh functionality."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_user_cache_with_profile_and_roles(self, auth_service: AuthService) -> None:
+        """Test refreshing cache with both profile and roles provided."""
+        mock_profile = UserProfileData(
+            id=TEST_USER_ID,
+            aud="authenticated",
+            role="authenticated",
+            email="test@example.com",
+            created_at=datetime(2023, 1, 1, 0, 0, 0),
+            updated_at=datetime(2023, 1, 1, 0, 0, 0),
+            app_metadata={"provider": "email"},
+            user_metadata={"username": "testuser", "full_name": "Test User"},
+        )
+        mock_roles = ["admin", "user"]
+
+        with (
+            patch("faster.core.auth.services.set_user_profile", new_callable=AsyncMock) as mock_set_profile,
+            patch("faster.core.auth.services.user2role_set", new_callable=AsyncMock) as mock_set_roles,
+        ):
+            mock_set_profile.return_value = True
+            mock_set_roles.return_value = True
+
+            result = await auth_service.refresh_user_cache(TEST_USER_ID, user_profile=mock_profile, roles=mock_roles)
+
+            assert result is True
+            mock_set_profile.assert_called_once()
+            mock_set_roles.assert_called_once_with(TEST_USER_ID, mock_roles)
+
+    @pytest.mark.asyncio
+    async def test_refresh_user_cache_force_refresh_loads_data(self, auth_service: AuthService) -> None:
+        """Test that force_refresh=True loads missing data from database."""
+        mock_profile = UserProfileData(
+            id=TEST_USER_ID,
+            aud="authenticated",
+            role="authenticated",
+            email="test@example.com",
+            created_at=datetime(2023, 1, 1, 0, 0, 0),
+            updated_at=datetime(2023, 1, 1, 0, 0, 0),
+            app_metadata={"provider": "email"},
+            user_metadata={"username": "testuser", "full_name": "Test User"},
+        )
+        mock_roles = ["admin", "user"]
+
+        with (
+            patch.object(auth_service, "get_user_by_id", new_callable=AsyncMock) as mock_get_user,
+            patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles,
+            patch("faster.core.auth.services.set_user_profile", new_callable=AsyncMock) as mock_set_profile,
+            patch("faster.core.auth.services.user2role_set", new_callable=AsyncMock) as mock_set_roles,
+        ):
+            mock_get_user.return_value = mock_profile
+            mock_get_roles.return_value = mock_roles
+            mock_set_profile.return_value = True
+            mock_set_roles.return_value = True
+
+            result = await auth_service.refresh_user_cache(TEST_USER_ID, force_refresh=True)
+
+            assert result is True
+            mock_get_user.assert_called_once_with(TEST_USER_ID, from_cache=False)
+            mock_get_roles.assert_called_once_with(TEST_USER_ID, from_cache=False)
+            mock_set_profile.assert_called_once()
+            mock_set_roles.assert_called_once_with(TEST_USER_ID, mock_roles)
+
+    @pytest.mark.asyncio
+    async def test_refresh_user_cache_skip_none_values_without_force(self, auth_service: AuthService) -> None:
+        """Test that None values are skipped when force_refresh=False."""
+        with (
+            patch.object(auth_service, "get_user_by_id", new_callable=AsyncMock) as mock_get_user,
+            patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles,
+            patch("faster.core.auth.services.set_user_profile", new_callable=AsyncMock) as mock_set_profile,
+            patch("faster.core.auth.services.user2role_set", new_callable=AsyncMock) as mock_set_roles,
+        ):
+            result = await auth_service.refresh_user_cache(TEST_USER_ID, force_refresh=False)
+
+            assert result is True
+            mock_get_user.assert_not_called()
+            mock_get_roles.assert_not_called()
+            mock_set_profile.assert_not_called()
+            mock_set_roles.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refresh_user_cache_empty_user_id_fails(self, auth_service: AuthService) -> None:
+        """Test that empty user ID returns False."""
+        result = await auth_service.refresh_user_cache("")
+        assert result is False
+
+        result = await auth_service.refresh_user_cache("   ")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_refresh_user_cache_handles_cache_failures(self, auth_service: AuthService) -> None:
+        """Test that cache failures are handled gracefully."""
+        mock_profile = UserProfileData(
+            id=TEST_USER_ID,
+            aud="authenticated",
+            role="authenticated",
+            email="test@example.com",
+            created_at=datetime(2023, 1, 1, 0, 0, 0),
+            updated_at=datetime(2023, 1, 1, 0, 0, 0),
+            app_metadata={"provider": "email"},
+            user_metadata={"username": "testuser", "full_name": "Test User"},
+        )
+        mock_roles = ["admin", "user"]
+
+        with (
+            patch("faster.core.auth.services.set_user_profile", new_callable=AsyncMock) as mock_set_profile,
+            patch("faster.core.auth.services.user2role_set", new_callable=AsyncMock) as mock_set_roles,
+        ):
+            mock_set_profile.return_value = False  # Simulate cache failure
+            mock_set_roles.return_value = False  # Simulate cache failure
+
+            result = await auth_service.refresh_user_cache(TEST_USER_ID, user_profile=mock_profile, roles=mock_roles)
+
+            assert result is False  # Should return False due to cache failures
 
 
 class TestRoleManagementMethods:
     """Test role management service methods."""
-
-    @pytest.mark.asyncio
-    async def test_grant_roles_success(self, auth_service: AuthService) -> None:
-        """Test successful role granting."""
-        roles = ["moderator", "editor"]
-
-        with patch.object(auth_service, "_repository") as mock_repository:
-                mock_repository.grant_roles = AsyncMock(return_value=True)
-
-                with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
-                    mock_get_roles.return_value = ["user"]
-
-                    with patch("faster.core.auth.services.user2role_set", new_callable=AsyncMock) as mock_cache_set:
-                        mock_cache_set.return_value = True
-
-                        with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                            mock_log_event.return_value = True
-
-                            result = await auth_service.grant_roles(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID, roles)
-
-                            assert result is True
-                            mock_repository.grant_roles.assert_called_once_with(
-                                TEST_TARGET_USER_ID, roles, TEST_ADMIN_USER_ID
-                            )
-
-    @pytest.mark.asyncio
-    async def test_revoke_roles_success(self, auth_service: AuthService) -> None:
-        """Test successful role revoking."""
-        roles = ["moderator"]
-
-        with patch.object(auth_service, "_repository") as mock_repository:
-                mock_repository.revoke_roles = AsyncMock(return_value=True)
-
-                with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
-                    mock_get_roles.return_value = ["user", "moderator"]
-
-                    with patch("faster.core.auth.services.user2role_set", new_callable=AsyncMock) as mock_cache_set:
-                        mock_cache_set.return_value = True
-
-                        with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                            mock_log_event.return_value = True
-
-                            result = await auth_service.revoke_roles(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID, roles)
-
-                            assert result is True
-                            mock_repository.revoke_roles.assert_called_once_with(
-                                TEST_TARGET_USER_ID, roles, TEST_ADMIN_USER_ID
-                            )
 
     @pytest.mark.asyncio
     async def test_get_user_roles_by_id_success(self, auth_service: AuthService) -> None:
@@ -293,15 +373,14 @@ class TestRoleManagementMethods:
         expected_roles = ["admin", "user"]
 
         with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
-                mock_get_roles.return_value = expected_roles
+            mock_get_roles.return_value = expected_roles
 
-                with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                    mock_log_event.return_value = True
+            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
+                mock_log_event.return_value = True
 
-                    result = await auth_service.get_user_roles_by_id(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
+                result = await auth_service.get_user_roles_by_id(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
 
-                    assert result == expected_roles
-
+                assert result == expected_roles
 
 
 class TestHelperMethods:
@@ -329,7 +408,6 @@ class TestHelperMethods:
             assert result is False
 
 
-
 class TestErrorHandling:
     """Test error handling in service methods."""
 
@@ -344,12 +422,11 @@ class TestErrorHandling:
             assert result is False
 
     @pytest.mark.asyncio
-    async def test_deactivate_account_exception(self, auth_service: AuthService) -> None:
+    async def test_deactivate_exception(self, auth_service: AuthService) -> None:
         """Test account deactivation with exception."""
         with patch.object(auth_service, "_verify_user_password", new_callable=AsyncMock) as mock_verify:
             mock_verify.side_effect = Exception("Verification error")
 
-            result = await auth_service.deactivate_account(TEST_USER_ID, "password")
+            result = await auth_service.deactivate(TEST_USER_ID, "password")
 
             assert result is False
-
