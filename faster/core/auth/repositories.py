@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 from typing import Any
@@ -159,6 +159,142 @@ class AuthRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Error fetching user by email {email}: {e}")
             raise DBError(f"Failed to fetch user by email {email}: {e}") from e
+
+    async def get_user_by_auth_id_simple(self, auth_id: str) -> User | None:
+        """
+        Get user by authentication ID using internal session management.
+
+        Args:
+            auth_id: User's authentication ID
+
+        Returns:
+            User entity if found, None otherwise
+
+        Raises:
+            ValueError: If auth_id is empty
+            DBError: If database query fails
+        """
+        if not auth_id or not auth_id.strip():
+            raise ValueError("Authentication ID cannot be empty")
+
+        try:
+            async with self.session(readonly=True) as session:
+                return await self.get_user_by_auth_id(session, auth_id)
+        except Exception as e:
+            logger.error(f"Error fetching user by auth_id {auth_id}: {e}")
+            raise DBError(f"Failed to fetch user by auth_id {auth_id}: {e}") from e
+
+    async def should_update_user_in_db(self, user_id: str) -> bool:
+        """
+        Check if user information should be updated in database.
+        Returns True for new users or users not updated within 24 hours.
+
+        Args:
+            user_id: User's authentication ID
+
+        Returns:
+            True if user needs update, False otherwise
+        """
+        try:
+            async with self.session(readonly=True) as session:
+                db_user = await self.get_user_by_auth_id(session, user_id)
+
+                if not db_user:
+                    # New user - needs to be stored
+                    return True
+
+                # Check if user was last updated more than 24 hours ago
+                if db_user.updated_at:
+                    time_since_update = datetime.now() - db_user.updated_at
+                    return time_since_update > timedelta(hours=24)
+
+                # If no updated_at timestamp, consider it needs update
+                return True
+
+        except Exception as e:
+            logger.warning(f"Error checking user update status for {user_id}: {e}")
+            # If we can't determine, err on the side of updating
+            return True
+
+    async def get_user_by_identifier(self, identifier: str) -> tuple[User | None, str]:
+        """
+        Get user by identifier (email or user ID) and return the lookup type.
+
+        Args:
+            identifier: User identifier (email or user ID)
+
+        Returns:
+            Tuple of (User entity or None, lookup_type string)
+
+        Raises:
+            ValueError: If identifier is empty
+            DBError: If database query fails
+        """
+        if not identifier or not identifier.strip():
+            raise ValueError("Identifier cannot be empty")
+
+        try:
+            async with self.session(readonly=True) as session:
+                # Detect if identifier is email or user ID
+                is_email = "@" in identifier
+
+                if is_email:
+                    user_info = await self.get_user_by_email(session, identifier)
+                    lookup_type = "email"
+                else:
+                    user_info = await self.get_user_by_auth_id(session, identifier)
+                    lookup_type = "user_id"
+
+                return user_info, lookup_type
+
+        except Exception as e:
+            logger.error(f"Error fetching user by identifier {identifier}: {e}")
+            raise DBError(f"Failed to fetch user by identifier {identifier}: {e}") from e
+
+    async def determine_user_status(self, session: DBSession, user: User, user_id: str) -> str:
+        """
+        Determine user status based on user record and metadata.
+
+        Args:
+            session: Database session
+            user: User record
+            user_id: User authentication ID
+
+        Returns:
+            Status string: "active", "banned", or "deactivated"
+        """
+        try:
+            # If user is marked as not in use, check for ban information
+            if user.in_used == 0:
+                # Check system metadata for ban information
+                metadata_query = (
+                    select(UserMetadata)
+                    .where(UserMetadata.user_auth_id == user_id)
+                    .where(UserMetadata.metadata_type == "system")
+                    .where(UserMetadata.key == "banned")
+                    .where(UserMetadata.in_used == 1)
+                )
+                result = await session.exec(metadata_query)
+                ban_metadata = result.first()
+
+                if ban_metadata and ban_metadata.value:
+                    try:
+                        ban_data = json.loads(ban_metadata.value)
+                        if ban_data.get("banned") is True:
+                            return "banned"
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                # If no ban metadata found, user is deactivated for other reasons
+                return "deactivated"
+
+            # User is active
+            return "active"
+
+        except Exception as e:
+            logger.error(f"Error determining user status for {user_id}: {e}")
+            # Fallback to simple check
+            return "deactivated"
 
     async def create_or_update_user(self, session: DBSession, user_data: dict[str, Any]) -> User:
         """
