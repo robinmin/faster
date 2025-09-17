@@ -127,12 +127,38 @@ class AuthRepository(BaseRepository):
             raise ValueError("Authentication ID cannot be empty")
 
         try:
-            query = select(User).where(User.auth_id == auth_id)
+            query = select(User).where(User.auth_id == auth_id).where(User.in_used == 1)
             result = await session.exec(query)
             return result.first()
         except Exception as e:
             logger.error(f"Error fetching user by auth_id {auth_id}: {e}")
             raise DBError(f"Failed to fetch user by auth_id {auth_id}: {e}") from e
+
+    async def get_user_by_email(self, session: DBSession, email: str) -> User | None:
+        """
+        Get user by email address.
+
+        Args:
+            session: Database session
+            email: User's email address
+
+        Returns:
+            User entity if found, None otherwise
+
+        Raises:
+            ValueError: If email is empty
+            DBError: If database query fails
+        """
+        if not email or not email.strip():
+            raise ValueError("Email cannot be empty")
+
+        try:
+            query = select(User).where(User.email == email).where(User.in_used == 1)
+            result = await session.exec(query)
+            return result.first()
+        except Exception as e:
+            logger.error(f"Error fetching user by email {email}: {e}")
+            raise DBError(f"Failed to fetch user by email {email}: {e}") from e
 
     async def create_or_update_user(self, session: DBSession, user_data: dict[str, Any]) -> User:
         """
@@ -359,7 +385,7 @@ class AuthRepository(BaseRepository):
 
     async def _get_base_user(self, session: DBSession, user_id: str) -> User | None:
         """Get base user information from the users table."""
-        user_query = select(User).where(User.auth_id == user_id)
+        user_query = select(User).where(User.auth_id == user_id).where(User.in_used == 1)
         result = await session.exec(user_query)
         return result.first()
 
@@ -582,8 +608,6 @@ class AuthRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to get roles for user {user_id}: {e}")
             raise DBError(f"Failed to get roles for user {user_id}: {e}") from e
-
-
 
     async def set_roles(self, user_id: str, roles: list[str], disable_others: bool = True) -> bool:
         """
@@ -881,9 +905,9 @@ class AuthRepository(BaseRepository):
     # Account Management Methods
     # =============================================================================
 
-    async def deactivate_account(self, user_id: str) -> bool:
+    async def deactivate(self, user_id: str) -> bool:
         """
-        Deactivate user account by setting status to inactive.
+        Deactivate user account and associated data (soft delete).
 
         Args:
             user_id: User's authentication ID
@@ -900,7 +924,7 @@ class AuthRepository(BaseRepository):
 
         try:
             async with self.transaction() as session:
-                # Update user to deactivated status
+                # Soft delete user
                 user_query = select(User).where(User.auth_id == user_id)
                 result = await session.exec(user_query)
                 user = result.first()
@@ -909,48 +933,7 @@ class AuthRepository(BaseRepository):
                     logger.warning(f"User not found for deactivation: {user_id}")
                     return False
 
-                # Mark user as inactive (soft deactivation)
-                user.in_used = 0
-                user.updated_at = datetime.now()
-                session.add(user)
-
-                await session.flush()
-                logger.info(f"Account deactivated for user {user_id}")
-                return True
-
-        except Exception as e:
-            logger.error(f"Failed to deactivate account for user {user_id}: {e}")
-            raise DBError(f"Failed to deactivate account for user {user_id}: {e}") from e
-
-    async def delete_account(self, user_id: str) -> bool:
-        """
-        Soft delete user account and associated data.
-
-        Args:
-            user_id: User's authentication ID
-
-        Returns:
-            True if account deleted successfully, False otherwise
-
-        Raises:
-            ValueError: If user_id is empty
-            DBError: If database operation fails
-        """
-        if not user_id or not user_id.strip():
-            raise ValueError("User ID cannot be empty")
-
-        try:
-            async with self.transaction() as session:
-                # Soft delete user
-                user_query = select(User).where(User.auth_id == user_id)
-                result = await session.exec(user_query)
-                user = result.first()
-
-                if not user:
-                    logger.warning(f"User not found for deletion: {user_id}")
-                    return False
-
-                # Mark user as deleted (soft delete)
+                # Mark user as deactivated (soft delete)
                 user.in_used = 0
                 user.deleted_at = datetime.now()
                 user.updated_at = datetime.now()
@@ -981,12 +964,12 @@ class AuthRepository(BaseRepository):
                     session.add(role)
 
                 await session.flush()
-                logger.info(f"Account deleted for user {user_id}")
+                logger.info(f"Account deactivated for user {user_id}")
                 return True
 
         except Exception as e:
-            logger.error(f"Failed to delete account for user {user_id}: {e}")
-            raise DBError(f"Failed to delete account for user {user_id}: {e}") from e
+            logger.error(f"Failed to deactivate account for user {user_id}: {e}")
+            raise DBError(f"Failed to deactivate account for user {user_id}: {e}") from e
 
     # =============================================================================
     # User Administration Methods
@@ -1024,8 +1007,12 @@ class AuthRepository(BaseRepository):
                     logger.warning(f"User not found for banning: {target_user_id}")
                     return False
 
-                # Set user as banned (could use a status field if available)
-                # For now, we'll use metadata to store ban information
+                # Soft delete user record to prevent login
+                user.in_used = 0
+                user.updated_at = datetime.now()
+                session.add(user)
+
+                # Store ban information in metadata for audit trail
                 ban_metadata = {
                     "banned": True,
                     "banned_by": admin_user_id,
@@ -1065,7 +1052,21 @@ class AuthRepository(BaseRepository):
 
         try:
             async with self.transaction() as session:
-                # Remove ban metadata
+                # Get user record and reactivate it
+                user_query = select(User).where(User.auth_id == target_user_id)
+                result = await session.exec(user_query)
+                user = result.first()
+
+                if not user:
+                    logger.warning(f"User not found for unbanning: {target_user_id}")
+                    return False
+
+                # Reactivate user record to allow login
+                user.in_used = 1
+                user.updated_at = datetime.now()
+                session.add(user)
+
+                # Store unban information in metadata for audit trail
                 unban_metadata = {
                     "banned": False,
                     "unbanned_by": admin_user_id,
@@ -1086,17 +1087,17 @@ class AuthRepository(BaseRepository):
     # Role Management Methods
     # =============================================================================
 
-    async def grant_roles(self, target_user_id: str, roles: list[str], admin_user_id: str) -> bool:
+    async def adjust_roles(self, target_user_id: str, roles: list[str], admin_user_id: str) -> bool:
         """
-        Grant additional roles to a user without removing existing ones.
+        Adjust user roles by replacing all existing roles with the provided roles list.
 
         Args:
-            target_user_id: User ID to grant roles to
-            roles: List of roles to grant
+            target_user_id: User ID to adjust roles for
+            roles: List of roles to assign to the user
             admin_user_id: Admin user ID performing the action
 
         Returns:
-            True if roles granted successfully, False otherwise
+            True if roles adjusted successfully, False otherwise
 
         Raises:
             ValueError: If parameters are invalid
@@ -1104,107 +1105,56 @@ class AuthRepository(BaseRepository):
         """
         if not target_user_id or not target_user_id.strip():
             raise ValueError("Target user ID cannot be empty")
-        if not roles or not isinstance(roles, list):
+        if not roles or not isinstance(roles, list) or len(roles) == 0:
             raise ValueError("Roles must be a non-empty list")
         if not admin_user_id or not admin_user_id.strip():
             raise ValueError("Admin user ID cannot be empty")
 
         try:
             async with self.transaction() as session:
-                # Get current active roles
-                current_roles_query = (
-                    select(UserRole.role).where(UserRole.user_auth_id == target_user_id).where(UserRole.in_used == 1)
+                # First, soft delete all existing roles by setting in_used = 0
+                existing_roles_query = (
+                    select(UserRole).where(UserRole.user_auth_id == target_user_id).where(UserRole.in_used == 1)
                 )
-                current_roles_result = await session.exec(current_roles_query)
-                current_roles = set(current_roles_result.all())
+                existing_roles_result = await session.exec(existing_roles_query)
+                existing_roles = existing_roles_result.all()
 
-                # Add new roles that don't already exist
+                for role_record in existing_roles:
+                    role_record.in_used = 0
+                    role_record.updated_at = datetime.now()
+                    session.add(role_record)
+
+                # Then, add new roles
                 roles_added = []
                 for role in roles:
-                    if role not in current_roles:
-                        # Check if role exists but is disabled
-                        existing_role_query = (
-                            select(UserRole)
-                            .where(UserRole.user_auth_id == target_user_id)
-                            .where(UserRole.role == role)
-                            .where(UserRole.in_used == 0)
-                        )
-                        existing_role_result = await session.exec(existing_role_query)
-                        existing_role = existing_role_result.first()
-
-                        if existing_role:
-                            # Reactivate existing role
-                            existing_role.in_used = 1
-                            existing_role.updated_at = datetime.now()
-                            session.add(existing_role)
-                        else:
-                            # Create new role
-                            new_role = UserRole(
-                                user_auth_id=target_user_id,
-                                role=role,
-                                in_used=1,
-                                created_at=datetime.now(),
-                                updated_at=datetime.now(),
-                            )
-                            session.add(new_role)
-
-                        roles_added.append(role)
-
-                await session.flush()
-                logger.info(f"Granted roles {roles_added} to user {target_user_id} by admin {admin_user_id}")
-                return True
-
-        except Exception as e:
-            logger.error(f"Failed to grant roles {roles} to user {target_user_id}: {e}")
-            raise DBError(f"Failed to grant roles to user {target_user_id}: {e}") from e
-
-    async def revoke_roles(self, target_user_id: str, roles: list[str], admin_user_id: str) -> bool:
-        """
-        Revoke specific roles from a user.
-
-        Args:
-            target_user_id: User ID to revoke roles from
-            roles: List of roles to revoke
-            admin_user_id: Admin user ID performing the action
-
-        Returns:
-            True if roles revoked successfully, False otherwise
-
-        Raises:
-            ValueError: If parameters are invalid
-            DBError: If database operation fails
-        """
-        if not target_user_id or not target_user_id.strip():
-            raise ValueError("Target user ID cannot be empty")
-        if not roles or not isinstance(roles, list):
-            raise ValueError("Roles must be a non-empty list")
-        if not admin_user_id or not admin_user_id.strip():
-            raise ValueError("Admin user ID cannot be empty")
-
-        try:
-            async with self.transaction() as session:
-                # Revoke specified roles by setting in_used = 0
-                roles_revoked = []
-                for role in roles:
-                    role_query = (
-                        select(UserRole)
-                        .where(UserRole.user_auth_id == target_user_id)
-                        .where(UserRole.role == role)
-                        .where(UserRole.in_used == 1)
+                    # Check if role already exists for this user
+                    existing_role_query = (
+                        select(UserRole).where(UserRole.user_auth_id == target_user_id).where(UserRole.role == role)
                     )
-                    role_result = await session.exec(role_query)
-                    role_record = role_result.first()
+                    existing_role_result = await session.exec(existing_role_query)
+                    existing_role = existing_role_result.first()
 
-                    if role_record:
-                        role_record.in_used = 0
-                        role_record.updated_at = datetime.now()
-                        session.add(role_record)
-                        roles_revoked.append(role)
+                    if existing_role:
+                        # Reactivate existing role
+                        existing_role.in_used = 1
+                        existing_role.updated_at = datetime.now()
+                        session.add(existing_role)
+                    else:
+                        # Create new role record
+                        user_role = UserRole(
+                            user_auth_id=target_user_id,
+                            role=role,
+                            in_used=1,
+                            created_at=datetime.now(),
+                            updated_at=datetime.now(),
+                        )
+                        session.add(user_role)
+                    roles_added.append(role)
 
                 await session.flush()
-                logger.info(f"Revoked roles {roles_revoked} from user {target_user_id} by admin {admin_user_id}")
+                logger.info(f"Adjusted roles for user {target_user_id} to {roles_added} by admin {admin_user_id}")
                 return True
 
         except Exception as e:
-            logger.error(f"Failed to revoke roles {roles} from user {target_user_id}: {e}")
-            raise DBError(f"Failed to revoke roles from user {target_user_id}: {e}") from e
+            logger.error(f"Failed to adjust roles for user {target_user_id}: {e}")
+            raise DBError(f"Failed to adjust roles for user {target_user_id}: {e}") from e
