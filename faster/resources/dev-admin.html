@@ -605,32 +605,13 @@
                           </button>
                         </div>
                         <div class="label">
-                          <span class="label-text-alt text-base-content/60">
-                            Temporarily disable your account
+                          <span class="label-text-alt text-warning">
+                            Deactivate your account and all associated data. This action cannot be easily undone.
                           </span>
                         </div>
                       </div>
 
-                      <!-- Delete Account -->
-                      <div class="form-control">
-                        <label class="label">
-                          <span class="label-text font-semibold text-error">Delete Account</span>
-                        </label>
-                        <div class="flex gap-2">
-                          <button
-                            @click="showDeleteModal = true"
-                            class="btn btn-outline btn-error"
-                          >
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                            Delete Account
-                          </button>
-                        </div>
-                        <div class="label">
-                          <span class="label-text-alt text-error">
-                            Permanently delete your account and all associated data
-                          </span>
-                        </div>
-                      </div>
+
                     </div>
                   </div>
                 </div>
@@ -722,8 +703,8 @@
                    <div>
                      <h4 class="font-bold">Are you sure you want to deactivate your account?</h4>
                      <div class="text-sm">
-                       Your account will be temporarily disabled. You can reactivate it later by contacting support.
-                       Your data will be preserved but you won't be able to access the system.
+                       This will deactivate your account and all associated data including profile, roles, and metadata.
+                       This action cannot be easily undone and you won't be able to access the system.
                      </div>
                    </div>
                  </div>
@@ -758,57 +739,7 @@
            </div>
            </template>
 
-           <!-- Delete Account Modal -->
-           <template x-if="showDeleteModal">
-           <div class="modal modal-open" x-cloak>
-             <div class="modal-box">
-               <h3 class="font-bold text-lg text-error">
-                 <i data-lucide="trash-2" class="w-5 h-5 inline mr-2"></i>
-                 Delete Account
-               </h3>
-               <div class="py-4">
-                 <div class="alert alert-error">
-                   <i data-lucide="alert-triangle" class="w-5 h-5"></i>
-                   <div>
-                     <h4 class="font-bold">This action cannot be undone!</h4>
-                     <div class="text-sm">
-                       Your account and all associated data will be permanently deleted.
-                       This includes all your profile information, settings, and any data you've created.
-                     </div>
-                   </div>
-                 </div>
-                 <div class="form-control mt-4">
-                   <label class="label">
-                     <span class="label-text font-semibold">Type "DELETE" to confirm</span>
-                     <input
-                       x-model="deleteConfirmation"
-                       type="text"
-                       placeholder="Type DELETE here"
-                       class="input input-bordered"
-                       :class="{ 'input-error': deleteConfirmation && deleteConfirmation !== 'DELETE' }"
-                     />
-                   </label>
-                 </div>
-               </div>
-               <div class="modal-action">
-                 <button
-                   @click="showDeleteModal = false; deleteConfirmation = ''"
-                   class="btn"
-                 >
-                   Cancel
-                 </button>
-                 <button
-                   @click="deleteAccount()"
-                   class="btn btn-error"
-                   :class="{ 'loading': deleteLoading }"
-                   :disabled="deleteLoading || deleteConfirmation !== 'DELETE'"
-                 >
-                   Delete Account Permanently
-                 </button>
-               </div>
-             </div>
-            </div>
-            </template>
+
           </div>
           </template>
 
@@ -848,22 +779,20 @@
                       User Lookup
                     </h2>
 
-                    <!-- User ID Input -->
+                    <!-- User ID/Email Input -->
                     <div class="form-control">
                       <label class="label">
-                        <span class="label-text font-semibold">Target User ID</span>
+                        <span class="label-text font-semibold">Target User ID/Email</span>
                       </label>
                       <input
                         x-model="targetUserId"
-                        @input="validateUserId()"
+                        @input="validateUserInput()"
+                        @keydown.enter="viewUserBasicInfo()"
                         type="text"
-                        placeholder="Enter user ID (UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+                        placeholder="Enter user ID (UUID format) or email address"
                         class="input input-bordered"
                         :class="{ 'input-error': userIdError }"
-                        minlength="36"
-                        maxlength="36"
-                        pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-                        title="Please enter a valid UUID format (36 characters with dashes)"
+                        title="Please enter a valid UUID format or email address"
                         autocomplete="off"
                         spellcheck="false"
                       />
@@ -871,74 +800,60 @@
                         <span class="label-text-alt text-error" x-text="userIdError"></span>
                       </div>
                       <div class="label" x-show="!userIdError && targetUserId.length > 0">
-                        <span class="label-text-alt text-success">✓ Valid UUID format</span>
+                        <span class="label-text-alt text-success">✓ Valid UUID format or email address</span>
                       </div>
                     </div>
 
-                    <!-- Action Buttons -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                      <!-- Ban User -->
+                    <!-- View Basic Info Button -->
+                    <div class="form-control mt-4">
+                      <button
+                        @click="viewUserBasicInfo()"
+                        class="btn btn-outline"
+                        :class="{ 'loading': viewBasicInfoLoading }"
+                        :disabled="viewBasicInfoLoading || !targetUserId.trim()"
+                      >
+                        <i data-lucide="eye" class="w-4 h-4"></i>
+                        View Basic Info
+                      </button>
+                    </div>
+
+                    <!-- Action Buttons (Only shown after user info is loaded) -->
+                    <div x-show="canShowActionButtons()" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+                      <!-- Ban/Unban User -->
                       <div class="form-control">
                         <button
-                          @click="banUser()"
+                          x-show="shouldShowBanButton()"
+                          @click="showBanConfirmModal = true"
                           class="btn btn-outline btn-error"
                           :class="{ 'loading': banLoading }"
-                          :disabled="banLoading || !targetUserId.trim()"
+                          :disabled="banLoading"
                         >
                           <i data-lucide="user-x" class="w-4 h-4"></i>
                           Ban User
                         </button>
-                      </div>
-
-                      <!-- Unban User -->
-                      <div class="form-control">
                         <button
-                          @click="unbanUser()"
+                          x-show="shouldShowUnbanButton()"
+                          @click="showUnbanConfirmModal = true"
                           class="btn btn-outline btn-success"
                           :class="{ 'loading': unbanLoading }"
-                          :disabled="unbanLoading || !targetUserId.trim()"
+                          :disabled="unbanLoading"
                         >
                           <i data-lucide="user-check" class="w-4 h-4"></i>
                           Unban User
                         </button>
                       </div>
 
-                      <!-- Grant Role -->
+                      <!-- Adjust Roles -->
                       <div class="form-control">
                         <button
-                          @click="showGrantRoleModal = true"
+                          @click="openAdjustRolesModal()"
                           class="btn btn-outline btn-primary"
-                          :disabled="!targetUserId.trim()"
+                          :disabled="!canShowActionButtons()"
                         >
-                          <i data-lucide="user-plus" class="w-4 h-4"></i>
-                          Grant Role
+                          <i data-lucide="settings" class="w-4 h-4"></i>
+                          Adjust Roles
                         </button>
                       </div>
-
-                      <!-- Revoke Role -->
-                      <div class="form-control">
-                        <button
-                          @click="showRevokeRoleModal = true"
-                          class="btn btn-outline btn-warning"
-                          :disabled="!targetUserId.trim()"
-                        >
-                          <i data-lucide="user-minus" class="w-4 h-4"></i>
-                          Revoke Role
-                        </button>
-                      </div>
-                    </div>
-
-                    <!-- View Roles -->
-                    <div class="form-control mt-4">
-                      <button
-                        @click="viewUserRoles()"
-                        class="btn btn-outline"
-                        :class="{ 'loading': viewRolesLoading }"
-                        :disabled="viewRolesLoading || !targetUserId.trim()"
-                      >
-                        <i data-lucide="eye" class="w-4 h-4"></i>
-                        View Roles
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -1002,100 +917,140 @@
                   </div>
                 </div>
               </div>
-            </div>
 
-            <!-- User Management Modals -->
-            <!-- Grant Role Modal -->
-            <template x-if="showGrantRoleModal">
-            <div class="modal modal-open" x-cloak>
-              <div class="modal-box">
-                <h3 class="font-bold text-lg">
-                  <i data-lucide="user-plus" class="w-5 h-5 inline mr-2"></i>
-                  Grant Role
-                </h3>
-                <div class="py-4">
-                  <div class="form-control">
-                    <label class="label" for="grant-role-select">
-                      <span class="label-text">Select Role to Grant</span>
-                    </label>
-                    <select
-                      id="grant-role-select"
-                      x-model="selectedRole"
-                      class="select select-bordered"
-                    >
-                      <option value="">Choose a role...</option>
-                      <template x-for="role in getAvailableRoles()" :key="role">
-                        <option :value="role" x-text="formatRoleName(role)"></option>
-                      </template>
-                    </select>
+                <!-- User Management Modals -->
+                <!-- Adjust Roles Modal -->
+                <template x-if="showAdjustRolesModal">
+                <div class="modal modal-open" x-cloak>
+                  <div class="modal-box">
+                    <h3 class="font-bold text-lg">
+                      <i data-lucide="settings" class="w-5 h-5 inline mr-2"></i>
+                      Adjust User Roles
+                    </h3>
+                    <div class="py-4">
+                      <p class="text-sm text-base-content/70 mb-4">
+                        Select the roles for user <span class="font-mono text-xs" x-text="targetUserId"></span>
+                      </p>
+                      <div class="space-y-3">
+                        <template x-for="role in getAvailableRoles()" :key="role">
+                          <label class="label cursor-pointer">
+                            <span class="label-text" x-text="role"></span>
+                            <input
+                              type="checkbox"
+                              class="checkbox checkbox-primary"
+                              :checked="isRoleSelected(role)"
+                              @change="toggleRole(role)"
+                            />
+                          </label>
+                        </template>
+                      </div>
+                      <div x-show="selectedRoles.length === 0" class="alert alert-warning mt-4">
+                        <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                        <span>Please select at least one role</span>
+                      </div>
+                    </div>
+                    <div class="modal-action">
+                      <button
+                        @click="showAdjustRolesModal = false; selectedRoles = []"
+                        class="btn"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        @click="adjustRoles()"
+                        class="btn btn-primary"
+                        :class="{ 'loading': adjustRolesLoading }"
+                        :disabled="adjustRolesLoading || selectedRoles.length === 0"
+                      >
+                        Update Roles
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div class="modal-action">
-                  <button
-                    @click="showGrantRoleModal = false; selectedRole = ''"
-                    class="btn"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    @click="grantRole()"
-                    class="btn btn-primary"
-                    :class="{ 'loading': grantRoleLoading }"
-                    :disabled="grantRoleLoading || !selectedRole"
-                  >
-                    Grant Role
-                  </button>
+                </template>
+
+                <!-- Ban User Confirmation Modal -->
+                <template x-if="showBanConfirmModal">
+                <div class="modal modal-open" x-cloak>
+                  <div class="modal-box">
+                    <h3 class="font-bold text-lg text-error">
+                      <i data-lucide="user-x" class="w-5 h-5 inline mr-2"></i>
+                      Ban User
+                    </h3>
+                    <div class="py-4">
+                      <div class="alert alert-warning">
+                        <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                        <div>
+                          <h4 class="font-bold">Are you sure you want to ban this user?</h4>
+                          <div class="text-sm">
+                            User ID: <span class="font-mono" x-text="targetUserId"></span><br>
+                            This action will prevent the user from accessing the system.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="modal-action">
+                      <button
+                        @click="showBanConfirmModal = false"
+                        class="btn"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        @click="banUser()"
+                        class="btn btn-error"
+                        :class="{ 'loading': banLoading }"
+                        :disabled="banLoading"
+                      >
+                        Ban User
+                      </button>
+                    </div>
+                  </div>
                 </div>
+                </template>
+
+                <!-- Unban User Confirmation Modal -->
+                <template x-if="showUnbanConfirmModal">
+                <div class="modal modal-open" x-cloak>
+                  <div class="modal-box">
+                    <h3 class="font-bold text-lg text-success">
+                      <i data-lucide="user-check" class="w-5 h-5 inline mr-2"></i>
+                      Unban User
+                    </h3>
+                    <div class="py-4">
+                      <div class="alert alert-info">
+                        <i data-lucide="info" class="w-5 h-5"></i>
+                        <div>
+                          <h4 class="font-bold">Are you sure you want to unban this user?</h4>
+                          <div class="text-sm">
+                            User ID: <span class="font-mono" x-text="targetUserId"></span><br>
+                            This action will restore the user's access to the system.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="modal-action">
+                      <button
+                        @click="showUnbanConfirmModal = false"
+                        class="btn"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        @click="unbanUser()"
+                        class="btn btn-success"
+                        :class="{ 'loading': unbanLoading }"
+                        :disabled="unbanLoading"
+                      >
+                        Unban User
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                </template>
               </div>
             </div>
             </template>
-
-            <!-- Revoke Role Modal -->
-            <template x-if="showRevokeRoleModal">
-            <div class="modal modal-open" x-cloak>
-              <div class="modal-box">
-                <h3 class="font-bold text-lg text-warning">
-                  <i data-lucide="user-minus" class="w-5 h-5 inline mr-2"></i>
-                  Revoke Role
-                </h3>
-                <div class="py-4">
-                  <div class="form-control">
-                    <label class="label" for="revoke-role-select">
-                      <span class="label-text">Select Role to Revoke</span>
-                    </label>
-                    <select
-                      id="revoke-role-select"
-                      x-model="selectedRole"
-                      class="select select-bordered"
-                    >
-                      <option value="">Choose a role...</option>
-                      <template x-for="role in getAvailableRoles()" :key="role">
-                        <option :value="role" x-text="formatRoleName(role)"></option>
-                      </template>
-                    </select>
-                  </div>
-                </div>
-                <div class="modal-action">
-                  <button
-                    @click="showRevokeRoleModal = false; selectedRole = ''"
-                    class="btn"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    @click="revokeRole()"
-                    class="btn btn-warning"
-                    :class="{ 'loading': revokeRoleLoading }"
-                    :disabled="revokeRoleLoading || !selectedRole"
-                  >
-                    Revoke Role
-                  </button>
-                </div>
-              </div>
-            </div>
-            </template>
-          </div>
-          </template>
 
             <!-- App State Page -->
           <div
@@ -2860,10 +2815,7 @@
            deactivateConfirmed: false,
            deactivateLoading: false,
 
-           // Account deletion
-           showDeleteModal: false,
-           deleteConfirmation: "",
-           deleteLoading: false,
+
 
            init() {
              if (this.initialized) {
@@ -3062,31 +3014,7 @@
              }
            },
 
-           async deleteAccount() {
-             if (this.deleteLoading || this.deleteConfirmation !== "DELETE") return;
 
-             this.deleteLoading = true;
-
-             try {
-               await apiService.call("/auth/account/delete", {
-                 method: "POST"
-               });
-
-               toastService.show("Account deleted successfully", "success");
-               this.showDeleteModal = false;
-               this.deleteConfirmation = "";
-
-               // Sign out the user
-               setTimeout(() => {
-                 window.location.reload();
-               }, 2000);
-             } catch (error) {
-               console.error("Account deletion failed:", error);
-               toastService.show(`Account deletion failed: ${error.message}`, "error");
-             } finally {
-               this.deleteLoading = false;
-             }
-           }
          };
        }
 
@@ -3099,35 +3027,46 @@
            // Loading states
            banLoading: false,
            unbanLoading: false,
-           grantRoleLoading: false,
-           revokeRoleLoading: false,
-           viewRolesLoading: false,
+           adjustRolesLoading: false,
+           viewBasicInfoLoading: false,
 
-           // Modals
-           showGrantRoleModal: false,
-           showRevokeRoleModal: false,
-           selectedRole: "",
+           // Modals and state
+           showAdjustRolesModal: false,
+           showBanConfirmModal: false,
+           showUnbanConfirmModal: false,
+           selectedRoles: [],
 
            // Validation functions
-           validateUserId() {
-             const userId = this.targetUserId.trim();
+           validateUserInput() {
+             const userInput = this.targetUserId.trim();
              this.userIdError = "";
 
-             if (!userId) {
+             if (!userInput) {
                return;
              }
 
-             // Check length
-             if (userId.length !== 36) {
-               this.userIdError = "User ID must be exactly 36 characters long";
-               return;
-             }
+             // Check if input contains @ symbol (email detection)
+             const isEmail = userInput.includes('@');
 
-             // Check UUID format (8-4-4-4-12 pattern with hyphens)
-             const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-             if (!uuidRegex.test(userId)) {
-               this.userIdError = "Invalid UUID format. Expected: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-               return;
+             if (isEmail) {
+               // Validate email format
+               const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+               if (!emailRegex.test(userInput)) {
+                 this.userIdError = "Please enter a valid email address";
+                 return;
+               }
+             } else {
+               // Validate UUID format
+               if (userInput.length !== 36) {
+                 this.userIdError = "User ID must be exactly 36 characters long";
+                 return;
+               }
+
+               const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+               if (!uuidRegex.test(userInput)) {
+                 this.userIdError = "Invalid UUID format or email address. Expected: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+                 return;
+               }
              }
 
              // Clear error if validation passes
@@ -3138,27 +3077,25 @@
            async banUser() {
              if (this.banLoading || !this.targetUserId.trim()) return;
 
-             // Validate user ID format before making API call
-             this.validateUserId();
+             // Validate user input format before making API call
+             this.validateUserInput();
              if (this.userIdError) {
                toastService.show(this.userIdError, "error");
                return;
              }
 
-             if (!confirm(`Are you sure you want to ban user ${this.targetUserId}?`)) {
-               return;
-             }
-
+             this.showBanConfirmModal = false;
              this.banLoading = true;
              this.userIdError = "";
 
              try {
                await apiService.call(`/auth/admin/users/${this.targetUserId}/ban`, {
-                 method: "POST"
+                 method: "POST",
+                 data: { reason: "Banned via admin interface" }
                });
 
                toastService.show(`User ${this.targetUserId} has been banned`, "success");
-               await this.viewUserRoles(); // Refresh user info
+               await this.viewUserBasicInfo(); // Refresh user info
              } catch (error) {
                console.error("Ban user failed:", error);
                this.userIdError = error.message || "Failed to ban user";
@@ -3171,17 +3108,14 @@
            async unbanUser() {
              if (this.unbanLoading || !this.targetUserId.trim()) return;
 
-             // Validate user ID format before making API call
-             this.validateUserId();
+             // Validate user input format before making API call
+             this.validateUserInput();
              if (this.userIdError) {
                toastService.show(this.userIdError, "error");
                return;
              }
 
-             if (!confirm(`Are you sure you want to unban user ${this.targetUserId}?`)) {
-               return;
-             }
-
+             this.showUnbanConfirmModal = false;
              this.unbanLoading = true;
              this.userIdError = "";
 
@@ -3191,7 +3125,7 @@
                });
 
                toastService.show(`User ${this.targetUserId} has been unbanned`, "success");
-               await this.viewUserRoles(); // Refresh user info
+               await this.viewUserBasicInfo(); // Refresh user info
              } catch (error) {
                console.error("Unban user failed:", error);
                this.userIdError = error.message || "Failed to unban user";
@@ -3201,85 +3135,57 @@
              }
            },
 
-           async grantRole() {
-             if (this.grantRoleLoading || !this.selectedRole || !this.targetUserId.trim()) return;
+           async adjustRoles() {
+             if (this.adjustRolesLoading || !this.targetUserId.trim()) return;
 
-             // Validate user ID format before making API call
-             this.validateUserId();
+             // Validate user input format before making API call
+             this.validateUserInput();
              if (this.userIdError) {
                toastService.show(this.userIdError, "error");
                return;
              }
 
-             this.grantRoleLoading = true;
+             // Validate that at least one role is selected
+             if (this.selectedRoles.length === 0) {
+               toastService.show("Please select at least one role", "error");
+               return;
+             }
+
+             this.adjustRolesLoading = true;
 
              try {
-               await apiService.call(`/auth/admin/users/${this.targetUserId}/roles/grant`, {
+               await apiService.call(`/auth/admin/users/${this.targetUserId}/roles/adjust`, {
                  method: "POST",
-                 data: { role: this.selectedRole }
+                 data: { roles: this.selectedRoles }
                });
 
-               toastService.show(`Role "${this.selectedRole}" granted to user ${this.targetUserId}`, "success");
-               this.showGrantRoleModal = false;
-               this.selectedRole = "";
-               await this.viewUserRoles(); // Refresh user info
+               toastService.show(`User roles updated successfully`, "success");
+               this.showAdjustRolesModal = false;
+               this.selectedRoles = [];
+               await this.viewUserBasicInfo(); // Refresh user info
              } catch (error) {
-               console.error("Grant role failed:", error);
-               toastService.show(`Failed to grant role: ${error.message}`, "error");
+               console.error("Adjust roles failed:", error);
+               toastService.show(`Failed to adjust roles: ${error.message}`, "error");
              } finally {
-               this.grantRoleLoading = false;
+               this.adjustRolesLoading = false;
              }
            },
 
-           async revokeRole() {
-             if (this.revokeRoleLoading || !this.selectedRole || !this.targetUserId.trim()) return;
+           async viewUserBasicInfo() {
+             if (this.viewBasicInfoLoading || !this.targetUserId.trim()) return;
 
-             // Validate user ID format before making API call
-             this.validateUserId();
+             // Validate user input format before making API call
+             this.validateUserInput();
              if (this.userIdError) {
                toastService.show(this.userIdError, "error");
                return;
              }
 
-             if (!confirm(`Are you sure you want to revoke the "${this.selectedRole}" role from user ${this.targetUserId}?`)) {
-               return;
-             }
-
-             this.revokeRoleLoading = true;
-
-             try {
-               await apiService.call(`/auth/admin/users/${this.targetUserId}/roles/revoke`, {
-                 method: "POST",
-                 data: { role: this.selectedRole }
-               });
-
-               toastService.show(`Role "${this.selectedRole}" revoked from user ${this.targetUserId}`, "success");
-               this.showRevokeRoleModal = false;
-               this.selectedRole = "";
-               await this.viewUserRoles(); // Refresh user info
-             } catch (error) {
-               console.error("Revoke role failed:", error);
-               toastService.show(`Failed to revoke role: ${error.message}`, "error");
-             } finally {
-               this.revokeRoleLoading = false;
-             }
-           },
-
-           async viewUserRoles() {
-             if (this.viewRolesLoading || !this.targetUserId.trim()) return;
-
-             // Validate user ID format before making API call
-             this.validateUserId();
-             if (this.userIdError) {
-               toastService.show(this.userIdError, "error");
-               return;
-             }
-
-             this.viewRolesLoading = true;
+             this.viewBasicInfoLoading = true;
              this.userIdError = "";
 
              try {
-               const data = await apiService.call(`/auth/admin/users/${this.targetUserId}/roles`);
+               const data = await apiService.call(`/auth/admin/users/${this.targetUserId}/basic`);
 
                this.userInfo = {
                  id: data.data?.id || this.targetUserId,
@@ -3290,26 +3196,64 @@
 
                toastService.show("User information loaded successfully", "success");
              } catch (error) {
-               console.error("View user roles failed:", error);
+               console.error("View user basic info failed:", error);
                this.userIdError = error.message || "Failed to load user information";
                this.userInfo = null;
                toastService.show(`Failed to load user information: ${error.message}`, "error");
              } finally {
-               this.viewRolesLoading = false;
+               this.viewBasicInfoLoading = false;
              }
            },
 
-           // Helper methods for role management
+           // Modal management functions
+           openAdjustRolesModal() {
+             if (!this.userInfo) {
+               toastService.show("Please view user basic info first", "warning");
+               return;
+             }
+
+             // Initialize selected roles with current user roles
+             this.selectedRoles = [...(this.userInfo.roles || [])];
+             this.showAdjustRolesModal = true;
+           },
+
+           isRoleSelected(role) {
+             return this.selectedRoles.includes(role);
+           },
+
+           toggleRole(role) {
+             const index = this.selectedRoles.indexOf(role);
+             if (index > -1) {
+               // Only allow unchecking if more than one role is selected
+               if (this.selectedRoles.length > 1) {
+                 this.selectedRoles.splice(index, 1);
+               } else {
+                 toastService.show("Please select at least one role", "warning");
+               }
+             } else {
+               this.selectedRoles.push(role);
+             }
+           },
+
+           // Helper methods
            getAvailableRoles() {
              const availableRoles = Alpine.store("app").availableRoles;
              // Fallback to common roles if no cached roles available
              return availableRoles.length > 0 ? availableRoles : ["admin", "moderator", "user", "developer"];
            },
 
-           formatRoleName(role) {
-             if (!role) return "";
-             // Capitalize first letter and return
-             return role.charAt(0).toUpperCase() + role.slice(1);
+
+
+           canShowActionButtons() {
+             return this.userInfo !== null;
+           },
+
+           shouldShowBanButton() {
+             return this.userInfo && this.userInfo.status !== "banned";
+           },
+
+           shouldShowUnbanButton() {
+             return this.userInfo && this.userInfo.status === "banned";
            }
          };
        }
