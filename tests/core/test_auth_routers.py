@@ -429,6 +429,131 @@ class TestAuthRouters:
                 assert data["data"]["user_id"] == "user-123"
 
     @pytest.mark.asyncio
+    async def test_callback_endpoint_signed_in_event_with_developer_role(self, client: TestClient) -> None:
+        """Test callback endpoint for SIGNED_IN event with developer user includes available roles."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            with (
+                patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
+                patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
+                patch("faster.core.auth.routers.has_role", new_callable=AsyncMock) as mock_has_role,
+                patch.object(
+                    AuthService, "should_update_user_in_db", new_callable=AsyncMock
+                ) as mock_should_update,
+                patch("faster.core.auth.services.AppRepository") as mock_app_repository_class,
+            ):
+                mock_blacklist_delete.return_value = None
+                mock_should_update.return_value = False
+                mock_has_role.return_value = True  # User has developer role
+
+                # Mock AppRepository instance and its get_sys_dict method
+                mock_app_repository = AsyncMock()
+                mock_app_repository.get_sys_dict.return_value = {
+                    "user_role": {10: "default", 20: "developer", 30: "admin", 40: "moderator"}
+                }
+                mock_app_repository_class.return_value = mock_app_repository
+
+                # Test SIGNED_IN event
+                response = client.post("/auth/callback/SIGNED_IN")
+
+                # Check that it's a JSON response
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
+
+                # Parse the JSON response
+                data = response.json()
+
+                # Check the response structure
+                assert "status" in data
+                assert data["status"] == "success"
+                assert "message" in data
+                assert "User signed in successfully" in data["message"]
+                assert "data" in data
+                assert isinstance(data["data"], dict)
+                assert data["data"]["event"] == "SIGNED_IN"
+                assert data["data"]["user_id"] == "user-123"
+
+                # Check that available_roles is included for developer
+                assert "available_roles" in data["data"]
+                expected_roles = ["admin", "default", "developer", "moderator"]  # Sorted
+                assert data["data"]["available_roles"] == expected_roles
+
+                # Verify that has_role was called with "developer"
+                mock_has_role.assert_called_once()
+                # Verify that AppRepository.get_sys_dict was called with correct category
+                mock_app_repository.get_sys_dict.assert_called_once_with(category="user_role")
+
+    @pytest.mark.asyncio
+    async def test_callback_endpoint_signed_in_event_without_developer_role(self, client: TestClient) -> None:
+        """Test callback endpoint for SIGNED_IN event with non-developer user excludes available roles."""
+        # Mock the get_current_user dependency to return a user
+        mock_user = self.create_mock_user()
+
+        # Override the app's dependency to return our mock user
+        async def mock_dependency(request: Request) -> UserProfileData | None:
+            return mock_user
+
+        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
+
+        with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
+            mock_get_user.return_value = mock_user
+
+            with (
+                patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
+                patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
+                patch("faster.core.auth.routers.has_role", new_callable=AsyncMock) as mock_has_role,
+                patch.object(
+                    AuthService, "should_update_user_in_db", new_callable=AsyncMock
+                ) as mock_should_update,
+                patch("faster.core.auth.services.AppRepository") as mock_app_repository_class,
+            ):
+                mock_blacklist_delete.return_value = None
+                mock_should_update.return_value = False
+                mock_has_role.return_value = False  # User does NOT have developer role
+
+                # Mock AppRepository instance (should not be called for non-developer)
+                mock_app_repository = AsyncMock()
+                mock_app_repository_class.return_value = mock_app_repository
+
+                # Test SIGNED_IN event
+                response = client.post("/auth/callback/SIGNED_IN")
+
+                # Check that it's a JSON response
+                assert response.status_code == status.HTTP_200_OK
+                assert response.headers["content-type"] == "application/json"
+
+                # Parse the JSON response
+                data = response.json()
+
+                # Check the response structure
+                assert "status" in data
+                assert data["status"] == "success"
+                assert "message" in data
+                assert "User signed in successfully" in data["message"]
+                assert "data" in data
+                assert isinstance(data["data"], dict)
+                assert data["data"]["event"] == "SIGNED_IN"
+                assert data["data"]["user_id"] == "user-123"
+
+                # Check that available_roles is NOT included for non-developer
+                assert "available_roles" not in data["data"]
+
+                # Verify that has_role was called with "developer"
+                mock_has_role.assert_called_once()
+                # Verify that AppRepository.get_sys_dict was NOT called for non-developer
+                mock_app_repository.get_sys_dict.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_callback_endpoint_signed_out_event(self, client: TestClient) -> None:
         """Test callback endpoint for SIGNED_OUT event with authenticated user."""
         # Mock the get_current_user dependency to return a user
