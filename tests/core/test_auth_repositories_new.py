@@ -231,3 +231,70 @@ class TestErrorHandling:
 
             with pytest.raises(DBError, match="Failed to ban user"):
                 _ = await auth_repository.ban_user("target-user-123", "admin-123", "Violation")
+
+
+class TestNewRepositoryMethods:
+    """Test new repository methods added for architectural compliance."""
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_auth_id_simple_success(self, auth_repository: AuthRepository) -> None:
+        """Test successful user retrieval by auth ID using simple method."""
+        mock_user = MagicMock(spec=User)
+        mock_user.auth_id = "user-123"
+
+        with patch.object(auth_repository, "session") as mock_session_context:
+            mock_session = AsyncMock()
+            mock_session_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_context.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with patch.object(auth_repository, "get_user_by_auth_id", return_value=mock_user):
+                result = await auth_repository.get_user_by_auth_id_simple("user-123")
+
+                assert result == mock_user
+
+    @pytest.mark.asyncio
+    async def test_should_update_user_in_db_new_user(self, auth_repository: AuthRepository) -> None:
+        """Test should update user in DB for new user."""
+        with patch.object(auth_repository, "session") as mock_session_context:
+            mock_session = AsyncMock()
+            mock_session_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_context.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with patch.object(auth_repository, "get_user_by_auth_id", return_value=None):
+                result = await auth_repository.should_update_user_in_db("user-123")
+
+                assert result is True
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_identifier_email(self, auth_repository: AuthRepository) -> None:
+        """Test user retrieval by email identifier."""
+        mock_user = MagicMock(spec=User)
+        mock_user.auth_id = "user-123"
+
+        with patch.object(auth_repository, "session") as mock_session_context:
+            mock_session = AsyncMock()
+            mock_session_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_context.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with patch.object(auth_repository, "get_user_by_email", return_value=mock_user):
+                user, lookup_type = await auth_repository.get_user_by_identifier("test@example.com")
+
+                assert user == mock_user
+                assert lookup_type == "email"
+
+    @pytest.mark.asyncio
+    async def test_get_user_by_identifier_user_id(self, auth_repository: AuthRepository) -> None:
+        """Test user retrieval by user ID identifier."""
+        mock_user = MagicMock(spec=User)
+        mock_user.auth_id = "user-123"
+
+        with patch.object(auth_repository, "session") as mock_session_context:
+            mock_session = AsyncMock()
+            mock_session_context.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_context.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with patch.object(auth_repository, "get_user_by_auth_id", return_value=mock_user):
+                user, lookup_type = await auth_repository.get_user_by_identifier("user-123")
+
+                assert user == mock_user
+                assert lookup_type == "user_id"
