@@ -583,6 +583,8 @@ class AuthRepository(BaseRepository):
             logger.error(f"Failed to get roles for user {user_id}: {e}")
             raise DBError(f"Failed to get roles for user {user_id}: {e}") from e
 
+
+
     async def set_roles(self, user_id: str, roles: list[str], disable_others: bool = True) -> bool:
         """
         Set roles for a user with enhanced logic for managing existing roles.
