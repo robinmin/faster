@@ -1,11 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from starlette.routing import Match
 
-from faster.core.auth.models import UserProfileData
-from faster.core.auth.services import AuthService, AuthServiceConfig
+from faster.core.auth.models import AuthServiceConfig, UserProfileData
+from faster.core.auth.services import AuthService
 from faster.core.config import Settings
 from faster.core.exceptions import DBError
 
@@ -687,57 +687,39 @@ class TestAuthServiceUserProfilePersistence:
         self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_repository: AsyncMock
     ) -> None:
         """Test should update user in DB for new user."""
-        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
-            mock_session = AsyncMock()
-            mock_transaction.return_value.__aenter__.return_value = mock_session
+        with (
+            patch.object(mock_repository, "should_update_user_in_db", return_value=True),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.should_update_user_in_db(mock_user_profile)
 
-            with (
-                patch.object(mock_repository, "get_user_by_auth_id", return_value=None),
-                patch.object(auth_service, "_repository", mock_repository),
-            ):
-                result = await auth_service.should_update_user_in_db(mock_user_profile)
-
-                assert result is True
+            assert result is True
 
     @pytest.mark.asyncio
     async def test_should_update_user_in_db_old_update(
         self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_repository: AsyncMock
     ) -> None:
         """Test should update user in DB for old update."""
-        old_user = MagicMock()
-        old_user.updated_at = datetime.now() - timedelta(hours=25)
+        with (
+            patch.object(mock_repository, "should_update_user_in_db", return_value=True),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.should_update_user_in_db(mock_user_profile)
 
-        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
-            mock_session = AsyncMock()
-            mock_transaction.return_value.__aenter__.return_value = mock_session
-
-            with (
-                patch.object(mock_repository, "get_user_by_auth_id", return_value=old_user),
-                patch.object(auth_service, "_repository", mock_repository),
-            ):
-                result = await auth_service.should_update_user_in_db(mock_user_profile)
-
-                assert result is True
+            assert result is True
 
     @pytest.mark.asyncio
     async def test_should_update_user_in_db_recent_update(
         self, auth_service: AuthService, mock_user_profile: UserProfileData, mock_repository: AsyncMock
     ) -> None:
         """Test should not update user in DB for recent update."""
-        recent_user = MagicMock()
-        recent_user.updated_at = datetime.now() - timedelta(hours=1)
+        with (
+            patch.object(mock_repository, "should_update_user_in_db", return_value=False),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.should_update_user_in_db(mock_user_profile)
 
-        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
-            mock_session = AsyncMock()
-            mock_transaction.return_value.__aenter__.return_value = mock_session
-
-            with (
-                patch.object(mock_repository, "get_user_by_auth_id", return_value=recent_user),
-                patch.object(auth_service, "_repository", mock_repository),
-            ):
-                result = await auth_service.should_update_user_in_db(mock_user_profile)
-
-                assert result is False
+            assert result is False
 
 
 class TestAuthServiceBackgroundTasks:
@@ -788,17 +770,13 @@ class TestAuthServiceRepositoryProxy:
     async def test_get_user_by_auth_id(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
         """Test getting user by auth ID."""
         mock_user = MagicMock()
-        with patch("faster.core.auth.services.get_transaction") as mock_transaction:
-            mock_session = AsyncMock()
-            mock_transaction.return_value.__aenter__.return_value = mock_session
+        with (
+            patch.object(mock_repository, "get_user_by_auth_id_simple", return_value=mock_user),
+            patch.object(auth_service, "_repository", mock_repository),
+        ):
+            result = await auth_service.get_user_by_auth_id(TEST_USER_ID)
 
-            with (
-                patch.object(mock_repository, "get_user_by_auth_id", return_value=mock_user),
-                patch.object(auth_service, "_repository", mock_repository),
-            ):
-                result = await auth_service.get_user_by_auth_id(TEST_USER_ID)
-
-                assert result == mock_user
+            assert result == mock_user
 
 
 class TestAuthServiceEventLogging:
