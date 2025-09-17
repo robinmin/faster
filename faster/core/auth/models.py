@@ -1,3 +1,4 @@
+from typing import TypedDict
 
 from supabase_auth.types import User
 
@@ -26,6 +27,21 @@ class UserProfileData(User):
     Note: This replaces the previous SupabaseUser and UserProfileData models
     to provide a single, consistent user representation.
     """
+
+
+class AuthServiceConfig(TypedDict):
+    """Configuration for AuthService containing only the needed settings."""
+
+    auth_enabled: bool
+    supabase_url: str | None
+    supabase_anon_key: str | None
+    supabase_service_key: str | None
+    supabase_jwks_url: str | None
+    supabase_audience: str | None
+    jwks_cache_ttl_seconds: int
+    auto_refresh_jwks: bool
+    user_cache_ttl_seconds: int
+    is_debug: bool
 
 
 ###############################################################################
