@@ -1,10 +1,12 @@
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from functools import lru_cache
+import json
 from typing import Any, TypedDict
 
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from sqlmodel import select
 from starlette.routing import Match
 
 from ..config import Settings
@@ -25,7 +27,7 @@ from ..repositories import AppRepository
 from .auth_proxy import AuthProxy
 from .models import UserProfileData
 from .repositories import AuthRepository
-from .schemas import User
+from .schemas import User, UserMetadata
 
 
 class AuthServiceConfig(TypedDict):
@@ -469,17 +471,7 @@ class AuthService(BasePlugin):
 
                 # Update Redis cache with database data
                 if from_cache:
-                    try:
-                        profile_json = db_profile.model_dump_json()
-                        cache_success = await set_user_profile(
-                            user_id, profile_json, self._config["user_cache_ttl_seconds"] if self._config else 3600
-                        )
-                        if cache_success:
-                            logger.debug(f"Updated Redis cache with database data for user ID: {user_id}")
-                        else:
-                            logger.warning(f"Failed to update Redis cache for user ID: {user_id}")
-                    except Exception as e:
-                        logger.warning(f"Error updating Redis cache from database: {e}")
+                    _ = await self.refresh_user_cache(user_id, user_profile=db_profile)
 
                 return db_profile
         except DBError as e:
@@ -511,17 +503,7 @@ class AuthService(BasePlugin):
 
                 # Update Redis cache with Supabase data
                 if from_cache:
-                    try:
-                        profile_json = supabase_profile.model_dump_json()
-                        cache_success = await set_user_profile(
-                            user_id, profile_json, self._config["user_cache_ttl_seconds"] if self._config else 3600
-                        )
-                        if cache_success:
-                            logger.debug(f"Updated Redis cache with Supabase data for user ID: {user_id}")
-                        else:
-                            logger.warning(f"Failed to update Redis cache for user ID: {user_id}")
-                    except Exception as e:
-                        logger.warning(f"Error updating Redis cache from Supabase: {e}")
+                    _ = await self.refresh_user_cache(user_id, user_profile=supabase_profile)
 
                 return supabase_profile
         except Exception as e:
@@ -585,8 +567,7 @@ class AuthService(BasePlugin):
 
             # Update cache with database results for future requests
             if from_cache and db_roles:
-                _ = await user2role_set(user_id, db_roles)
-                # logger.debug(f"Updated cache with database roles for user {user_id}")
+                _ = await self.refresh_user_cache(user_id, roles=db_roles)
 
             return db_roles
         except DBError as e:
@@ -617,6 +598,86 @@ class AuthService(BasePlugin):
             logger.error(f"Unexpected error getting available roles: {e}")
         return []
 
+    async def refresh_user_cache(
+        self,
+        user_id: str,
+        user_profile: UserProfileData | None = None,
+        roles: list[str] | None = None,
+        force_refresh: bool = False,
+    ) -> bool:
+        """
+        Refresh user cache in Redis with user profile and role information.
+
+        Args:
+            user_id: User's authentication ID
+            user_profile: User profile data to cache (optional)
+            roles: List of roles to cache (optional)
+            force_refresh: If True, load missing data from database/external sources
+
+        Returns:
+            True if cache refresh was successful, False otherwise
+
+        Logic:
+            - If force_refresh=True and user_profile/roles is None, load from database
+            - If force_refresh=False and user_profile/roles is None, skip that part
+            - Always cache provided non-None values
+        """
+        if not user_id or not user_id.strip():
+            logger.error("User ID cannot be empty for cache refresh")
+            return False
+
+        try:
+            ttl = self._config["user_cache_ttl_seconds"] if self._config else 3600
+            profile_success = await self._refresh_user_profile_cache(user_id, user_profile, force_refresh, ttl)
+            roles_success = await self._refresh_user_roles_cache(user_id, roles, force_refresh)
+            return profile_success and roles_success
+        except Exception as e:
+            logger.error(f"Unexpected error refreshing cache for user {user_id}: {e}")
+            return False
+
+    async def _refresh_user_profile_cache(
+        self, user_id: str, user_profile: UserProfileData | None, force_refresh: bool, ttl: int
+    ) -> bool:
+        """Helper method to refresh user profile cache."""
+        profile_to_cache = user_profile
+        if profile_to_cache is None and force_refresh:
+            profile_to_cache = await self.get_user_by_id(user_id, from_cache=False)
+
+        if profile_to_cache is None:
+            return True  # Nothing to cache, consider success
+
+        try:
+            profile_json = profile_to_cache.model_dump_json()
+            cache_success = await set_user_profile(user_id, profile_json, ttl)
+            if cache_success:
+                logger.debug(f"Refreshed user profile cache for user ID: {user_id}")
+            else:
+                logger.warning(f"Failed to refresh user profile cache for user ID: {user_id}")
+            return cache_success
+        except Exception as e:
+            logger.error(f"Error refreshing user profile cache for user {user_id}: {e}")
+            return False
+
+    async def _refresh_user_roles_cache(self, user_id: str, roles: list[str] | None, force_refresh: bool) -> bool:
+        """Helper method to refresh user roles cache."""
+        roles_to_cache = roles
+        if roles_to_cache is None and force_refresh:
+            roles_to_cache = await self.get_roles(user_id, from_cache=False)
+
+        if roles_to_cache is None:
+            return True  # Nothing to cache, consider success
+
+        try:
+            cache_success = await user2role_set(user_id, roles_to_cache)
+            if cache_success:
+                logger.debug(f"Refreshed user roles cache for user ID: {user_id}")
+            else:
+                logger.warning(f"Failed to refresh user roles cache for user ID: {user_id}")
+            return cache_success
+        except Exception as e:
+            logger.error(f"Error refreshing user roles cache for user {user_id}: {e}")
+            return False
+
     async def set_roles(self, user_id: str, roles: list[str], to_cache: bool = True) -> bool:
         """
         Set user roles in database and optionally update cache.
@@ -645,9 +706,7 @@ class AuthService(BasePlugin):
 
             # Update cache if requested
             if to_cache:
-                cache_success = await user2role_set(user_id, roles)
-                if not cache_success:
-                    logger.warning(f"Failed to update cache for user {user_id}")
+                _ = await self.refresh_user_cache(user_id, roles=roles)
 
             return True
         except DBError as e:
@@ -910,10 +969,10 @@ class AuthService(BasePlugin):
     # Account Management Methods
     # =============================================================================
 
-    async def deactivate_account(self, user_id: str, password: str) -> bool:
+    async def deactivate(self, user_id: str, password: str) -> bool:
         """
         Deactivate user account with password verification.
-        Account can be reactivated later.
+        This performs a comprehensive deactivation including all associated data.
 
         Args:
             user_id: User's authentication ID
@@ -932,11 +991,15 @@ class AuthService(BasePlugin):
                 logger.warning(f"Password verification failed for account deactivation: {user_id}")
                 return False
 
-            # Deactivate account in database
-            result = await self._repository.deactivate_account(user_id)
+            # Deactivate account in database (comprehensive deactivation)
+            result = await self._repository.deactivate(user_id)
 
             if result:
                 logger.info(f"Account deactivated successfully for user {user_id}")
+
+                # Refresh cache to remove deactivated user from cache (force_refresh=True to clear cache)
+                _ = await self.refresh_user_cache(user_id, force_refresh=True)
+
                 # Log the account deactivation event
                 _ = await self.log_event(
                     event_type="auth",
@@ -945,6 +1008,15 @@ class AuthService(BasePlugin):
                     user_auth_id=user_id,
                     event_payload={"status": "success"},
                 )
+
+                # Also deactivate from Supabase Auth if possible
+                try:
+                    if self._auth_client:
+                        _ = await self._auth_client.delete_user(user_id)
+                        logger.info(f"User deactivated from Supabase Auth: {user_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to deactivate user from Supabase Auth: {e}")
+
             else:
                 logger.warning(f"Account deactivation failed for user {user_id}")
 
@@ -954,70 +1026,18 @@ class AuthService(BasePlugin):
             logger.error(f"Error deactivating account for user {user_id}: {e}")
             return False
 
-    async def delete_account(self, user_id: str, password: str) -> bool:
-        """
-        Delete user account permanently with password verification.
-        This action cannot be undone.
-
-        Args:
-            user_id: User's authentication ID
-            password: Password for verification
-
-        Returns:
-            True if account deleted successfully, False otherwise
-        """
-        try:
-            if not self._repository:
-                logger.error("AuthService repository not initialized")
-                return False
-
-            # Verify password before deletion
-            if not await self._verify_user_password(user_id, password):
-                logger.warning(f"Password verification failed for account deletion: {user_id}")
-                return False
-
-            # Delete account in database (soft delete)
-            result = await self._repository.delete_account(user_id)
-
-            if result:
-                logger.info(f"Account deleted successfully for user {user_id}")
-                # Log the account deletion event
-                _ = await self.log_event(
-                    event_type="auth",
-                    event_name="account_deleted",
-                    event_source="user_action",
-                    user_auth_id=user_id,
-                    event_payload={"status": "success"},
-                )
-
-                # Also delete from Supabase Auth if possible
-                try:
-                    if self._auth_client:
-                        _ = await self._auth_client.delete_user(user_id)
-                        logger.info(f"User deleted from Supabase Auth: {user_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete user from Supabase Auth: {e}")
-
-            else:
-                logger.warning(f"Account deletion failed for user {user_id}")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error deleting account for user {user_id}: {e}")
-            return False
-
     # =============================================================================
     # User Administration Methods
     # =============================================================================
 
-    async def ban_user(self, user_id: str, target_user_id: str, reason: str = "") -> bool:
+    async def ban_user(self, user_id: str, target_user_identifier: str, reason: str = "") -> bool:
         """
         Ban a user account.
+        Supports lookup by user ID or email address.
 
         Args:
             user_id: User ID performing the action
-            target_user_id: User ID to ban
+            target_user_identifier: User ID or email address to ban
             reason: Reason for banning
 
         Returns:
@@ -1028,35 +1048,64 @@ class AuthService(BasePlugin):
                 logger.error("AuthService repository not initialized")
                 return False
 
+            # Get actual user ID from identifier
+            async with await get_transaction() as session:
+                # Detect if identifier is email or user ID
+                is_email = "@" in target_user_identifier
+
+                if is_email:
+                    user_info = await self._repository.get_user_by_email(session, target_user_identifier)
+                    lookup_type = "email"
+                else:
+                    user_info = await self._repository.get_user_by_auth_id(session, target_user_identifier)
+                    lookup_type = "user_id"
+
+                if not user_info:
+                    logger.warning(f"User not found by {lookup_type}: {target_user_identifier}")
+                    return False
+
+                actual_user_id = user_info.auth_id
+
             # Ban user in database
-            result = await self._repository.ban_user(target_user_id, user_id, reason)
+            result = await self._repository.ban_user(actual_user_id, user_id, reason)
 
             if result:
-                logger.info(f"User {target_user_id} banned by user {user_id}")
+                logger.info(f"User {target_user_identifier} (by {lookup_type}) banned by user {user_id}")
+
+                # Refresh cache to remove banned user from cache (force_refresh=True to clear cache)
+                _ = await self.refresh_user_cache(actual_user_id, force_refresh=True)
+
                 # Log the ban event
                 _ = await self.log_event(
                     event_type="admin",
                     event_name="user_banned",
                     event_source="admin_action",
                     user_auth_id=user_id,
-                    event_payload={"target_user_id": target_user_id, "reason": reason, "status": "success"},
+                    event_payload={
+                        "target_user_identifier": target_user_identifier,
+                        "lookup_type": lookup_type,
+                        "actual_user_id": actual_user_id,
+                        "reason": reason,
+                        "status": "success",
+                    },
                 )
             else:
-                logger.warning(f"Failed to ban user {target_user_id} by user {user_id}")
+                logger.warning(f"Failed to ban user {target_user_identifier} by user {user_id}")
 
             return result
 
         except Exception as e:
-            logger.error(f"Error banning user {target_user_id} by user {user_id}: {e}")
+            logger.error(f"Error banning user {target_user_identifier} by user {user_id}: {e}")
             return False
 
-    async def unban_user(self, user_id: str, target_user_id: str) -> bool:
+    async def unban_user(self, user_id: str, target_user_identifier: str) -> bool:
         """
         Unban a user account.
+        Supports lookup by user ID or email address.
 
         Args:
             user_id: User ID performing the action
-            target_user_id: User ID to unban
+            target_user_identifier: User ID or email address to unban
 
         Returns:
             True if user unbanned successfully, False otherwise
@@ -1066,121 +1115,58 @@ class AuthService(BasePlugin):
                 logger.error("AuthService repository not initialized")
                 return False
 
+            # Get actual user ID from identifier
+            async with await get_transaction() as session:
+                # Detect if identifier is email or user ID
+                is_email = "@" in target_user_identifier
+
+                if is_email:
+                    user_info = await self._repository.get_user_by_email(session, target_user_identifier)
+                    lookup_type = "email"
+                else:
+                    user_info = await self._repository.get_user_by_auth_id(session, target_user_identifier)
+                    lookup_type = "user_id"
+
+                if not user_info:
+                    logger.warning(f"User not found by {lookup_type}: {target_user_identifier}")
+                    return False
+
+                actual_user_id = user_info.auth_id
+
             # Unban user in database
-            result = await self._repository.unban_user(target_user_id, user_id)
+            result = await self._repository.unban_user(actual_user_id, user_id)
 
             if result:
-                logger.info(f"User {target_user_id} unbanned by user {user_id}")
+                logger.info(f"User {target_user_identifier} (by {lookup_type}) unbanned by user {user_id}")
+
+                # Refresh cache to restore unbanned user to cache (force_refresh=True to reload from DB)
+                _ = await self.refresh_user_cache(actual_user_id, force_refresh=True)
+
                 # Log the unban event
                 _ = await self.log_event(
                     event_type="admin",
                     event_name="user_unbanned",
                     event_source="admin_action",
                     user_auth_id=user_id,
-                    event_payload={"target_user_id": target_user_id, "status": "success"},
+                    event_payload={
+                        "target_user_identifier": target_user_identifier,
+                        "lookup_type": lookup_type,
+                        "actual_user_id": actual_user_id,
+                        "status": "success",
+                    },
                 )
             else:
-                logger.warning(f"Failed to unban user {target_user_id} by user {user_id}")
+                logger.warning(f"Failed to unban user {target_user_identifier} by user {user_id}")
 
             return result
 
         except Exception as e:
-            logger.error(f"Error unbanning user {target_user_id} by user {user_id}: {e}")
+            logger.error(f"Error unbanning user {target_user_identifier} by user {user_id}: {e}")
             return False
 
     # =============================================================================
     # Role Management Methods
     # =============================================================================
-
-    async def grant_roles(self, user_id: str, target_user_id: str, roles: list[str]) -> bool:
-        """
-        Grant roles to a user.
-
-        Args:
-            user_id: User ID performing the action
-            target_user_id: User ID to grant roles to
-            roles: List of roles to grant
-
-        Returns:
-            True if roles granted successfully, False otherwise
-        """
-        try:
-            if not self._repository:
-                logger.error("AuthService repository not initialized")
-                return False
-
-            # Grant roles in database
-            result = await self._repository.grant_roles(target_user_id, roles, user_id)
-
-            if result:
-                logger.info(f"Roles {roles} granted to user {target_user_id} by user {user_id}")
-                # Log the role grant event
-                _ = await self.log_event(
-                    event_type="admin",
-                    event_name="roles_granted",
-                    event_source="admin_action",
-                    user_auth_id=user_id,
-                    event_payload={"target_user_id": target_user_id, "granted_roles": roles, "status": "success"},
-                )
-
-                # Update cache with new roles
-                current_roles = await self.get_roles(target_user_id, from_cache=False)
-                updated_roles = list(set(current_roles + roles))
-                _ = await user2role_set(target_user_id, updated_roles)
-
-            else:
-                logger.warning(f"Failed to grant roles {roles} to user {target_user_id} by user {user_id}")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error granting roles {roles} to user {target_user_id} by user {user_id}: {e}")
-            return False
-
-    async def revoke_roles(self, user_id: str, target_user_id: str, roles: list[str]) -> bool:
-        """
-        Revoke roles from a user.
-
-        Args:
-            user_id: User ID performing the action
-            target_user_id: User ID to revoke roles from
-            roles: List of roles to revoke
-
-        Returns:
-            True if roles revoked successfully, False otherwise
-        """
-        try:
-            if not self._repository:
-                logger.error("AuthService repository not initialized")
-                return False
-
-            # Revoke roles in database
-            result = await self._repository.revoke_roles(target_user_id, roles, user_id)
-
-            if result:
-                logger.info(f"Roles {roles} revoked from user {target_user_id} by user {user_id}")
-                # Log the role revoke event
-                _ = await self.log_event(
-                    event_type="admin",
-                    event_name="roles_revoked",
-                    event_source="admin_action",
-                    user_auth_id=user_id,
-                    event_payload={"target_user_id": target_user_id, "revoked_roles": roles, "status": "success"},
-                )
-
-                # Update cache with remaining roles
-                current_roles = await self.get_roles(target_user_id, from_cache=False)
-                updated_roles = [role for role in current_roles if role not in roles]
-                _ = await user2role_set(target_user_id, updated_roles)
-
-            else:
-                logger.warning(f"Failed to revoke roles {roles} from user {target_user_id} by user {user_id}")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error revoking roles {roles} from user {target_user_id} by user {user_id}: {e}")
-            return False
 
     async def get_user_roles_by_id(self, user_id: str, target_user_id: str) -> list[str] | None:
         """
@@ -1213,9 +1199,216 @@ class AuthService(BasePlugin):
             logger.error(f"Error getting roles for user {target_user_id} by user {user_id}: {e}")
             return None
 
+    async def get_user_basic_info_by_id(self, user_id: str, target_user_identifier: str) -> dict[str, Any] | None:
+        """
+        Get user basic information including ID, email, status, and roles.
+        Supports lookup by user ID or email address.
+
+        Args:
+            user_id: User ID performing the action
+            target_user_identifier: User ID or email address to get basic info for
+
+        Returns:
+            Dictionary with user basic info if successful, None if error
+        """
+        try:
+            # Get user from database
+            if not self._repository:
+                logger.error("AuthService not properly initialized")
+                return None
+
+            async with await get_transaction() as session:
+                # Detect if identifier is email or user ID
+                is_email = "@" in target_user_identifier
+
+                if is_email:
+                    user_info = await self._repository.get_user_by_email(session, target_user_identifier)
+                    lookup_type = "email"
+                else:
+                    user_info = await self._repository.get_user_by_auth_id(session, target_user_identifier)
+                    lookup_type = "user_id"
+
+                if not user_info:
+                    logger.warning(f"User not found by {lookup_type}: {target_user_identifier}")
+                    return None
+
+                # Get the actual user ID for role lookup
+                actual_user_id = user_info.auth_id
+
+                # Get roles using existing method
+                roles = await self.get_roles(actual_user_id, from_cache=True)
+
+                # Determine user status by checking both user record and metadata
+                status = await self._determine_user_status(session, user_info, actual_user_id)
+
+                # Build basic info response
+                basic_info = {"id": actual_user_id, "email": user_info.email, "status": status, "roles": roles}
+
+            logger.info(f"Basic info for user {target_user_identifier} (by {lookup_type}) retrieved by user {user_id}")
+            # Log the basic info view event
+            _ = await self.log_event(
+                event_type="admin",
+                event_name="user_basic_info_viewed",
+                event_source="admin_action",
+                user_auth_id=user_id,
+                event_payload={
+                    "target_user_identifier": target_user_identifier,
+                    "lookup_type": lookup_type,
+                    "status": "success",
+                },
+            )
+
+            return basic_info
+
+        except Exception as e:
+            logger.error(f"Error getting basic info for user {target_user_identifier} by user {user_id}: {e}")
+            return None
+
+    async def adjust_roles(self, user_id: str, target_user_identifier: str, roles: list[str]) -> bool:
+        """
+        Adjust user roles by replacing all existing roles with the provided roles list.
+        Supports lookup by user ID or email address.
+
+        Args:
+            user_id: User ID performing the action
+            target_user_identifier: User ID or email address to adjust roles for
+            roles: List of roles to assign to the user
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Validate that at least one role is provided
+            if not roles or len(roles) == 0:
+                logger.warning(
+                    f"Attempt to adjust roles with empty roles list for user {target_user_identifier} by user {user_id}"
+                )
+                return False
+
+            if not self._repository:
+                logger.error("AuthService not properly initialized")
+                return False
+
+            # Get actual user ID from identifier
+            async with await get_transaction() as session:
+                # Detect if identifier is email or user ID
+                is_email = "@" in target_user_identifier
+
+                if is_email:
+                    user_info = await self._repository.get_user_by_email(session, target_user_identifier)
+                    lookup_type = "email"
+                else:
+                    user_info = await self._repository.get_user_by_auth_id(session, target_user_identifier)
+                    lookup_type = "user_id"
+
+                if not user_info:
+                    logger.warning(f"User not found by {lookup_type}: {target_user_identifier}")
+                    return False
+
+                actual_user_id = user_info.auth_id
+
+            # Replace all roles with the new roles list
+            result = await self._repository.adjust_roles(actual_user_id, roles, user_id)
+
+            if result:
+                # Refresh cache with new roles
+                _ = await self.refresh_user_cache(actual_user_id, roles=roles)
+
+                logger.info(
+                    f"Roles adjusted for user {target_user_identifier} (by {lookup_type}) by user {user_id}, new roles: {roles}"
+                )
+                # Log the role adjustment event
+                _ = await self.log_event(
+                    event_type="admin",
+                    event_name="user_roles_adjusted",
+                    event_source="admin_action",
+                    user_auth_id=user_id,
+                    event_payload={
+                        "target_user_identifier": target_user_identifier,
+                        "lookup_type": lookup_type,
+                        "actual_user_id": actual_user_id,
+                        "new_roles": roles,
+                        "status": "success",
+                    },
+                )
+            else:
+                logger.warning(f"Failed to adjust roles for user {target_user_identifier} by user {user_id}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error adjusting roles for user {target_user_identifier} by user {user_id}: {e}")
+            return False
+
     # =============================================================================
     # Helper Methods
     # =============================================================================
+
+    async def _determine_user_status(self, session: DBSession, user_info: User, user_id: str) -> str:
+        """
+        Determine user status by checking user record and metadata.
+
+        Args:
+            session: Database session
+            user_info: User record from database
+            user_id: User authentication ID
+
+        Returns:
+            Status string: "active", "banned", or "deactivated"
+        """
+        # If user record is active, user is active
+        if user_info.in_used == 1:
+            return "active"
+
+        # If user record is inactive, check metadata to determine why
+        try:
+            # Check system metadata for ban information
+            metadata_query = (
+                select(UserMetadata)
+                .where(UserMetadata.user_auth_id == user_id)
+                .where(UserMetadata.metadata_type == "system")
+                .where(UserMetadata.key == "banned")
+                .where(UserMetadata.in_used == 1)
+            )
+            result = await session.exec(metadata_query)
+            ban_metadata = result.first()
+
+            if ban_metadata and ban_metadata.value:
+                try:
+                    ban_data = json.loads(ban_metadata.value)
+                    if ban_data.get("banned") is True:
+                        return "banned"
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # If no ban metadata found, user is deactivated for other reasons
+            return "deactivated"
+
+        except Exception as e:
+            logger.error(f"Error checking user status metadata for {user_id}: {e}")
+            # Fallback to simple check
+            return "deactivated"
+
+    async def _determine_user_status_by_id(self, user_id: str) -> str:
+        """
+        Determine user status by user ID (convenience method for middleware).
+
+        Args:
+            user_id: User authentication ID
+
+        Returns:
+            Status string: "active", "banned", or "deactivated"
+        """
+        async with await get_transaction() as session:
+            # Get user record first
+            if not self._repository:
+                logger.error("AuthService repository not initialized")
+                return "deactivated"
+            user_info = await self._repository.get_user_by_auth_id(session, user_id)
+            if not user_info:
+                return "deactivated"
+
+            return await self._determine_user_status(session, user_info, user_id)
 
     async def _verify_user_password(self, user_id: str, password: str) -> bool:
         """
@@ -1240,4 +1433,3 @@ class AuthService(BasePlugin):
         except Exception as e:
             logger.error(f"Error verifying password for user {user_id}: {e}")
             return False
-
