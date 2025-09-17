@@ -259,9 +259,7 @@ async def _handle_signed_in(
         logger.debug(f"Added available roles for developer user {user.id}: {available_roles}")
 
     logger.info(f"User signed in successfully: {user.id}")
-    return AppResponseDict(
-        status="success", message="User signed in successfully", data=response_data
-    )
+    return AppResponseDict(status="success", message="User signed in successfully", data=response_data)
 
 
 async def _handle_signed_out(
@@ -518,15 +516,15 @@ async def confirm_password_reset(
 
 
 @router.post("/account/deactivate", include_in_schema=False, response_model=None, tags=["admin"])
-async def deactivate_account(
+async def deactivate(
     request: Request,
     background_tasks: BackgroundTasks,
     user: UserProfileData | None = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AppResponseDict:
     """
-    Deactivate user account.
-    Account can be reactivated later.
+    Deactivate user account and all associated data.
+    This performs a comprehensive deactivation of the account.
     """
     if not user:
         return AppResponseDict(
@@ -546,7 +544,7 @@ async def deactivate_account(
                 data={},
             )
 
-        result = await auth_service.deactivate_account(user.id, password)
+        result = await auth_service.deactivate(user.id, password)
 
         if result:
             token = extract_bearer_token_from_request(request)
@@ -568,62 +566,6 @@ async def deactivate_account(
         return AppResponseDict(
             status="failed",
             message="An error occurred while deactivating account.",
-            data={},
-        )
-
-
-@router.post("/account/delete", include_in_schema=False, response_model=None, tags=["admin"])
-async def delete_account(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    user: UserProfileData | None = Depends(get_current_user),
-    auth_service: AuthService = Depends(get_auth_service),
-) -> AppResponseDict:
-    """
-    Delete user account permanently.
-    This action cannot be undone.
-    """
-    if not user:
-        return AppResponseDict(
-            status="failed",
-            message="Authentication required. Please login first.",
-            data={},
-        )
-
-    try:
-        body = await request.json()
-        password = body.get("password")
-        confirmation = body.get("confirmation")
-
-        if not password or confirmation != "DELETE":
-            return AppResponseDict(
-                status="failed",
-                message="Password and confirmation ('DELETE') are required.",
-                data={},
-            )
-
-        result = await auth_service.delete_account(user.id, password)
-
-        if result:
-            token = extract_bearer_token_from_request(request)
-            background_tasks.add_task(auth_service.background_process_logout, token, user)
-
-            return AppResponseDict(
-                status="success",
-                message="Account deleted successfully.",
-                data={"user_id": user.id},
-            )
-        return AppResponseDict(
-            status="failed",
-            message="Failed to delete account. Please verify your password.",
-            data={},
-        )
-
-    except Exception as e:
-        logger.error(f"Error deleting account for user {user.id}: {e}")
-        return AppResponseDict(
-            status="failed",
-            message="An error occurred while deleting account.",
             data={},
         )
 
@@ -723,15 +665,15 @@ async def unban_user(
 # =============================================================================
 
 
-@router.post("/admin/users/{target_user_id}/roles/grant", include_in_schema=False, response_model=None, tags=["admin"])
-async def grant_roles(
+@router.post("/admin/users/{target_user_id}/roles/adjust", include_in_schema=False, response_model=None, tags=["admin"])
+async def adjust_roles(
     target_user_id: str,
     request: Request,
     user: UserProfileData | None = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AppResponseDict:
     """
-    Grant roles to a user.
+    Adjust user roles. Replaces all existing roles with the provided roles list.
     """
     if not user:
         return AppResponseDict(
@@ -747,92 +689,48 @@ async def grant_roles(
         if not roles or not isinstance(roles, list):
             return AppResponseDict(
                 status="failed",
-                message="Roles list is required.",
+                message="At least one role is required.",
                 data={},
             )
 
-        result = await auth_service.grant_roles(user.id, target_user_id, roles)
-
-        if result:
-            return AppResponseDict(
-                status="success",
-                message="Roles granted successfully.",
-                data={"target_user_id": target_user_id, "granted_roles": roles, "granted_by": user.id},
-            )
-        return AppResponseDict(
-            status="failed",
-            message="Failed to grant roles. Insufficient permissions or user not found.",
-            data={},
-        )
-
-    except Exception as e:
-        logger.error(f"Error granting roles to user {target_user_id} by admin {user.id}: {e}")
-        return AppResponseDict(
-            status="failed",
-            message="An error occurred while granting roles.",
-            data={},
-        )
-
-
-@router.post("/admin/users/{target_user_id}/roles/revoke", include_in_schema=False, response_model=None, tags=["admin"])
-async def revoke_roles(
-    target_user_id: str,
-    request: Request,
-    user: UserProfileData | None = Depends(get_current_user),
-    auth_service: AuthService = Depends(get_auth_service),
-) -> AppResponseDict:
-    """
-    Revoke roles from a user.
-    """
-    if not user:
-        return AppResponseDict(
-            status="failed",
-            message="Authentication required. Please login first.",
-            data={},
-        )
-
-    try:
-        body = await request.json()
-        roles = body.get("roles", [])
-
-        if not roles or not isinstance(roles, list):
+        # Validate that at least one role is provided
+        if len(roles) == 0:
             return AppResponseDict(
                 status="failed",
-                message="Roles list is required.",
+                message="Please select at least one role.",
                 data={},
             )
 
-        result = await auth_service.revoke_roles(user.id, target_user_id, roles)
-
+        result = await auth_service.adjust_roles(user.id, target_user_id, roles)
         if result:
             return AppResponseDict(
                 status="success",
-                message="Roles revoked successfully.",
-                data={"target_user_id": target_user_id, "revoked_roles": roles, "revoked_by": user.id},
+                message="User roles adjusted successfully.",
+                data={"target_user_id": target_user_id, "new_roles": roles, "adjusted_by": user.id},
             )
         return AppResponseDict(
             status="failed",
-            message="Failed to revoke roles. Insufficient permissions or user not found.",
+            message="Failed to adjust roles. Insufficient permissions or user not found.",
             data={},
         )
 
     except Exception as e:
-        logger.error(f"Error revoking roles from user {target_user_id} by admin {user.id}: {e}")
+        logger.error(f"Error adjusting roles for user {target_user_id} by admin {user.id}: {e}")
         return AppResponseDict(
             status="failed",
-            message="An error occurred while revoking roles.",
+            message="An error occurred while adjusting roles.",
             data={},
         )
 
 
-@router.get("/admin/users/{target_user_id}/roles", include_in_schema=False, response_model=None, tags=["admin"])
-async def get_user_roles(
+@router.get("/admin/users/{target_user_id}/basic", include_in_schema=False, response_model=None, tags=["admin"])
+async def get_user_basic_info(
     target_user_id: str,
     user: UserProfileData | None = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AppResponseDict:
     """
-    Get user roles.
+    Get user basic information including ID, email, status, and roles.
     """
     if not user:
         return AppResponseDict(
@@ -842,24 +740,30 @@ async def get_user_roles(
         )
 
     try:
-        result = await auth_service.get_user_roles_by_id(user.id, target_user_id)
+        basic_info = await auth_service.get_user_basic_info_by_id(user.id, target_user_id)
 
-        if result is not None:
+        if basic_info is not None:
             return AppResponseDict(
                 status="success",
-                message="User roles retrieved successfully.",
-                data={"target_user_id": target_user_id, "roles": result},
+                message="User basic information retrieved successfully.",
+                data={
+                    "target_user_id": target_user_id,
+                    "id": basic_info.get("id"),
+                    "email": basic_info.get("email"),
+                    "status": basic_info.get("status", "unknown"),
+                    "roles": basic_info.get("roles", []),
+                },
             )
         return AppResponseDict(
             status="failed",
-            message="Failed to get user roles. Insufficient permissions or user not found.",
+            message="Failed to get user basic information. Insufficient permissions or user not found.",
             data={},
         )
 
     except Exception as e:
-        logger.error(f"Error getting roles for user {target_user_id} by admin {user.id}: {e}")
+        logger.error(f"Error getting basic info for user {target_user_id} by admin {user.id}: {e}")
         return AppResponseDict(
             status="failed",
-            message="An error occurred while retrieving user roles.",
+            message="An error occurred while retrieving user basic information.",
             data={},
         )
