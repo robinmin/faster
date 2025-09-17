@@ -497,6 +497,77 @@ class TestAuthServiceRoleManagement:
 
         assert result is False
 
+    @pytest.mark.asyncio
+    async def test_get_all_available_roles_success(self, auth_service: AuthService) -> None:
+        """Test get_all_available_roles returns roles from sys_dict."""
+        with patch("faster.core.auth.services.AppRepository") as mock_app_repository_class:
+            # Mock AppRepository instance and its get_sys_dict method
+            mock_app_repository = AsyncMock()
+            mock_app_repository.get_sys_dict.return_value = {
+                "user_role": {10: "default", 20: "developer", 30: "admin", 40: "moderator"}
+            }
+            mock_app_repository_class.return_value = mock_app_repository
+
+            result = await auth_service.get_all_available_roles()
+
+            # Should return sorted list of role values
+            expected_roles = ["admin", "default", "developer", "moderator"]
+            assert result == expected_roles
+
+            # Verify AppRepository was called correctly
+            mock_app_repository.get_sys_dict.assert_called_once_with(category="user_role")
+
+    @pytest.mark.asyncio
+    async def test_get_all_available_roles_empty_result(self, auth_service: AuthService) -> None:
+        """Test get_all_available_roles handles empty sys_dict result."""
+        with patch("faster.core.auth.services.AppRepository") as mock_app_repository_class:
+            # Mock AppRepository instance returning empty result
+            mock_app_repository = AsyncMock()
+            mock_app_repository.get_sys_dict.return_value = {}
+            mock_app_repository_class.return_value = mock_app_repository
+
+            result = await auth_service.get_all_available_roles()
+
+            # Should return empty list
+            assert result == []
+
+            # Verify AppRepository was called correctly
+            mock_app_repository.get_sys_dict.assert_called_once_with(category="user_role")
+
+    @pytest.mark.asyncio
+    async def test_get_all_available_roles_db_error(self, auth_service: AuthService) -> None:
+        """Test get_all_available_roles handles database errors."""
+        with patch("faster.core.auth.services.AppRepository") as mock_app_repository_class:
+            # Mock AppRepository instance raising DBError
+            mock_app_repository = AsyncMock()
+            mock_app_repository.get_sys_dict.side_effect = DBError("Database connection failed")
+            mock_app_repository_class.return_value = mock_app_repository
+
+            result = await auth_service.get_all_available_roles()
+
+            # Should return empty list on error
+            assert result == []
+
+            # Verify AppRepository was called correctly
+            mock_app_repository.get_sys_dict.assert_called_once_with(category="user_role")
+
+    @pytest.mark.asyncio
+    async def test_get_all_available_roles_unexpected_error(self, auth_service: AuthService) -> None:
+        """Test get_all_available_roles handles unexpected errors."""
+        with patch("faster.core.auth.services.AppRepository") as mock_app_repository_class:
+            # Mock AppRepository instance raising unexpected error
+            mock_app_repository = AsyncMock()
+            mock_app_repository.get_sys_dict.side_effect = Exception("Unexpected error")
+            mock_app_repository_class.return_value = mock_app_repository
+
+            result = await auth_service.get_all_available_roles()
+
+            # Should return empty list on error
+            assert result == []
+
+            # Verify AppRepository was called correctly
+            mock_app_repository.get_sys_dict.assert_called_once_with(category="user_role")
+
 
 class TestAuthServiceAccessControl:
     """Tests for access control functionality."""
