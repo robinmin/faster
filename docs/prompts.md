@@ -808,3 +808,5 @@ As these are very critical operation, so we need add a comfirmation action befor
 
 
 After both of these two requirements, you need to use playwright to verify each function points are working as expect or not. In case of any issue or web console errors, you also need to fix all of them.
+
+ >
