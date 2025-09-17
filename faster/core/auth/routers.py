@@ -1,9 +1,11 @@
+from typing import Any
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from ..logger import get_logger
 from ..models import AppResponseDict
 from ..redisex import blacklist_delete
-from .middlewares import get_current_user
+from .middlewares import get_current_user, has_role
 from .models import UserProfileData
 from .services import AuthService
 from .utilities import extract_bearer_token_from_request
@@ -247,9 +249,18 @@ async def _handle_signed_in(
         background_tasks.add_task(auth_service.background_update_user_info, token, user.id)
         logger.debug(f"Added background task to update user info for {user.id}")
 
+    # Prepare response data
+    response_data: dict[str, Any] = {"event": "SIGNED_IN", "user_id": user.id}
+
+    # Check if current user has 'developer' role and add available roles
+    if await has_role(request, "developer"):
+        available_roles = await auth_service.get_all_available_roles()
+        response_data["available_roles"] = available_roles
+        logger.debug(f"Added available roles for developer user {user.id}: {available_roles}")
+
     logger.info(f"User signed in successfully: {user.id}")
     return AppResponseDict(
-        status="success", message="User signed in successfully", data={"event": "SIGNED_IN", "user_id": user.id}
+        status="success", message="User signed in successfully", data=response_data
     )
 
 
