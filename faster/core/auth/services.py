@@ -1,12 +1,9 @@
 from collections.abc import Callable
-from datetime import datetime, timedelta
 from functools import lru_cache
-import json
-from typing import Any, TypedDict
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
-from sqlmodel import select
 from starlette.routing import Match
 
 from ..config import Settings
@@ -25,25 +22,9 @@ from ..redisex import (
 )
 from ..repositories import AppRepository
 from .auth_proxy import AuthProxy
-from .models import UserProfileData
+from .models import AuthServiceConfig, UserProfileData
 from .repositories import AuthRepository
-from .schemas import User, UserMetadata
-
-
-class AuthServiceConfig(TypedDict):
-    """Configuration for AuthService containing only the needed settings."""
-
-    auth_enabled: bool
-    supabase_url: str | None
-    supabase_anon_key: str | None
-    supabase_service_key: str | None
-    supabase_jwks_url: str | None
-    supabase_audience: str | None
-    jwks_cache_ttl_seconds: int
-    auto_refresh_jwks: bool
-    user_cache_ttl_seconds: int
-    is_debug: bool
-
+from .schemas import User
 
 logger = get_logger(__name__)
 
@@ -536,8 +517,7 @@ class AuthService(BasePlugin):
         if not self._repository:
             logger.error("AuthService repository not initialized")
             return None
-        async with await get_transaction(readonly=True) as session:
-            return await self._repository.get_user_by_auth_id(session, auth_id)
+        return await self._repository.get_user_by_auth_id_simple(auth_id)
 
     async def get_roles(self, user_id: str, from_cache: bool = True) -> list[str]:
         """
@@ -721,34 +701,11 @@ class AuthService(BasePlugin):
         Check if user information should be updated in database.
         Returns True for new users or users not updated within 24 hours.
         """
-        try:
-            if not self._repository:
-                logger.error("AuthService repository not initialized")
-                return True  # Assume needs update if can't check
-            # Use a fresh session to avoid session binding issues in background tasks
-            async with await get_transaction() as session:
-                db_user = await self._repository.get_user_by_auth_id(session, user.id)
+        if not self._repository:
+            logger.error("AuthService repository not initialized")
+            return True  # Assume needs update if can't check
 
-                if not db_user:
-                    # New user - needs to be stored
-                    return True
-
-                # Check if user was last updated more than 24 hours ago
-                if db_user.updated_at:
-                    time_since_update = datetime.now() - db_user.updated_at
-                    return time_since_update > timedelta(hours=24)
-
-                # If no updated_at timestamp, consider it needs update
-                return True
-
-        except DBError as e:
-            logger.warning(f"Error checking user update status for {user.id}: {e}")
-            # If we can't determine, err on the side of updating
-            return True
-        except Exception as e:
-            logger.warning(f"Unexpected error checking user update status for {user.id}: {e}")
-            # If we can't determine, err on the side of updating
-            return True
+        return await self._repository.should_update_user_in_db(user.id)
 
     async def background_update_user_info(self, token: str | None, user_id: str) -> None:
         """
@@ -1239,7 +1196,7 @@ class AuthService(BasePlugin):
                 roles = await self.get_roles(actual_user_id, from_cache=True)
 
                 # Determine user status by checking both user record and metadata
-                status = await self._determine_user_status(session, user_info, actual_user_id)
+                status = await self._repository.determine_user_status(session, user_info, actual_user_id)
 
                 # Build basic info response
                 basic_info = {"id": actual_user_id, "email": user_info.email, "status": status, "roles": roles}
@@ -1290,22 +1247,13 @@ class AuthService(BasePlugin):
                 return False
 
             # Get actual user ID from identifier
-            async with await get_transaction() as session:
-                # Detect if identifier is email or user ID
-                is_email = "@" in target_user_identifier
+            user_info, lookup_type = await self._repository.get_user_by_identifier(target_user_identifier)
 
-                if is_email:
-                    user_info = await self._repository.get_user_by_email(session, target_user_identifier)
-                    lookup_type = "email"
-                else:
-                    user_info = await self._repository.get_user_by_auth_id(session, target_user_identifier)
-                    lookup_type = "user_id"
+            if not user_info:
+                logger.warning(f"User not found by {lookup_type}: {target_user_identifier}")
+                return False
 
-                if not user_info:
-                    logger.warning(f"User not found by {lookup_type}: {target_user_identifier}")
-                    return False
-
-                actual_user_id = user_info.auth_id
+            actual_user_id = user_info.auth_id
 
             # Replace all roles with the new roles list
             result = await self._repository.adjust_roles(actual_user_id, roles, user_id)
@@ -1344,51 +1292,6 @@ class AuthService(BasePlugin):
     # Helper Methods
     # =============================================================================
 
-    async def _determine_user_status(self, session: DBSession, user_info: User, user_id: str) -> str:
-        """
-        Determine user status by checking user record and metadata.
-
-        Args:
-            session: Database session
-            user_info: User record from database
-            user_id: User authentication ID
-
-        Returns:
-            Status string: "active", "banned", or "deactivated"
-        """
-        # If user record is active, user is active
-        if user_info.in_used == 1:
-            return "active"
-
-        # If user record is inactive, check metadata to determine why
-        try:
-            # Check system metadata for ban information
-            metadata_query = (
-                select(UserMetadata)
-                .where(UserMetadata.user_auth_id == user_id)
-                .where(UserMetadata.metadata_type == "system")
-                .where(UserMetadata.key == "banned")
-                .where(UserMetadata.in_used == 1)
-            )
-            result = await session.exec(metadata_query)
-            ban_metadata = result.first()
-
-            if ban_metadata and ban_metadata.value:
-                try:
-                    ban_data = json.loads(ban_metadata.value)
-                    if ban_data.get("banned") is True:
-                        return "banned"
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-            # If no ban metadata found, user is deactivated for other reasons
-            return "deactivated"
-
-        except Exception as e:
-            logger.error(f"Error checking user status metadata for {user_id}: {e}")
-            # Fallback to simple check
-            return "deactivated"
-
     async def _determine_user_status_by_id(self, user_id: str) -> str:
         """
         Determine user status by user ID (convenience method for middleware).
@@ -1399,16 +1302,17 @@ class AuthService(BasePlugin):
         Returns:
             Status string: "active", "banned", or "deactivated"
         """
-        async with await get_transaction() as session:
-            # Get user record first
-            if not self._repository:
-                logger.error("AuthService repository not initialized")
-                return "deactivated"
-            user_info = await self._repository.get_user_by_auth_id(session, user_id)
-            if not user_info:
-                return "deactivated"
+        if not self._repository:
+            logger.error("AuthService repository not initialized")
+            return "deactivated"
 
-            return await self._determine_user_status(session, user_info, user_id)
+        user_info = await self._repository.get_user_by_auth_id_simple(user_id)
+        if not user_info:
+            return "deactivated"
+
+        # For status determination, we still need a session to check metadata
+        async with await get_transaction() as session:
+            return await self._repository.determine_user_status(session, user_info, user_id)
 
     async def _verify_user_password(self, user_id: str, password: str) -> bool:
         """
