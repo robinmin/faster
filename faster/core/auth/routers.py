@@ -11,15 +11,7 @@ from .services import AuthService
 from .utilities import extract_bearer_token_from_request
 
 logger = get_logger(__name__)
-
-url_prefix = "/auth"
-router = APIRouter(prefix=url_prefix, tags=["auth"])
-
-
-# class AuthURL(Enum):
-#     ONBOARDING = url_prefix + "/onboarding"
-#     DASHBOARD = url_prefix + "/dashboard"
-#     PROFILE = url_prefix + "/profile"
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def get_auth_service() -> AuthService:
@@ -46,6 +38,15 @@ async def onboarding(
 
     # User is authenticated, check onboarding status
     has_profile = await auth_service.check_user_onboarding_complete(user.id)
+
+    # Log onboarding access event
+    _ = await auth_service.log_event(
+        event_type="user",
+        event_name="onboarding_accessed",
+        event_source="user_action",
+        user_auth_id=user.id,
+        event_payload={"has_profile": has_profile, "status": "accessed"},
+    )
 
     if has_profile:
         return AppResponseDict(
@@ -81,6 +82,15 @@ async def dashboard(
 
     # Check if user has completed onboarding
     has_profile = await auth_service.check_user_onboarding_complete(user.id)
+
+    # Log dashboard access event
+    _ = await auth_service.log_event(
+        event_type="user",
+        event_name="dashboard_accessed",
+        event_source="user_action",
+        user_auth_id=user.id,
+        event_payload={"has_profile": has_profile, "status": "accessed"},
+    )
 
     if not has_profile:
         # User hasn't completed onboarding, redirect to onboarding
@@ -343,6 +353,16 @@ async def profile(request: Request, user: UserProfileData | None = Depends(get_c
     user_metadata = user.user_metadata or {}
     app_metadata = getattr(user, "app_metadata", {}) or {}
 
+    # Log profile access event
+    auth_service = get_auth_service()
+    _ = await auth_service.log_event(
+        event_type="user",
+        event_name="profile_accessed",
+        event_source="user_action",
+        user_auth_id=user.id,
+        event_payload={"status": "accessed", "has_metadata": bool(user_metadata)},
+    )
+
     # Build comprehensive profile response
     profile_data = {
         "id": user.id,
@@ -402,6 +422,15 @@ async def change_password(
 
         result = await auth_service.change_password(user.id, current_password, new_password)
 
+        # Log password change event
+        _ = await auth_service.log_event(
+            event_type="password",
+            event_name="password_changed",
+            event_source="user_action",
+            user_auth_id=user.id,
+            event_payload={"status": "success" if result else "failed"},
+        )
+
         if result:
             return AppResponseDict(
                 status="success",
@@ -444,6 +473,15 @@ async def initiate_password_reset(
             )
 
         result = await auth_service.initiate_password_reset(email)
+
+        # Log password reset initiation event (no user_auth_id since it's public)
+        _ = await auth_service.log_event(
+            event_type="password",
+            event_name="password_reset_initiated",
+            event_source="user_action",
+            user_auth_id=None,
+            event_payload={"email": email, "status": "success" if result else "failed"},
+        )
 
         if result:
             return AppResponseDict(
@@ -489,6 +527,15 @@ async def confirm_password_reset(
 
         result = await auth_service.confirm_password_reset(token, new_password)
 
+        # Log password reset confirmation event (no user_auth_id since it's public)
+        _ = await auth_service.log_event(
+            event_type="password",
+            event_name="password_reset_confirmed",
+            event_source="user_action",
+            user_auth_id=None,
+            event_payload={"status": "success" if result else "failed", "token_valid": result},
+        )
+
         if result:
             return AppResponseDict(
                 status="success",
@@ -515,7 +562,7 @@ async def confirm_password_reset(
 # =============================================================================
 
 
-@router.post("/account/deactivate", include_in_schema=False, response_model=None, tags=["admin"])
+@router.post("/deactivate", include_in_schema=False, response_model=None, tags=["admin"])
 async def deactivate(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -546,6 +593,15 @@ async def deactivate(
 
         result = await auth_service.deactivate(user.id, password)
 
+        # Log account deactivation event
+        _ = await auth_service.log_event(
+            event_type="user",
+            event_name="account_deactivated",
+            event_source="user_action",
+            user_auth_id=user.id,
+            event_payload={"status": "success" if result else "failed"},
+        )
+
         if result:
             token = extract_bearer_token_from_request(request)
             background_tasks.add_task(auth_service.background_process_logout, token, user)
@@ -575,7 +631,7 @@ async def deactivate(
 # =============================================================================
 
 
-@router.post("/admin/users/{target_user_id}/ban", include_in_schema=False, response_model=None, tags=["admin"])
+@router.post("/users/{target_user_id}/ban", include_in_schema=False, response_model=None, tags=["admin"])
 async def ban_user(
     target_user_id: str,
     request: Request,
@@ -598,6 +654,19 @@ async def ban_user(
 
         result = await auth_service.ban_user(user.id, target_user_id, reason)
 
+        # Log user ban event
+        _ = await auth_service.log_event(
+            event_type="admin",
+            event_name="user_banned",
+            event_source="admin_action",
+            user_auth_id=user.id,
+            event_payload={
+                "target_user_id": target_user_id,
+                "reason": reason,
+                "status": "success" if result else "failed",
+            },
+        )
+
         if result:
             return AppResponseDict(
                 status="success",
@@ -619,7 +688,7 @@ async def ban_user(
         )
 
 
-@router.post("/admin/users/{target_user_id}/unban", include_in_schema=False, response_model=None, tags=["admin"])
+@router.post("/users/{target_user_id}/unban", include_in_schema=False, response_model=None, tags=["admin"])
 async def unban_user(
     target_user_id: str,
     request: Request,
@@ -638,6 +707,15 @@ async def unban_user(
 
     try:
         result = await auth_service.unban_user(user.id, target_user_id)
+
+        # Log user unban event
+        _ = await auth_service.log_event(
+            event_type="admin",
+            event_name="user_unbanned",
+            event_source="admin_action",
+            user_auth_id=user.id,
+            event_payload={"target_user_id": target_user_id, "status": "success" if result else "failed"},
+        )
 
         if result:
             return AppResponseDict(
@@ -665,7 +743,7 @@ async def unban_user(
 # =============================================================================
 
 
-@router.post("/admin/users/{target_user_id}/roles/adjust", include_in_schema=False, response_model=None, tags=["admin"])
+@router.post("/users/{target_user_id}/roles/adjust", include_in_schema=False, response_model=None, tags=["admin"])
 async def adjust_roles(
     target_user_id: str,
     request: Request,
@@ -702,6 +780,20 @@ async def adjust_roles(
             )
 
         result = await auth_service.adjust_roles(user.id, target_user_id, roles)
+
+        # Log role adjustment event
+        _ = await auth_service.log_event(
+            event_type="admin",
+            event_name="roles_adjusted",
+            event_source="admin_action",
+            user_auth_id=user.id,
+            event_payload={
+                "target_user_id": target_user_id,
+                "new_roles": roles,
+                "status": "success" if result else "failed",
+            },
+        )
+
         if result:
             return AppResponseDict(
                 status="success",
@@ -723,7 +815,7 @@ async def adjust_roles(
         )
 
 
-@router.get("/admin/users/{target_user_id}/basic", include_in_schema=False, response_model=None, tags=["admin"])
+@router.get("/users/{target_user_id}/basic", include_in_schema=False, response_model=None, tags=["admin"])
 async def get_user_basic_info(
     target_user_id: str,
     user: UserProfileData | None = Depends(get_current_user),
@@ -741,6 +833,18 @@ async def get_user_basic_info(
 
     try:
         basic_info = await auth_service.get_user_basic_info_by_id(user.id, target_user_id)
+
+        # Log user basic info access event
+        _ = await auth_service.log_event(
+            event_type="admin",
+            event_name="user_basic_info_accessed",
+            event_source="admin_action",
+            user_auth_id=user.id,
+            event_payload={
+                "target_user_id": target_user_id,
+                "status": "success" if basic_info is not None else "failed",
+            },
+        )
 
         if basic_info is not None:
             return AppResponseDict(
