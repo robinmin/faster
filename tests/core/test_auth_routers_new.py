@@ -208,7 +208,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "deactivate", new_callable=AsyncMock) as mock_deactivate:
             mock_deactivate.return_value = True
 
-            response = client.post("/auth/account/deactivate", json={"password": "correct_password"})
+            response = client.post("/auth/deactivate", json={"password": "correct_password"})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -228,7 +228,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "deactivate", new_callable=AsyncMock) as mock_deactivate:
             mock_deactivate.return_value = False
 
-            response = client.post("/auth/account/deactivate", json={"password": "wrong_password"})
+            response = client.post("/auth/deactivate", json={"password": "wrong_password"})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -252,7 +252,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "ban_user", new_callable=AsyncMock) as mock_ban:
             mock_ban.return_value = True
 
-            response = client.post("/auth/admin/users/target-user-123/ban", json={"reason": "Violation of terms"})
+            response = client.post("/auth/users/target-user-123/ban", json={"reason": "Violation of terms"})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -273,7 +273,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "ban_user", new_callable=AsyncMock) as mock_ban:
             mock_ban.return_value = False
 
-            response = client.post("/auth/admin/users/target-user-123/ban", json={"reason": "Violation of terms"})
+            response = client.post("/auth/users/target-user-123/ban", json={"reason": "Violation of terms"})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -293,7 +293,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "unban_user", new_callable=AsyncMock) as mock_unban:
             mock_unban.return_value = True
 
-            response = client.post("/auth/admin/users/target-user-123/unban")
+            response = client.post("/auth/users/target-user-123/unban")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -313,7 +313,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "ban_user", new_callable=AsyncMock) as mock_ban:
             mock_ban.return_value = True
 
-            response = client.post("/auth/admin/users/user@example.com/ban", json={"reason": "Violation of terms"})
+            response = client.post("/auth/users/user@example.com/ban", json={"reason": "Violation of terms"})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -337,7 +337,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "ban_user", new_callable=AsyncMock) as mock_ban:
             mock_ban.return_value = False  # User not found or no permission
 
-            response = client.post("/auth/admin/users/nonexistent@example.com/ban", json={"reason": "Test"})
+            response = client.post("/auth/users/nonexistent@example.com/ban", json={"reason": "Test"})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -357,7 +357,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "unban_user", new_callable=AsyncMock) as mock_unban:
             mock_unban.return_value = True
 
-            response = client.post("/auth/admin/users/user@example.com/unban")
+            response = client.post("/auth/users/user@example.com/unban")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -380,7 +380,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "unban_user", new_callable=AsyncMock) as mock_unban:
             mock_unban.return_value = False  # User not found or no permission
 
-            response = client.post("/auth/admin/users/nonexistent@example.com/unban")
+            response = client.post("/auth/users/nonexistent@example.com/unban")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -404,9 +404,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "adjust_roles", new_callable=AsyncMock) as mock_adjust:
             mock_adjust.return_value = True
 
-            response = client.post(
-                "/auth/admin/users/target-user-123/roles/adjust", json={"roles": ["moderator", "editor"]}
-            )
+            response = client.post("/auth/users/target-user-123/roles/adjust", json={"roles": ["moderator", "editor"]})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -425,7 +423,7 @@ class TestNewAuthEndpoints:
         cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
         response = client.post(
-            "/auth/admin/users/target-user-123/roles/adjust",
+            "/auth/users/target-user-123/roles/adjust",
             json={"roles": []},  # Empty list should fail
         )
 
@@ -448,7 +446,7 @@ class TestNewAuthEndpoints:
             mock_adjust.return_value = True
 
             response = client.post(
-                "/auth/admin/users/user@example.com/roles/adjust", json={"roles": ["default", "developer"]}
+                "/auth/users/user@example.com/roles/adjust", json={"roles": ["default", "developer"]}
             )
 
             assert response.status_code == status.HTTP_200_OK
@@ -473,9 +471,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "adjust_roles", new_callable=AsyncMock) as mock_adjust:
             mock_adjust.return_value = False  # User not found or no permission
 
-            response = client.post(
-                "/auth/admin/users/nonexistent@example.com/roles/adjust", json={"roles": ["default"]}
-            )
+            response = client.post("/auth/users/nonexistent@example.com/roles/adjust", json={"roles": ["default"]})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -502,7 +498,7 @@ class TestNewAuthEndpoints:
                 "roles": ["admin", "user"],
             }
 
-            response = client.get("/auth/admin/users/target-user-123/basic")
+            response = client.get("/auth/users/target-user-123/basic")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -527,7 +523,7 @@ class TestNewAuthEndpoints:
         ) as mock_get_basic_info:
             mock_get_basic_info.return_value = None  # Permission denied
 
-            response = client.get("/auth/admin/users/target-user-123/basic")
+            response = client.get("/auth/users/target-user-123/basic")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -554,7 +550,7 @@ class TestNewAuthEndpoints:
                 "roles": ["default", "developer"],
             }
 
-            response = client.get("/auth/admin/users/user@example.com/basic")
+            response = client.get("/auth/users/user@example.com/basic")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -583,7 +579,7 @@ class TestNewAuthEndpoints:
         ) as mock_get_basic_info:
             mock_get_basic_info.return_value = None  # User not found
 
-            response = client.get("/auth/admin/users/nonexistent@example.com/basic")
+            response = client.get("/auth/users/nonexistent@example.com/basic")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -691,7 +687,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "ban_user", new_callable=AsyncMock) as mock_ban:
             mock_ban.return_value = True
 
-            response = client.post("/auth/admin/users/target-user-123/ban", json={"reason": "Test ban"})
+            response = client.post("/auth/users/target-user-123/ban", json={"reason": "Test ban"})
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
@@ -702,7 +698,7 @@ class TestNewAuthEndpoints:
         with patch.object(AuthService.get_instance(), "unban_user", new_callable=AsyncMock) as mock_unban:
             mock_unban.return_value = True
 
-            response = client.post("/auth/admin/users/target-user-123/unban")
+            response = client.post("/auth/users/target-user-123/unban")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
