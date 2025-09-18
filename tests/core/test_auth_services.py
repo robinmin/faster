@@ -2,9 +2,8 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from starlette.routing import Match
 
-from faster.core.auth.models import AuthServiceConfig, UserProfileData
+from faster.core.auth.models import AuthServiceConfig, RouterItem, UserProfileData
 from faster.core.auth.services import AuthService
 from faster.core.config import Settings
 from faster.core.exceptions import DBError
@@ -173,17 +172,16 @@ class TestAuthServiceHealthCheck:
         with (
             patch.object(service, "_auth_client", mock_auth_client),
             patch.object(service, "_is_setup", True),
-            patch(
-                "faster.core.auth.services.sysmap_get", return_value={"admin": ["admin"], "user": ["user"]}
-            ) as mock_sysmap,
             patch.object(mock_auth_client, "get_jwks_cache_info", return_value={"size": 10}),
         ):
+            # Set tag-role cache directly since it's no longer managed externally
+            service._router_info._tag_role_cache = {"admin": ["admin"], "user": ["user"]}  # type: ignore[reportPrivateUsage, unused-ignore]
+
             result = await service.check_health()
             assert result["status"] == "healthy"
             assert result["auth_enabled"] is True
             assert result["tag_role_cache_size"] == 2
             assert result["jwks_cache"] == {"size": 10}
-            _ = mock_sysmap.assert_awaited_once_with("tag_role")
 
     @pytest.mark.asyncio
     async def test_check_health_with_error(self, mock_settings: Settings, mock_auth_client: MagicMock) -> None:
@@ -207,19 +205,19 @@ class TestAuthServiceHealthCheck:
         with (
             patch.object(service, "_auth_client", mock_auth_client),
             patch.object(service, "_is_setup", True),
-            patch("faster.core.auth.services.sysmap_get", side_effect=Exception("Redis error")),
         ):
             result = await service.check_health()
 
-            assert result["status"] == "error"
-            assert "error" in result
+            # Health check should still be healthy since tag-role mapping errors are handled internally
+            assert result["status"] == "healthy"
 
 
 class TestAuthServiceRouteManagement:
     """Tests for route management functionality."""
 
-    def test_collect_router_info(self, auth_service: AuthService) -> None:
-        """Test collecting router information."""
+    @pytest.mark.asyncio
+    async def test_refresh_data_replaces_collect_router_info(self, auth_service: AuthService) -> None:
+        """Test refresh_data method (replacement for collect_router_info)."""
 
         mock_app = MagicMock()
         mock_route = MagicMock()
@@ -235,34 +233,46 @@ class TestAuthServiceRouteManagement:
 
         mock_app.routes = [mock_route]
 
-        # Patch isinstance to return True for our mock
-        with patch("faster.core.auth.services.isinstance", return_value=True):
-            endpoints = auth_service.collect_router_info(mock_app)
+        # Patch isinstance to return True for our mock and mock sysmap_get
+        with (
+            patch("faster.core.auth.router_info.isinstance", return_value=True),
+            patch("faster.core.auth.router_info.sysmap_get", new_callable=AsyncMock, return_value={}),
+        ):
+            router_items = await auth_service.refresh_data(mock_app)
 
-        assert len(endpoints) == 1
-        assert endpoints[0]["path"] == "/api/test"
-        assert set(endpoints[0]["methods"]) == {"GET", "POST"}
-        assert endpoints[0]["tags"] == ["protected"]
+        # Returns 2 RouterItems (one for each method)
+        assert len(router_items) == 2
 
-    def test_create_route_finder(self, auth_service: AuthService) -> None:
-        """Test creating route finder."""
+        # Check that we have both GET and POST endpoints
+        methods = {item["method"] for item in router_items}
+        assert methods == {"GET", "POST"}
 
-        mock_app = MagicMock()
-        mock_route = MagicMock()
-        mock_route.matches.return_value = (Match.FULL, {"path_params": {}})
-
-        mock_app.routes = [mock_route]
-
-        finder = auth_service.create_route_finder(mock_app)
-
-        assert finder is not None
-        assert callable(finder)
+        # Check common properties
+        for item in router_items:
+            assert item["path"] == "/api/test"
+            assert item["tags"] == ["protected"]
+            assert item["name"] == "test_endpoint"
+            assert item["func_name"] == "test_function"
 
     def test_find_route_success(self, auth_service: AuthService) -> None:
         """Test successful route finding."""
-        mock_finder = MagicMock(return_value={"path": "/api/test", "tags": ["protected"]})
+        mock_router_item: RouterItem = {
+            "method": "GET",
+            "path": "/api/test",
+            "path_template": "/api/test",
+            "name": "test",
+            "func_name": "test_func",
+            "tags": ["protected"],
+            "allowed_roles": set(),
+        }
+        cache_key = "GET /api/test"
+        mock_finder = MagicMock(return_value=cache_key)
 
-        with patch.object(auth_service, "_route_finder", mock_finder):
+        # Patch the RouterInfo's _route_finder and add item to cache
+        with patch.object(auth_service._router_info, "_route_finder", mock_finder):  # type: ignore[reportPrivateUsage, unused-ignore]
+            # Add RouterItem to cache
+            auth_service._router_info._route_cache[cache_key] = mock_router_item  # type: ignore[reportPrivateUsage, unused-ignore]
+
             result = auth_service.find_route("GET", "/api/test")
 
             assert result is not None
@@ -271,7 +281,8 @@ class TestAuthServiceRouteManagement:
 
     def test_find_route_no_finder(self, auth_service: AuthService) -> None:
         """Test route finding when no finder is set."""
-        with patch.object(auth_service, "_route_finder", None):
+        # Patch the RouterInfo's _route_finder instead of AuthService's
+        with patch.object(auth_service._router_info, "_route_finder", None):  # type: ignore[reportPrivateUsage, unused-ignore]
             result = auth_service.find_route("GET", "/api/test")
 
             assert result is None
@@ -280,57 +291,77 @@ class TestAuthServiceRouteManagement:
 class TestAuthServiceTagRoleMapping:
     """Tests for tag-role mapping functionality."""
 
-    def test_set_tag_role_mapping(self, auth_service: AuthService) -> None:
-        """Test setting tag-role mapping."""
-        mapping = {"admin": ["admin"], "user": ["user"]}
-        auth_service.set_tag_role_mapping(mapping)
+    @pytest.mark.asyncio
+    async def test_refresh_data(self, auth_service: AuthService) -> None:
+        """Test refresh_data method."""
+        mock_app = MagicMock()
+        mock_route = MagicMock()
+        mock_route.path = "/api/test"
+        mock_route.methods = frozenset(["GET"])
+        mock_route.tags = ["protected"]
+        mock_route.name = "test_endpoint"
 
-        # Test behavior instead of accessing private attribute
-        result = auth_service.get_tag_role_mapping()
-        assert result == mapping
+        mock_endpoint = MagicMock()
+        mock_endpoint.__name__ = "test_function"
+        mock_route.endpoint = mock_endpoint
 
-    def test_get_tag_role_mapping(self, auth_service: AuthService) -> None:
-        """Test getting tag-role mapping."""
-        mapping = {"admin": ["admin"]}
+        mock_app.routes = [mock_route]
 
-        with patch.object(auth_service, "_tag_role_cache", mapping):
-            result = auth_service.get_tag_role_mapping()
+        with (
+            patch("faster.core.auth.router_info.isinstance", return_value=True),
+            patch("faster.core.auth.router_info.sysmap_get", new_callable=AsyncMock, return_value={}),
+        ):
+            router_items = await auth_service.refresh_data(mock_app)
 
-            assert result == mapping
-            assert result is not mapping  # Should return a copy
+        assert len(router_items) == 1
+        assert router_items[0]["method"] == "GET"
+        assert router_items[0]["path"] == "/api/test"
+        assert router_items[0]["tags"] == ["protected"]
+
+        # Verify that route finder was created as part of refresh_data
+        assert auth_service._router_info._route_finder is not None  # type: ignore[reportPrivateUsage, unused-ignore]
 
     @pytest.mark.asyncio
-    async def test_get_roles_by_tags(self, auth_service: AuthService) -> None:
-        """Test getting roles by tags."""
-        cache = {"admin": ["admin"], "user": ["user"], "editor": ["editor", "admin"]}
+    async def test_get_router_item_via_router_info(self, auth_service: AuthService) -> None:
+        """Test getting router item via RouterInfo instance."""
+        # First refresh data to populate cache
+        mock_app = MagicMock()
+        mock_route = MagicMock()
+        mock_route.path = "/api/test"
+        mock_route.methods = frozenset(["GET"])
+        mock_route.tags = ["test"]
+        mock_route.name = "test_endpoint"
 
-        with patch.object(auth_service, "_tag_role_cache", cache):
-            result = await auth_service.get_roles_by_tags(["admin", "editor"])
+        mock_endpoint = MagicMock()
+        mock_endpoint.__name__ = "test_function"
+        mock_route.endpoint = mock_endpoint
 
-            assert result == {"admin", "editor"}
+        mock_app.routes = [mock_route]
 
-    @pytest.mark.asyncio
-    async def test_get_roles_by_tags_empty(self, auth_service: AuthService) -> None:
-        """Test getting roles by empty tags list."""
-        result = await auth_service.get_roles_by_tags([])
+        with (
+            patch("faster.core.auth.router_info.isinstance", return_value=True),
+            patch("faster.core.auth.router_info.sysmap_get", new_callable=AsyncMock, return_value={}),
+        ):
+            _ = await auth_service.refresh_data(mock_app)
 
-        assert result == set()
+        # Test getting router item via RouterInfo
+        router_info = auth_service.get_router_info()
+        router_item = router_info.get_router_item("GET", "/api/test")
+        assert router_item is not None
+        assert router_item["method"] == "GET"
+        assert router_item["path"] == "/api/test"
 
-    def test_clear_tag_role_cache(self, auth_service: AuthService) -> None:
-        """Test clearing tag-role cache."""
-        with patch.object(auth_service, "_tag_role_cache", {"admin": ["admin"]}):
-            auth_service.clear_tag_role_cache()
+        # Test getting non-existent router item
+        missing_item = router_info.get_router_item("POST", "/api/missing")
+        assert missing_item is None
 
-            # Test behavior instead of accessing private attribute
-            result = auth_service.get_tag_role_mapping()
-            assert result == {}
+    def test_get_router_info(self, auth_service: AuthService) -> None:
+        """Test get_router_info method."""
+        router_info = auth_service.get_router_info()
 
-    def test_is_tag_role_cache_initialized(self, auth_service: AuthService) -> None:
-        """Test checking if tag-role cache is initialized."""
-        assert auth_service.is_tag_role_cache_initialized() is False
-
-        with patch.object(auth_service, "_tag_role_cache", {"admin": ["admin"]}):
-            assert auth_service.is_tag_role_cache_initialized() is True
+        # Should return the RouterInfo instance
+        assert router_info is not None
+        assert router_info == auth_service._router_info  # type: ignore[reportPrivateUsage, unused-ignore]
 
 
 class TestAuthServiceUserManagement:
@@ -575,35 +606,56 @@ class TestAuthServiceAccessControl:
     @pytest.mark.asyncio
     async def test_check_access_granted(self, auth_service: AuthService) -> None:
         """Test access granted."""
-        with (
-            patch.object(auth_service, "get_roles", return_value=["admin"]),
-            patch.object(auth_service, "get_roles_by_tags", return_value={"admin"}),
-        ):
-            result = await auth_service.check_access(TEST_USER_ID, ["admin-tag"])
+        user_roles: set[str] = {"admin"}
+        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin"}):  # type: ignore[reportPrivateUsage, unused-ignore]
+            result = await auth_service.check_access(user_roles, ["admin-tag"])
 
             assert result is True
 
     @pytest.mark.asyncio
     async def test_check_access_denied_no_user_roles(self, auth_service: AuthService) -> None:
         """Test access denied when user has no roles."""
-        with (
-            patch.object(auth_service, "get_roles", return_value=[]),
-            patch.object(auth_service, "get_roles_by_tags", return_value={"admin"}),
-        ):
-            result = await auth_service.check_access(TEST_USER_ID, ["admin-tag"])
+        user_roles: set[str] = set()  # Empty set - no roles
+        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin"}):  # type: ignore[reportPrivateUsage, unused-ignore]
+            result = await auth_service.check_access(user_roles, ["admin-tag"])
 
             assert result is False
 
     @pytest.mark.asyncio
     async def test_check_access_denied_no_required_roles(self, auth_service: AuthService) -> None:
         """Test access denied when no required roles."""
-        with (
-            patch.object(auth_service, "get_roles", return_value=["user"]),
-            patch.object(auth_service, "get_roles_by_tags", return_value=set()),
-        ):
-            result = await auth_service.check_access(TEST_USER_ID, ["public-tag"])
+        user_roles: set[str] = {"user"}
+        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value=set()):  # type: ignore[reportPrivateUsage, unused-ignore]
+            result = await auth_service.check_access(user_roles, ["public-tag"])
 
             assert result is False
+
+    @pytest.mark.asyncio
+    async def test_check_access_granted_multiple_roles(self, auth_service: AuthService) -> None:
+        """Test access granted when user has multiple roles and one matches."""
+        user_roles: set[str] = {"user", "admin", "moderator"}
+        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin"}):  # type: ignore[reportPrivateUsage, unused-ignore]
+            result = await auth_service.check_access(user_roles, ["admin-tag"])
+
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_check_access_denied_role_mismatch(self, auth_service: AuthService) -> None:
+        """Test access denied when user roles don't match required roles."""
+        user_roles: set[str] = {"user", "guest"}
+        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin", "moderator"}):  # type: ignore[reportPrivateUsage, unused-ignore]
+            result = await auth_service.check_access(user_roles, ["admin-tag"])
+
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_check_access_granted_partial_match(self, auth_service: AuthService) -> None:
+        """Test access granted when user has one of multiple required roles."""
+        user_roles: set[str] = {"user"}
+        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin", "user"}):  # type: ignore[reportPrivateUsage, unused-ignore]
+            result = await auth_service.check_access(user_roles, ["mixed-tag"])
+
+            assert result is True
 
 
 class TestAuthServiceLoginLogout:

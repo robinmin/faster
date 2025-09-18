@@ -7,7 +7,7 @@ import pytest
 from starlette.datastructures import Headers
 
 from faster.core.auth.middlewares import AuthMiddleware, get_current_user, has_role
-from faster.core.auth.models import UserProfileData
+from faster.core.auth.models import RouterItem, UserProfileData
 from faster.core.models import AppResponse
 
 # Test constants
@@ -125,9 +125,18 @@ class TestAuthMiddlewarePathChecking:
             return JSONResponse({"status": "ok"})
 
         # Mock the auth service methods that might be called
+        mock_router_item: RouterItem = {
+            "method": "GET",
+            "path": "/docs",
+            "path_template": "/docs",
+            "name": "docs",
+            "func_name": "docs_func",
+            "tags": ["public"],
+            "allowed_roles": set(),
+        }
         with (
             patch("faster.core.auth.middlewares.blacklist_exists", new_callable=AsyncMock, return_value=False),
-            patch.object(mock_auth_service, "find_route", return_value={"path_template": "/docs", "tags": ["public"]}),
+            patch.object(mock_auth_service, "find_route", return_value=mock_router_item),
         ):
             # Test through dispatch method which internally calls _check_allowed_path
             response = await middleware.dispatch(mock_request, call_next)
@@ -148,13 +157,18 @@ class TestAuthMiddlewarePathChecking:
             return JSONResponse({"status": "ok"})
 
         # Mock the auth service methods that might be called
+        mock_router_item: RouterItem = {
+            "method": "GET",
+            "path": "/api/public/users",
+            "path_template": "/api/public/{path:path}",
+            "name": "public_api",
+            "func_name": "public_func",
+            "tags": ["public"],
+            "allowed_roles": set(),
+        }
         with (
             patch("faster.core.auth.middlewares.blacklist_exists", new_callable=AsyncMock, return_value=False),
-            patch.object(
-                mock_auth_service,
-                "find_route",
-                return_value={"path_template": "/api/public/{path:path}", "tags": ["public"]},
-            ),
+            patch.object(mock_auth_service, "find_route", return_value=mock_router_item),
         ):
             # Test through dispatch method
             response = await middleware.dispatch(mock_request, call_next)
@@ -529,9 +543,16 @@ class TestAuthMiddlewarePublicEndpoints:
         self, middleware: AuthMiddleware, mock_auth_service: MagicMock, mock_request: MagicMock
     ) -> None:
         """Test that public endpoints bypass authentication."""
-        with patch.object(
-            mock_auth_service, "find_route", return_value={"path_template": "/api/public", "tags": ["public"]}
-        ):
+        mock_router_item: RouterItem = {
+            "method": "GET",
+            "path": "/api/public",
+            "path_template": "/api/public",
+            "name": "public_endpoint",
+            "func_name": "public_func",
+            "tags": ["public"],
+            "allowed_roles": set(),
+        }
+        with patch.object(mock_auth_service, "find_route", return_value=mock_router_item):
 
             async def call_next(request: Request) -> JSONResponse:
                 return JSONResponse({"status": "ok"})
