@@ -171,9 +171,9 @@ class AuthService(BasePlugin):
         """
         return self._router_info.find_route(method, path)
 
-    async def check_access(self, user_roles: set[str], tags: list[str]) -> bool:
+    async def check_access(self, user_roles: set[str], allowed_roles: set[str]) -> bool:
         """Check if user has access to a given list of tags."""
-        return await self._router_info.check_access(user_roles, tags)
+        return await self._router_info.check_access(user_roles, allowed_roles)
 
     async def process_user_login(self, token: str | None, user_profile: UserProfileData) -> User:
         """
