@@ -607,55 +607,55 @@ class TestAuthServiceAccessControl:
     async def test_check_access_granted(self, auth_service: AuthService) -> None:
         """Test access granted."""
         user_roles: set[str] = {"admin"}
-        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin"}):  # type: ignore[reportPrivateUsage, unused-ignore]
-            result = await auth_service.check_access(user_roles, ["admin-tag"])
+        allowed_roles: set[str] = {"admin"}
+        result = await auth_service.check_access(user_roles, allowed_roles)
 
-            assert result is True
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_check_access_denied_no_user_roles(self, auth_service: AuthService) -> None:
         """Test access denied when user has no roles."""
         user_roles: set[str] = set()  # Empty set - no roles
-        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin"}):  # type: ignore[reportPrivateUsage, unused-ignore]
-            result = await auth_service.check_access(user_roles, ["admin-tag"])
+        allowed_roles: set[str] = {"admin"}
+        result = await auth_service.check_access(user_roles, allowed_roles)
 
-            assert result is False
+        assert result is False
 
     @pytest.mark.asyncio
     async def test_check_access_denied_no_required_roles(self, auth_service: AuthService) -> None:
         """Test access denied when no required roles."""
         user_roles: set[str] = {"user"}
-        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value=set()):  # type: ignore[reportPrivateUsage, unused-ignore]
-            result = await auth_service.check_access(user_roles, ["public-tag"])
+        allowed_roles: set[str] = set()  # Empty set - no required roles
+        result = await auth_service.check_access(user_roles, allowed_roles)
 
-            assert result is False
+        assert result is False
 
     @pytest.mark.asyncio
     async def test_check_access_granted_multiple_roles(self, auth_service: AuthService) -> None:
         """Test access granted when user has multiple roles and one matches."""
         user_roles: set[str] = {"user", "admin", "moderator"}
-        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin"}):  # type: ignore[reportPrivateUsage, unused-ignore]
-            result = await auth_service.check_access(user_roles, ["admin-tag"])
+        allowed_roles: set[str] = {"admin"}
+        result = await auth_service.check_access(user_roles, allowed_roles)
 
-            assert result is True
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_check_access_denied_role_mismatch(self, auth_service: AuthService) -> None:
         """Test access denied when user roles don't match required roles."""
         user_roles: set[str] = {"user", "guest"}
-        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin", "moderator"}):  # type: ignore[reportPrivateUsage, unused-ignore]
-            result = await auth_service.check_access(user_roles, ["admin-tag"])
+        allowed_roles: set[str] = {"admin", "moderator"}
+        result = await auth_service.check_access(user_roles, allowed_roles)
 
-            assert result is False
+        assert result is False
 
     @pytest.mark.asyncio
     async def test_check_access_granted_partial_match(self, auth_service: AuthService) -> None:
         """Test access granted when user has one of multiple required roles."""
         user_roles: set[str] = {"user"}
-        with patch.object(auth_service._router_info, "get_roles_by_tags", return_value={"admin", "user"}):  # type: ignore[reportPrivateUsage, unused-ignore]
-            result = await auth_service.check_access(user_roles, ["mixed-tag"])
+        allowed_roles: set[str] = {"admin", "user"}
+        result = await auth_service.check_access(user_roles, allowed_roles)
 
-            assert result is True
+        assert result is True
 
 
 class TestAuthServiceLoginLogout:
