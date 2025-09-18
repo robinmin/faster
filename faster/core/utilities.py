@@ -95,10 +95,6 @@ def is_api_call(request: Request) -> bool:
     return (accept_header and "application/json" in accept_header) or False
 
 
-
-
-
-
 async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     """
     Check the health of all resources using the plugin manager.
@@ -125,7 +121,12 @@ async def check_all_resources(app: FastAPI, settings: Settings) -> None:
     auth_health = plugin_health.get("auth", {})
 
     # Refresh latest status info
-    app.state.latest_status_info = {"db": db_health, "redis": redis_health, "sentry": sentry_health, "auth": auth_health}
+    app.state.latest_status_info = {
+        "db": db_health,
+        "redis": redis_health,
+        "sentry": sentry_health,
+        "auth": auth_health,
+    }
 
 
 ###############################################################################
