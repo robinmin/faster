@@ -922,3 +922,9 @@ If you have any optimizing options, you also can tell me.
 - replace RouterInfo.clear_tag_role_cache and RouterInfo.clear_route_cache with new added RouterInfo.reset_cache
 - Merge AuthService.create_route_finder's function into AuthService.refresh_data, and remove unnecessary AuthService.create_route_finder.
 - Adjust relevant existing unit tests, and make sure both `make lint` and `make test` all pass
+
+
+#### Enhancement padding
+- I've adjusted method's signature to `async def check_access(self, user_roles: set[str], allowed_roles: set[str]) -> bool` for both class AuthService and RouterInfo. Help to adjust the places downstream of the code and it's unit tests.
+- Due to above change, we no longer need RouterInfo.get_roles_by_tags, as it's the only place to call this method. Remove itself and its unit tests.
+- make sure both `make lint` and `make test` all pass
