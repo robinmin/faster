@@ -2994,7 +2994,7 @@
              this.deactivateLoading = true;
 
              try {
-               await apiService.call("/auth/account/deactivate", {
+               await apiService.call("/auth/deactivate", {
                  method: "POST"
                });
 
@@ -3089,7 +3089,7 @@
              this.userIdError = "";
 
              try {
-               await apiService.call(`/auth/admin/users/${this.targetUserId}/ban`, {
+               await apiService.call(`/auth/users/${this.targetUserId}/ban`, {
                  method: "POST",
                  data: { reason: "Banned via admin interface" }
                });
@@ -3120,7 +3120,7 @@
              this.userIdError = "";
 
              try {
-               await apiService.call(`/auth/admin/users/${this.targetUserId}/unban`, {
+               await apiService.call(`/auth/users/${this.targetUserId}/unban`, {
                  method: "POST"
                });
 
@@ -3154,7 +3154,7 @@
              this.adjustRolesLoading = true;
 
              try {
-               await apiService.call(`/auth/admin/users/${this.targetUserId}/roles/adjust`, {
+               await apiService.call(`/auth/users/${this.targetUserId}/roles/adjust`, {
                  method: "POST",
                  data: { roles: this.selectedRoles }
                });
@@ -3185,7 +3185,7 @@
              this.userIdError = "";
 
              try {
-               const data = await apiService.call(`/auth/admin/users/${this.targetUserId}/basic`);
+               const data = await apiService.call(`/auth/users/${this.targetUserId}/basic`);
 
                this.userInfo = {
                  id: data.data?.id || this.targetUserId,
