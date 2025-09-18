@@ -860,3 +860,8 @@ For the following critical user actions, add `log_event` to store user behavior 
 - /users/{target_user_id}/basic
 
 After you added these change, make sure `make lint` and `make test` all pass
+
+### Adjust page 'User Management'
+- In file @faster/resources/dev-admin.html, change button 'View Basic Info' to a icon button. And put this icon button on the right side of the input field 'Target User ID/Email' wuthin the sameline. You'd better choose a proper icon to represent this search user action.
+
+- Implement this request, and use playwright to verify the frontend via http://127.0.0.1:8000/dev/admin(use Google OAuth user). In case of any issue or web console errors, fix them all.
