@@ -865,3 +865,60 @@ After you added these change, make sure `make lint` and `make test` all pass
 - In file @faster/resources/dev-admin.html, change button 'View Basic Info' to a icon button. And put this icon button on the right side of the input field 'Target User ID/Email' wuthin the sameline. You'd better choose a proper icon to represent this search user action.
 
 - Implement this request, and use playwright to verify the frontend via http://127.0.0.1:8000/dev/admin(use Google OAuth user). In case of any issue or web console errors, fix them all.
+
+
+## Implement class RouterInfo and refactory to use it
+
+### Background & current status
+To implement my dynamic RBAC, I need to prepare data to find out for a specified request URL which roles we allow them to access. We stored the tag-role mapping in the database and redis already, then the last work is to find out whitch request path is using for the current request. We implement this check in @faster/core/auth/middlewares.py 's dispatch method. For a better performance, we cached the mapping.
+
+So far, we already get everythong working very well. You can refer to the following methods in @faster/core/auth/services.py for the details:
+- collect_router_info
+- create_route_finder
+- find_route
+- log_router_info
+- set_tag_role_mapping
+- get_tag_role_mapping
+- get_roles_by_tags
+- clear_tag_role_cache
+- is_tag_role_cache_initialized
+
+The real issue is class AuthService already becomes very huge, so we need to do some refactory work to move all these relevants things out of class AuthService.
+
+### Goal
+To implement this rafactory work, you need to split into four steps:
+- 1, Based on current solution and your best practice, implement class RouterInfo in @faster/core/auth/services.py
+- 2, Pair with me to do code review. After complete the code review, then you can use this new added class to replace current solution.
+- 3, Generate seperate unit tests for class RouterInfo. And adjust relevant existing unit tests.
+- 4, Make sure both `make lint` and `make test` all pass
+
+#### A few things need to be enhanced:
+- Merge `set_debug_mode` with `collect_router_info` to reduce methods number -- add an extra parameter `is_debug` on `collect_router_info` 's parameter list.
+- Change `self._route_cache` 's type frrom `dict[str, dict[str, Any]]` to `dict[str, RouterItem]`. RouterItem represent all inforrmation items for a particular request. and the key of the dict is euqal to the value of `method` + ` ` + `path_template`.
+- Rename methods:
+  - `collect_router_info` -> `refresh_data`, need to use cached `tag_role_mapping` to figure out the roles allow to access by tags.
+- Remove method `is_tag_role_cache_initialized`, use the raw logic if necessary
+- Remove method `get_cache_stats`
+
+If you have any optimizing options, you also can tell me.
+
+
+#### Additional Enhancements:
+- As you marked in docstring, try to comment out AuthService.collect_router_info and AuthService.log_router_info, and replace with AuthService.refresh_data in the places call to both of them.
+- To avoid the unnecessary complexity, try to remove these one-line proxy call methods in AuthService with `self._router_info`, especially called within AuthService itself.
+- For RouterInfo.create_route_finder._find_route's return type, replace `dict[str, Any] | None` with `RouterItem | None`
+- try to evaluate whether we need to keep RouterItem.path_params or not. If yes, tell me why; If not, remove it and all relevant places.
+
+
+#### The 3rd enhancement
+- Enhance RouterInfo.refresh_data: use `all_tag_data = await sysmap_get(str(MapCategory.TAG_ROLE))` to update tag_role mapping before the loop, instead of using cached `self._tag_role_cache`. This will help to reduce the dependency on external. After this change, we no longer need to refresh data outside of this class, for example in AuthService.check_health or refresh_status in file @faster/core/bootstrap.py.
+- try to comment out RouterInfo.set_tag_role_mapping and RouterInfo.get_tag_role_mapping, because we will manage the cache internally. Adjust the places  downstream of the code.
+- For RouterInfo.create_route_finder._find_route, adjust its return value' type to `str | None`, it will return the cache key to search from the cached RouterItem dict(like `cache_key = f"{method!s} {route.path}"`). Hope this can leverage both of their strength for lru_cache feature and the cached dict for better performance. (In case you have any better idea, we can discuss)
+- 3, Adjust relevant existing unit tests, and make sure both `make lint` and `make test` all pass
+
+#### Cleanup work
+- remove AuthService.is_tag_role_cache_initialized -- define a simple proxy and only used in unit tests.
+- remove AuthService.clear_tag_role_cache -- define a simple proxy and only used in unit tests.
+- replace RouterInfo.clear_tag_role_cache and RouterInfo.clear_route_cache with new added RouterInfo.reset_cache
+- Merge AuthService.create_route_finder's function into AuthService.refresh_data, and remove unnecessary AuthService.create_route_finder.
+- Adjust relevant existing unit tests, and make sure both `make lint` and `make test` all pass
