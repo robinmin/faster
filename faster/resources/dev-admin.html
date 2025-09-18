@@ -779,42 +779,45 @@
                       User Lookup
                     </h2>
 
-                    <!-- User ID/Email Input -->
+                    <!-- User ID/Email Input with Search Button -->
                     <div class="form-control">
                       <label class="label">
                         <span class="label-text font-semibold">Target User ID/Email</span>
                       </label>
-                      <input
-                        x-model="targetUserId"
-                        @input="validateUserInput()"
-                        @keydown.enter="viewUserBasicInfo()"
-                        type="text"
-                        placeholder="Enter user ID (UUID format) or email address"
-                        class="input input-bordered"
-                        :class="{ 'input-error': userIdError }"
-                        title="Please enter a valid UUID format or email address"
-                        autocomplete="off"
-                        spellcheck="false"
-                      />
+                      <div class="relative">
+                        <input
+                          x-model="targetUserId"
+                          @input="validateUserInput()"
+                          @keydown.enter="viewUserBasicInfo()"
+                          type="text"
+                          placeholder="Enter user ID (UUID format) or email address"
+                          class="input input-bordered w-full pr-12"
+                          :class="{ 'input-error': userIdError }"
+                          title="Please enter a valid UUID format or email address"
+                          autocomplete="off"
+                          spellcheck="false"
+                        />
+                        <!-- Search Icon Button -->
+                        <button
+                          @click="viewUserBasicInfo()"
+                          class="absolute right-2 top-1/2 transform -translate-y-1/2 btn btn-ghost btn-sm btn-circle"
+                          :class="{ 'loading': viewBasicInfoLoading }"
+                          :disabled="viewBasicInfoLoading || !targetUserId.trim()"
+                          title="Search user information"
+                        >
+                          <i
+                            data-lucide="search"
+                            class="w-4 h-4"
+                            x-show="!viewBasicInfoLoading"
+                          ></i>
+                        </button>
+                      </div>
                       <div class="label" x-show="userIdError">
                         <span class="label-text-alt text-error" x-text="userIdError"></span>
                       </div>
                       <div class="label" x-show="!userIdError && targetUserId.length > 0">
                         <span class="label-text-alt text-success">✓ Valid UUID format or email address</span>
                       </div>
-                    </div>
-
-                    <!-- View Basic Info Button -->
-                    <div class="form-control mt-4">
-                      <button
-                        @click="viewUserBasicInfo()"
-                        class="btn btn-outline"
-                        :class="{ 'loading': viewBasicInfoLoading }"
-                        :disabled="viewBasicInfoLoading || !targetUserId.trim()"
-                      >
-                        <i data-lucide="eye" class="w-4 h-4"></i>
-                        View Basic Info
-                      </button>
                     </div>
 
                     <!-- Action Buttons (Only shown after user info is loaded) -->
@@ -2142,7 +2145,7 @@
             // Cache available roles if provided (for developer users)
             if (response?.data?.available_roles) {
               store.availableRoles = response.data.available_roles;
-              console.log("Cached available roles for developer:", response.data.available_roles);
+              // console.log("Cached available roles for developer:", response.data.available_roles);
             }
           } catch (error) {
             console.error("Failed to notify backend about sign in:", error);
@@ -3239,7 +3242,7 @@
            getAvailableRoles() {
              const availableRoles = Alpine.store("app").availableRoles;
              // Fallback to common roles if no cached roles available
-             return availableRoles.length > 0 ? availableRoles : ["admin", "moderator", "user", "developer"];
+             return availableRoles.length > 0 ? availableRoles : [];
            },
 
 
