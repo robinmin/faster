@@ -69,9 +69,13 @@ def test_user_management_page_structure(html_content: str) -> None:
 def test_user_management_buttons(html_content: str) -> None:
     """Test that user management action buttons are present."""
     # Check for action buttons (updated to reflect new UI)
-    buttons = ["Ban User", "Unban User", "Adjust Roles", "View Basic Info"]
+    buttons = ["Ban User", "Unban User", "Adjust Roles"]
     for button_text in buttons:
         assert button_text in html_content, f"Button '{button_text}' not found"
+
+    # Check for the new search icon button (replaced "View Basic Info")
+    assert 'title="Search user information"' in html_content, "Search icon button not found"
+    assert 'data-lucide="search"' in html_content, "Search icon not found"
 
 
 def test_modals_structure(html_content: str) -> None:
