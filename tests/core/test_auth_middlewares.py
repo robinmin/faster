@@ -246,8 +246,20 @@ class TestAuthMiddlewareAuthentication:
         mock_extract_token.return_value = TEST_TOKEN
         mock_blacklist_exists.return_value = False
 
+        # Mock RouterItem for find_route
+        mock_router_item: RouterItem = {
+            "method": "GET",
+            "path": "/api/test",
+            "path_template": "/api/test",
+            "name": "test_endpoint",
+            "func_name": "test_func",
+            "tags": ["protected"],
+            "allowed_roles": {"admin", "user"},
+        }
+
         # Mock auth service methods
         with (
+            patch.object(mock_auth_service, "find_route", return_value=mock_router_item),
             patch.object(
                 mock_auth_service, "get_user_id_from_token", new_callable=AsyncMock, return_value=TEST_USER_ID
             ),
@@ -345,7 +357,19 @@ class TestAuthMiddlewareAuthentication:
         mock_extract_token.return_value = TEST_TOKEN
         mock_blacklist_exists.return_value = False
 
+        # Mock RouterItem for find_route
+        mock_router_item: RouterItem = {
+            "method": "GET",
+            "path": "/api/test",
+            "path_template": "/api/test",
+            "name": "test_endpoint",
+            "func_name": "test_func",
+            "tags": ["protected"],
+            "allowed_roles": {"admin"},  # User doesn't have admin role
+        }
+
         with (
+            patch.object(mock_auth_service, "find_route", return_value=mock_router_item),
             patch.object(
                 mock_auth_service, "get_user_id_from_token", new_callable=AsyncMock, return_value=TEST_USER_ID
             ),
@@ -377,9 +401,21 @@ class TestAuthMiddlewareUserProfileRetrieval:
         """Test successful user profile retrieval through dispatch."""
         mock_request.url.path = "/api/test"
 
+        # Mock RouterItem for find_route
+        mock_router_item: RouterItem = {
+            "method": "GET",
+            "path": "/api/test",
+            "path_template": "/api/test",
+            "name": "test_endpoint",
+            "func_name": "test_func",
+            "tags": ["protected"],
+            "allowed_roles": {"admin"},
+        }
+
         with (
             patch("faster.core.auth.middlewares.extract_bearer_token_from_request", return_value=TEST_TOKEN),
             patch("faster.core.auth.middlewares.blacklist_exists", return_value=False),
+            patch.object(mock_auth_service, "find_route", return_value=mock_router_item),
             patch.object(
                 mock_auth_service, "get_user_id_from_token", new_callable=AsyncMock, return_value=TEST_USER_ID
             ),
@@ -455,9 +491,21 @@ class TestAuthMiddlewareStateManagement:
         """Test setting authenticated request state through dispatch."""
         mock_request.url.path = "/api/test"
 
+        # Mock RouterItem for find_route
+        mock_router_item: RouterItem = {
+            "method": "GET",
+            "path": "/api/test",
+            "path_template": "/api/test",
+            "name": "test_endpoint",
+            "func_name": "test_func",
+            "tags": ["protected"],
+            "allowed_roles": {"admin", "user"},
+        }
+
         with (
             patch("faster.core.auth.middlewares.extract_bearer_token_from_request", return_value=TEST_TOKEN),
             patch("faster.core.auth.middlewares.blacklist_exists", return_value=False),
+            patch.object(mock_auth_service, "find_route", return_value=mock_router_item),
             patch.object(
                 mock_auth_service, "get_user_id_from_token", new_callable=AsyncMock, return_value=TEST_USER_ID
             ),
