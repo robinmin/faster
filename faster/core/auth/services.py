@@ -1,10 +1,6 @@
-from collections.abc import Callable
-from functools import lru_cache
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
-from starlette.routing import Match
 
 from ..config import Settings
 from ..database import DBSession, get_transaction
@@ -12,18 +8,17 @@ from ..exceptions import DBError
 from ..logger import get_logger
 from ..plugins import BasePlugin
 from ..redisex import (
-    MapCategory,
     blacklist_add,
     get_user_profile,
     set_user_profile,
-    sysmap_get,
     user2role_get,
     user2role_set,
 )
 from ..repositories import AppRepository
 from .auth_proxy import AuthProxy
-from .models import AuthServiceConfig, UserProfileData
+from .models import AuthServiceConfig, RouterItem, UserProfileData
 from .repositories import AuthRepository
+from .router_info import RouterInfo
 from .schemas import User
 
 logger = get_logger(__name__)
@@ -35,10 +30,8 @@ class AuthService(BasePlugin):
         self._auth_client: AuthProxy | None = None
         self._repository: AuthRepository | None = None
 
-        # In-memory caches for performance
-        self._tag_role_cache: dict[str, list[str]] = {}
-        self._route_cache: dict[str, dict[str, Any]] = {}
-        self._route_finder: Callable[[str, str], dict[str, Any] | None] | None = None
+        # Router information management
+        self._router_info = RouterInfo()
 
         # Configuration storage - only cache needed settings
         self._config: AuthServiceConfig | None = None
@@ -106,10 +99,8 @@ class AuthService(BasePlugin):
     async def teardown(self) -> bool:
         """Clean up AuthService resources."""
         try:
-            # Clear caches
-            self._tag_role_cache.clear()
-            self._route_cache.clear()
-            self._route_finder = None
+            # Clear router info caches
+            self._router_info.reset_cache()
 
             # Clear auth client cache if exists
             if self._auth_client:
@@ -128,27 +119,20 @@ class AuthService(BasePlugin):
         if not self._is_setup:
             return {"status": "not_setup", "auth_enabled": False}
 
+        # Get current cache sizes from router info
+        cache_info = self._router_info.get_cache_info()
         health_status = {
             "status": "healthy",
             "auth_enabled": self._config["auth_enabled"] if self._config else False,
-            "tag_role_cache_size": len(self._tag_role_cache),
-            "route_cache_size": len(self._route_cache),
+            "tag_role_cache_size": cache_info["tag_role_cache_size"],
+            "route_cache_size": cache_info["route_cache_size"],
         }
 
         try:
-            # Refresh tag-role mappings from Redis
-            if self._config and self._config["auth_enabled"]:
-                all_tag_data = await sysmap_get(str(MapCategory.TAG_ROLE))
-                if all_tag_data:
-                    self._tag_role_cache = all_tag_data
-                    logger.debug(f"Refreshed tag-role cache with {len(self._tag_role_cache)} entries")
-                    # Update the cache size in health status after refresh
-                    health_status["tag_role_cache_size"] = len(self._tag_role_cache)
-
-                # Get JWKS cache info if auth client exists
-                if self._auth_client:
-                    jwks_info = self._auth_client.get_jwks_cache_info()
-                    health_status["jwks_cache"] = jwks_info
+            # Get JWKS cache info if auth client exists
+            if self._auth_client:
+                jwks_info = self._auth_client.get_jwks_cache_info()
+                health_status["jwks_cache"] = jwks_info
 
         except Exception as e:
             logger.error(f"Error during AuthService health check: {e}")
@@ -157,123 +141,39 @@ class AuthService(BasePlugin):
 
         return health_status
 
-    def collect_router_info(self, app: FastAPI) -> list[dict[str, Any]]:
+    ###########################################################################
+    # Proxy to enable external can call some methods defined in _router_info
+    ###########################################################################
+    def get_router_info(self) -> "RouterInfo":  ## so far, only used for testing
         """
-        Collect all router information from FastAPI app.
-        Combines functionality from get_all_endpoints and route finding.
+        Get the RouterInfo instance for advanced usage.
+
+        Returns:
+            RouterInfo instance used by this AuthService
         """
-        endpoints: list[dict[str, Any]] = []
+        return self._router_info
 
-        for route in app.routes:
-            if isinstance(route, APIRoute):
-                endpoint_info = {
-                    "path": route.path,
-                    "methods": list(route.methods),
-                    "tags": route.tags or [],
-                    "name": route.name,
-                    "endpoint_func": route.endpoint.__name__,
-                    "path_template": route.path,
-                }
-                endpoints.append(endpoint_info)
-
-        return endpoints
-
-    def create_route_finder(self, app: FastAPI) -> Callable[[str, str], dict[str, Any] | None]:
+    async def refresh_data(self, app: FastAPI, is_debug: bool = False) -> list[RouterItem]:
         """
-        Create a cached route finder function for fast route matching.
-        Replaces the make_route_finder functionality from middlewares.
+        Refresh router data from FastAPI app and compute allowed roles for each route.
+        Also creates the route finder for fast route matching.
+        Delegates to RouterInfo for implementation.
         """
+        router_items = await self._router_info.refresh_data(app, is_debug)
+        # Create route finder as part of refresh process
+        _ = self._router_info.create_route_finder(app)
+        return router_items
 
-        @lru_cache(maxsize=4096)
-        def _find_route(method: str, path: str) -> dict[str, Any] | None:
-            scope = {"type": "http", "method": method, "path": path, "root_path": getattr(app, "root_path", "")}
-            for route in app.routes:
-                try:
-                    match, child_scope = route.matches(scope)
-                except Exception:
-                    continue
-                if match is Match.FULL:
-                    return {
-                        "method": method,
-                        "path": path,
-                        "path_template": getattr(route, "path", None),
-                        "tags": getattr(route, "tags", []),
-                        "path_params": child_scope.get("path_params", {}) if child_scope else {},
-                    }
-            return None
-
-        self._route_finder = _find_route
-        return _find_route
-
-    def find_route(self, method: str, path: str) -> dict[str, Any] | None:
+    def find_route(self, method: str, path: str) -> RouterItem | None:
         """
         Find route information for given method and path using cached finder.
+        Delegates to RouterInfo for implementation.
         """
-        if not self._route_finder:
-            logger.error("Route finder not initialized. Call create_route_finder first.")
-            return None
-        return self._route_finder(method, path)
+        return self._router_info.find_route(method, path)
 
-    def log_router_info(self, endpoints: list[dict[str, Any]]) -> None:
-        """
-        Log router information for debugging purposes.
-        """
-        if self._config and self._config["is_debug"]:
-            logger.debug("=========================================================")
-            logger.debug("All available URLs:")
-            for endpoint in endpoints:
-                logger.debug(
-                    f"  [{'/'.join(endpoint['methods'])}] {endpoint['path']} - {endpoint['name']} \t# {', '.join(endpoint['tags'])} "
-                )
-            logger.debug("=========================================================")
-
-    def set_tag_role_mapping(self, tag_role_mapping: dict[str, list[str]]) -> None:
-        """
-        Set tag-role mapping from external source.
-        Allows injection of mappings from outside the auth module.
-        """
-        self._tag_role_cache.update(tag_role_mapping)
-        logger.debug(f"Updated tag-role cache with {len(tag_role_mapping)} mappings")
-
-    def get_tag_role_mapping(self) -> dict[str, list[str]]:
-        """
-        Get current tag-role mapping.
-        """
-        return self._tag_role_cache.copy()
-
-    async def get_roles_by_tags(self, tags: list[str]) -> set[str]:
-        """
-        Return set of roles for a given list of tags.
-        Uses in-memory cache for better performance.
-        """
-        if not tags:
-            return set()
-
-        required: set[str] = set()
-        for t in tags:
-            if t in self._tag_role_cache:
-                roles = self._tag_role_cache[t]
-                if isinstance(roles, list):
-                    r: list[str] = [str(role) for role in roles]
-                else:
-                    r = [str(roles)]
-                logger.debug(f"[RBAC] - tag: {t}, roles: {r}")
-                required |= set(r)
-            else:
-                logger.debug(f"[RBAC] - tag: {t}, roles: []")
-        return required
-
-    def clear_tag_role_cache(self) -> None:
-        """
-        Clear the cached tag-role mappings.
-        """
-        self._tag_role_cache.clear()
-
-    def is_tag_role_cache_initialized(self) -> bool:
-        """
-        Check if the tag-role cache has data.
-        """
-        return len(self._tag_role_cache) > 0
+    async def check_access(self, user_roles: set[str], tags: list[str]) -> bool:
+        """Check if user has access to a given list of tags."""
+        return await self._router_info.check_access(user_roles, tags)
 
     async def process_user_login(self, token: str | None, user_profile: UserProfileData) -> User:
         """
@@ -312,21 +212,6 @@ class AuthService(BasePlugin):
         except Exception as e:
             logger.error(f"Failed to process logout for user {user_id}: {e}")
             raise
-
-    async def check_access(self, user_id: str, tags: list[str]) -> bool:
-        """Check if user has access to a given list of tags."""
-        user_roles = set(await self.get_roles(user_id))
-        required_roles = await self.get_roles_by_tags(tags)
-
-        # If endpoint has required roles, ensure intersection exists
-        if required_roles:
-            if user_roles.isdisjoint(required_roles):
-                logger.info(f"[RBAC] - denied access(0) : {user_id} / {user_roles} for {tags} / {required_roles}")
-                return False
-            return True
-
-        logger.info(f"[RBAC] - denied access(1) : {user_id} / {user_roles} for {tags} / {required_roles}")
-        return False  # no required roles → deny access
 
     async def _save_user_profile_to_database(self, user_profile: UserProfileData) -> User:
         """Save complete user profile to database."""
