@@ -151,7 +151,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             await self._set_authenticated_state(request, user_profile)
 
             # 10. RBAC check
-            if not await self._auth_service.check_access(request.state.roles, route_info["tags"]):
+            if not await self._auth_service.check_access(request.state.roles, route_info["allowed_roles"]):
                 raise AuthError("Permission denied by RBAC", status.HTTP_403_FORBIDDEN)
             logger.debug(f"[auth] => pass on {current_method} {current_path} for {user_id}")
 
