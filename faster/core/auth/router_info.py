@@ -173,45 +173,16 @@ class RouterInfo:
             )
         logger.debug("=========================================================")
 
-    async def get_roles_by_tags(self, tags: list[str]) -> set[str]:
-        """
-        Return set of roles for a given list of tags.
-
-        Args:
-            tags: List of endpoint tags
-
-        Returns:
-            Set of roles that have access to the given tags
-        """
-        if not tags:
-            return set()
-
-        required: set[str] = set()
-        for t in tags:
-            if t in self._tag_role_cache:
-                roles = self._tag_role_cache[t]
-                if isinstance(roles, list):
-                    r: list[str] = [str(role) for role in roles]
-                else:
-                    r = [str(roles)]
-                logger.debug(f"[RBAC] - tag: {t}, roles: {r}")
-                required |= set(r)
-            else:
-                logger.debug(f"[RBAC] - tag: {t}, roles: []")
-        return required
-
-    async def check_access(self, user_roles: set[str], tags: list[str]) -> bool:
+    async def check_access(self, user_roles: set[str], allowed_roles: set[str]) -> bool:
         """Check if user has access to a given list of tags."""
-        required_roles = await self.get_roles_by_tags(tags)
-
         # If endpoint has required roles, ensure intersection exists
-        if required_roles:
-            if user_roles.isdisjoint(required_roles):
-                logger.info(f"[RBAC] - denied access(0) : {user_roles} for {tags} / {required_roles}")
+        if allowed_roles:
+            if user_roles.isdisjoint(allowed_roles):
+                logger.info(f"[RBAC] - denied access(0) : {user_roles} / {allowed_roles}")
                 return False
             return True
 
-        logger.info(f"[RBAC] - denied access(1) : {user_roles} for {tags} / {required_roles}")
+        logger.info(f"[RBAC] - denied access(1) : {user_roles} / {allowed_roles}")
         return False  # no required roles → deny access
 
     def get_router_item(self, method: str, path_template: str) -> RouterItem | None:
