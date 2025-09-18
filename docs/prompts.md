@@ -789,7 +789,7 @@ As we already add some new endpoints as shown bellow, we need to do some enhance
 - @router.post("/password/change", include_in_schema=False, response_model=None)
 - @router.post("/password/reset/initiate", include_in_schema=False, response_model=None, tags=["public"])
 - @router.post("/password/reset/confirm", include_in_schema=False, response_model=None, tags=["public"])
-- @router.post("/account/deactivate", include_in_schema=False, response_model=None, tags=["admin"])
+- @router.post("/deactivate", include_in_schema=False, response_model=None, tags=["admin"])
 - @router.post("/account/delete", include_in_schema=False, response_model=None, tags=["admin"])
 
 As these are very critical operation, so we need add a comfirmation action before to do the real work.
@@ -798,11 +798,11 @@ As these are very critical operation, so we need add a comfirmation action befor
 - add a new menu item 'User Mangement' and a new virtual page 'User Mangement'.
 - Design a virtual page 'User Mangement' and implement it. As this is a simple management tool for administrator/developer, we do not want to involve to list users and pickup particurlar user and etc. Our operation all based on a inputed user id, and then based it to do the further operations.
 - It should involve the following endpoints:
-  - @router.post("/admin/users/{target_user_id}/ban", include_in_schema=False, response_model=None, tags=["admin"])
-  - @router.post("/admin/users/{target_user_id}/unban", include_in_schema=False, response_model=None, tags=["admin"])
-  - @router.post("/admin/users/{target_user_id}/roles/grant", include_in_schema=False, response_model=None, tags=["admin"])
-  - @router.post("/admin/users/{target_user_id}/roles/revoke", include_in_schema=False, response_model=None, tags=["admin"])
-  - @router.get("/admin/users/{target_user_id}/roles", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.post("/users/{target_user_id}/ban", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.post("/users/{target_user_id}/unban", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.post("/users/{target_user_id}/roles/grant", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.post("/users/{target_user_id}/roles/revoke", include_in_schema=False, response_model=None, tags=["admin"])
+  - @router.get("/users/{target_user_id}/roles", include_in_schema=False, response_model=None, tags=["admin"])
 
 As these are very critical operation, so we need add a comfirmation action before to do the real work.
 
@@ -817,7 +817,7 @@ After both of these two requirements, you need to use playwright to verify each 
 Currently, we only show User ID and Roles. Email and Status fields always invalid.
 
 #### Enhancements/Goal
-- Adjust the URL endpoint from '/admin/users/{target_user_id}/roles' to '/admin/users/{target_user_id}/basic', and rename function `get_user_roles` to `get_user_basic_info`. And change the response of '/admin/users/{target_user_id}/basic' to include email and status fields.
+- Adjust the URL endpoint from '/users/{target_user_id}/roles' to '/users/{target_user_id}/basic', and rename function `get_user_roles` to `get_user_basic_info`. And change the response of '/users/{target_user_id}/basic' to include email and status fields.
 - At the client side, do the corresponding changes to show email and status fields properly.
 - Adjust the UI layout: show 'View Roles' just after 'Target User ID' and before the action buttons.
 - Rename 'View Roles' to 'View Basic Info'. Before we checked the user's basic information, hide all action buttons to preventing invalid operations.
@@ -827,7 +827,7 @@ Currently, we only show User ID and Roles. Email and Status fields always invali
 - Once user click on button 'Adjust Roles', show a full list of available roles(available_roles, which already response to client by Supabase event SIGNED_IN) with checkboxes. Check on the role that the user already has.
 - One user must at least one role. Once user uncheck all roles we need to show a warning message `Please select at least one role` to prevent invalid operations.
 - On the otherhand, we also need to check the same logic at the backend instead of relying on client side's checking.
-- At the server side in file @faster/core/auth/routers.py, merge endpoint `/admin/users/{target_user_id}/roles/grant` and `/admin/users/{target_user_id}/roles/revoke` into `/admin/users/{target_user_id}/roles/adjust`. Also merge function `grant_roles` and `revoke_roles` into `adjust_roles`.
+- At the server side in file @faster/core/auth/routers.py, merge endpoint `/users/{target_user_id}/roles/grant` and `/users/{target_user_id}/roles/revoke` into `/users/{target_user_id}/roles/adjust`. Also merge function `grant_roles` and `revoke_roles` into `adjust_roles`.
 - Implement above enhancements and run frontend and backend tests to ensure everything works as expected.
 
 
@@ -844,3 +844,19 @@ We need to concepturely remove the 'delete account' things and do some adjustmee
 - In the fronend in faster/resources/dev-admin.html, we also need to concepturely remove the 'delete account' things.
 - Finnaly, rename `deactivate_account` as `deactivate`.
 - make sure both `make lint` and `make test` all pass. You also need to user playwright the verify the frontend via http://127.0.0.1:8000/dev/admin and fix all web console errors and warnings if any.
+
+### Add log_event
+For the following critical user actions, add `log_event` to store user behavior into database:
+- /onboarding
+- /dashboard
+- /profile
+- /password/change
+- /password/reset/initiate
+- /password/reset/confirm
+- /deactivate
+- /users/{target_user_id}/ban
+- /users/{target_user_id}/unban
+- /users/{target_user_id}/roles/adjust
+- /users/{target_user_id}/basic
+
+After you added these change, make sure `make lint` and `make test` all pass
