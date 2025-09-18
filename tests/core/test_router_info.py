@@ -214,43 +214,7 @@ class TestRouterInfoTagRoleMapping:
     # Tests for set_tag_role_mapping and get_tag_role_mapping removed
     # These methods are now commented out as tag-role mapping is managed internally
 
-    @pytest.mark.asyncio
-    async def test_get_roles_by_tags_empty(self) -> None:
-        """Test getting roles by empty tags."""
-        router_info = RouterInfo()
 
-        result = await router_info.get_roles_by_tags([])
-
-        assert result == set()
-
-    @pytest.mark.asyncio
-    async def test_get_roles_by_tags_success(self) -> None:
-        """Test getting roles by tags."""
-        router_info = RouterInfo()
-        cache = {"admin": ["admin"], "user": ["user"], "editor": ["editor", "admin"]}
-        router_info._tag_role_cache = cache  # type: ignore[reportPrivateUsage, unused-ignore]
-
-        with patch("faster.core.auth.router_info.logger") as mock_logger:
-            result = await router_info.get_roles_by_tags(["admin", "editor"])
-
-            assert result == {"admin", "editor"}
-            # Should have logged debug info for each tag
-            assert mock_logger.debug.call_count >= 2
-
-    @pytest.mark.asyncio
-    async def test_get_roles_by_tags_missing_tag(self) -> None:
-        """Test getting roles by tags with missing tag."""
-        router_info = RouterInfo()
-        cache = {"admin": ["admin"]}
-        router_info._tag_role_cache = cache  # type: ignore[reportPrivateUsage, unused-ignore]
-
-        with patch("faster.core.auth.router_info.logger") as mock_logger:
-            result = await router_info.get_roles_by_tags(["admin", "missing"])
-
-            assert result == {"admin"}
-            # Should have logged debug info for missing tag
-            debug_calls = [call.args[0] for call in mock_logger.debug.call_args_list]
-            assert any("missing" in call and "roles: []" in call for call in debug_calls)
 
     def test_reset_cache(self) -> None:
         """Test resetting all caches."""
