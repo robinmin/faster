@@ -9,7 +9,8 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from .auth.routers import get_auth_service
 from .auth.services import AuthService
 from .logger import get_logger
-from .models import AppResponseDict
+from .models import AppResponseDict, SysDictAdjustRequest, SysMapAdjustRequest
+from .services import SysService
 from .utilities import check_all_resources
 
 logger = get_logger(__name__)
@@ -135,6 +136,175 @@ async def rbac_data(
                     "tag_role_cache_size": 0,
                 },
             },
+        )
+
+
+@dev_router.get("/sys_dict/show", response_model=None)
+async def show_sys_dict(
+    category: str | None = None,
+    key: int | None = None,
+    value: str | None = None,
+) -> AppResponseDict:
+    """
+    Show the content in sys_dict by category with optional filters.
+
+    Args:
+        category: Filter by category name (optional)
+        key: Filter by key (optional)
+        value: Filter by value (optional)
+
+    Returns:
+        AppResponseDict with sys_dict data
+    """
+    try:
+        sys_service = SysService()
+        data = await sys_service.get_sys_dict_with_status(category=category, key=key, value=value, in_used_only=False)
+
+        # Convert to list format for frontend table display
+        items = []
+        for item_data in data:
+            items.append(
+                {
+                    "category": item_data["category"],
+                    "key": item_data["key"],
+                    "value": item_data["value"],
+                    "in_used": item_data["in_used"],
+                }
+            )
+
+        return AppResponseDict(
+            status="success", message=f"Retrieved {len(items)} sys_dict entries", data={"items": items}
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving sys_dict data: {e}")
+        return AppResponseDict(status="error", message=f"Failed to retrieve sys_dict data: {e!s}", data={"items": []})
+
+
+@dev_router.post("/sys_dict/adjust", response_model=None)
+async def adjust_sys_dict(request: SysDictAdjustRequest) -> AppResponseDict:
+    """
+    Maintain the content in sys_dict by category (support add, soft delete and update existing items).
+
+    Args:
+        request: SysDictAdjustRequest containing category and items to set
+
+    Returns:
+        AppResponseDict with operation result
+    """
+    try:
+        sys_service = SysService()
+
+        # Convert items to the format expected by set_sys_dict
+        values: dict[int, str] = {}
+        for item in request.items:
+            if item.in_used:  # Only include active items
+                values[item.key] = item.value
+
+        success = await sys_service.set_sys_dict(request.category, values)
+
+        if success:
+            return AppResponseDict(
+                status="success",
+                message=f"Successfully updated sys_dict for category '{request.category}'",
+                data={"category": request.category, "items_count": len(values)},
+            )
+        return AppResponseDict(
+            status="error",
+            message=f"Failed to update sys_dict for category '{request.category}'",
+            data={"category": request.category},
+        )
+    except Exception as e:
+        logger.error(f"Error adjusting sys_dict data: {e}")
+        return AppResponseDict(
+            status="error",
+            message=f"Failed to adjust sys_dict data: {e!s}",
+            data={"category": request.category if request else None},
+        )
+
+
+@dev_router.get("/sys_map/show", response_model=None)
+async def show_sys_map(
+    category: str | None = None,
+    left: str | None = None,
+    right: str | None = None,
+) -> AppResponseDict:
+    """
+    Show the content in sys_map by category with optional filters.
+
+    Args:
+        category: Filter by category name (optional)
+        left: Filter by left_value (optional)
+        right: Filter by right_value (optional)
+
+    Returns:
+        AppResponseDict with sys_map data
+    """
+    try:
+        sys_service = SysService()
+        data = await sys_service.get_sys_map_with_status(category=category, left=left, right=right, in_used_only=False)
+
+        # Convert to list format for frontend table display
+        items = []
+        for item_data in data:
+            items.append(
+                {
+                    "category": item_data["category"],
+                    "left_value": item_data["left_value"],
+                    "right_value": item_data["right_value"],
+                    "in_used": item_data["in_used"],
+                }
+            )
+
+        return AppResponseDict(
+            status="success", message=f"Retrieved {len(items)} sys_map entries", data={"items": items}
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving sys_map data: {e}")
+        return AppResponseDict(status="error", message=f"Failed to retrieve sys_map data: {e!s}", data={"items": []})
+
+
+@dev_router.post("/sys_map/adjust", response_model=None)
+async def adjust_sys_map(request: SysMapAdjustRequest) -> AppResponseDict:
+    """
+    Maintain the content in sys_map by category (support add, soft delete and update existing items).
+
+    Args:
+        request: SysMapAdjustRequest containing category and items to set
+
+    Returns:
+        AppResponseDict with operation result
+    """
+    try:
+        sys_service = SysService()
+
+        # Convert items to the format expected by set_sys_map
+        values: dict[str, list[str]] = {}
+        for item in request.items:
+            if item.in_used:  # Only include active items
+                if item.left_value not in values:
+                    values[item.left_value] = []
+                values[item.left_value].append(item.right_value)
+
+        success = await sys_service.set_sys_map(request.category, values)
+
+        if success:
+            total_items = sum(len(rights) for rights in values.values())
+            return AppResponseDict(
+                status="success",
+                message=f"Successfully updated sys_map for category '{request.category}'",
+                data={"category": request.category, "items_count": total_items},
+            )
+        return AppResponseDict(
+            status="error",
+            message=f"Failed to update sys_map for category '{request.category}'",
+            data={"category": request.category},
+        )
+    except Exception as e:
+        logger.error(f"Error adjusting sys_map data: {e}")
+        return AppResponseDict(
+            status="error",
+            message=f"Failed to adjust sys_map data: {e!s}",
+            data={"category": request.category if request else None},
         )
 
 
