@@ -49,7 +49,6 @@ class RouterItem(TypedDict):
     path: str  ## HTTP request path
     path_template: str  ## Original HTTP request path when declaring the endpoint
     name: str  ## route name
-    func_name: str  ## function name for this route
     tags: list[str]  ## tags for this route
     allowed_roles: set[str]  ## allowed roles for this route (set for O(1) membership tests)
 
