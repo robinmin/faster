@@ -61,7 +61,6 @@ class TestRouterInfoRefreshData:
         assert get_item["path"] == "/api/test"
         assert get_item["path_template"] == "/api/test"
         assert get_item["name"] == "test_endpoint"
-        assert get_item["func_name"] == "test_function"
         assert get_item["tags"] == ["protected"]
         assert get_item["allowed_roles"] == set()  # No tag-role mapping set
 
@@ -142,7 +141,6 @@ class TestRouterInfoRefreshData:
             "path": "/old",
             "path_template": "/old",
             "name": "old",
-            "func_name": "old_func",
             "tags": [],
             "allowed_roles": set(),
         }
@@ -186,7 +184,6 @@ class TestRouterInfoRouteFinding:
             "path": "/api/test",
             "path_template": "/api/test",
             "name": "test",
-            "func_name": "test_func",
             "tags": ["protected"],
             "allowed_roles": set(),
         }
@@ -226,7 +223,6 @@ class TestRouterInfoTagRoleMapping:
             "path": "/test",
             "path_template": "/test",
             "name": "test",
-            "func_name": "test_func",
             "tags": [],
             "allowed_roles": set(),
         }
@@ -251,7 +247,6 @@ class TestRouterInfoCacheManagement:
             "path": "/api/test",
             "path_template": "/api/test",
             "name": "test",
-            "func_name": "test_func",
             "tags": ["test"],
             "allowed_roles": {"user"},
         }
