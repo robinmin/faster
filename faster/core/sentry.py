@@ -20,7 +20,6 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
 from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-from sentry_sdk.transport import HttpTransport
 from sentry_sdk.types import Event
 
 from .config import Settings
