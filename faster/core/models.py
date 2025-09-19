@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from typing import Any, Generic, TypeVar
 
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.background import BackgroundTask
 
 from .logger import get_logger
@@ -52,3 +52,40 @@ class AppResponse(JSONResponse, Generic[T]):
 
 
 AppResponseDict = AppResponse[dict[str, Any]]
+
+
+###############################################################################
+# Request/Response Models for Metadata Management
+###############################################################################
+
+
+class SysDictItem(BaseModel):
+    """Model for a single SysDict item."""
+
+    category: str = Field(..., description="Dictionary category")
+    key: int = Field(..., description="Dictionary key")
+    value: str = Field(..., description="Dictionary value")
+    in_used: bool = Field(True, description="Whether the item is active")
+
+
+class SysMapItem(BaseModel):
+    """Model for a single SysMap item."""
+
+    category: str = Field(..., description="Map category")
+    left_value: str = Field(..., description="Left side value for mapping")
+    right_value: str = Field(..., description="Right side value for mapping")
+    in_used: bool = Field(True, description="Whether the item is active")
+
+
+class SysDictAdjustRequest(BaseModel):
+    """Request model for adjusting SysDict entries."""
+
+    category: str = Field(..., description="Dictionary category")
+    items: list[SysDictItem] = Field(..., description="List of dictionary items to set")
+
+
+class SysMapAdjustRequest(BaseModel):
+    """Request model for adjusting SysMap entries."""
+
+    category: str = Field(..., description="Map category")
+    items: list[SysMapItem] = Field(..., description="List of map items to set")
