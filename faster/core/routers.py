@@ -2,10 +2,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import FileResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from .auth.routers import get_auth_service
+from .auth.services import AuthService
 from .logger import get_logger
 from .models import AppResponseDict
 from .utilities import check_all_resources
@@ -67,6 +69,73 @@ async def request_state(request: Request) -> AppResponseDict:
     return AppResponseDict(
         data=getattr(request.state, "_state", {}),
     )
+
+
+@dev_router.get("/rbac", response_model=None, tags=["public"])
+async def rbac_data(
+    request: Request,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AppResponseDict:
+    """
+    Returns the RBAC (Role-Based Access Control) data for dev-admin.
+    Shows all router information including routes, tags, and allowed roles.
+    """
+    try:
+        # Get RouterInfo instance from AuthService
+        router_info = auth_service.get_router_info()
+
+        # Get all route cache data
+        route_cache = router_info._route_cache  # type: ignore[reportPrivateUsage, unused-ignore]
+
+        # Convert RouterItem data to a more frontend-friendly format
+        rbac_data = []
+        for cache_key, route_item in route_cache.items():
+            rbac_entry = {
+                "id": cache_key,  # Unique identifier for the table
+                "method": route_item["method"],
+                "path": route_item["path"],
+                "path_template": route_item["path_template"],
+                "name": route_item["name"],
+                "tags": route_item["tags"],
+                "allowed_roles": sorted(route_item["allowed_roles"]),  # Convert set to sorted list for JSON
+                "roles_count": len(route_item["allowed_roles"]),
+                "tags_count": len(route_item["tags"]),
+            }
+            rbac_data.append(rbac_entry)
+
+        # Sort by method and path for consistent display
+        rbac_data.sort(key=lambda x: (x["method"], x["path"]))
+
+        # Get cache statistics
+        cache_stats = {
+            "total_routes": len(rbac_data),
+            "route_cache_size": router_info.get_route_cache_size(),
+            "tag_role_cache_size": router_info.get_tag_role_cache_size(),
+        }
+
+        return AppResponseDict(
+            status="success",
+            message=f"Retrieved {len(rbac_data)} RBAC entries",
+            data={
+                "rbac_entries": rbac_data,
+                "cache_stats": cache_stats,
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"Error retrieving RBAC data: {e}")
+        return AppResponseDict(
+            status="error",
+            message=f"Failed to retrieve RBAC data: {e!s}",
+            data={
+                "rbac_entries": [],
+                "cache_stats": {
+                    "total_routes": 0,
+                    "route_cache_size": 0,
+                    "tag_role_cache_size": 0,
+                },
+            },
+        )
 
 
 ###############################################################################
