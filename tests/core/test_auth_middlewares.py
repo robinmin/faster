@@ -130,7 +130,6 @@ class TestAuthMiddlewarePathChecking:
             "path": "/docs",
             "path_template": "/docs",
             "name": "docs",
-            "func_name": "docs_func",
             "tags": ["public"],
             "allowed_roles": set(),
         }
@@ -162,7 +161,6 @@ class TestAuthMiddlewarePathChecking:
             "path": "/api/public/users",
             "path_template": "/api/public/{path:path}",
             "name": "public_api",
-            "func_name": "public_func",
             "tags": ["public"],
             "allowed_roles": set(),
         }
@@ -252,7 +250,6 @@ class TestAuthMiddlewareAuthentication:
             "path": "/api/test",
             "path_template": "/api/test",
             "name": "test_endpoint",
-            "func_name": "test_func",
             "tags": ["protected"],
             "allowed_roles": {"admin", "user"},
         }
@@ -363,7 +360,6 @@ class TestAuthMiddlewareAuthentication:
             "path": "/api/test",
             "path_template": "/api/test",
             "name": "test_endpoint",
-            "func_name": "test_func",
             "tags": ["protected"],
             "allowed_roles": {"admin"},  # User doesn't have admin role
         }
@@ -407,7 +403,6 @@ class TestAuthMiddlewareUserProfileRetrieval:
             "path": "/api/test",
             "path_template": "/api/test",
             "name": "test_endpoint",
-            "func_name": "test_func",
             "tags": ["protected"],
             "allowed_roles": {"admin"},
         }
@@ -497,7 +492,6 @@ class TestAuthMiddlewareStateManagement:
             "path": "/api/test",
             "path_template": "/api/test",
             "name": "test_endpoint",
-            "func_name": "test_func",
             "tags": ["protected"],
             "allowed_roles": {"admin", "user"},
         }
@@ -596,7 +590,6 @@ class TestAuthMiddlewarePublicEndpoints:
             "path": "/api/public",
             "path_template": "/api/public",
             "name": "public_endpoint",
-            "func_name": "public_func",
             "tags": ["public"],
             "allowed_roles": set(),
         }
