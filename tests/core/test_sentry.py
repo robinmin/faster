@@ -188,12 +188,14 @@ async def test_teardown_flushes_sentry_client(mock_sentry_client: MagicMock) -> 
     """
     # Arrange
     sentry_manager = SentryManager.get_instance()
+    # Mock is_initialized to return True so teardown logic runs
+    with patch("faster.core.sentry.is_initialized", return_value=True):
+        # Act
+        _ = await sentry_manager.teardown()
 
-    # Act
-    _ = await sentry_manager.teardown()
-
-    # Assert
-    mock_sentry_client.close.assert_called_once_with(timeout=2.0)
+        # Assert
+        mock_sentry_client.flush.assert_called_once()
+        mock_sentry_client.close.assert_called_once_with(timeout=2.0)
 
 
 @pytest.mark.asyncio
@@ -253,11 +255,13 @@ async def test_capture_it_with_exception(mock_sentry_capture_exception: MagicMoc
     # Arrange
     error = ValueError("This is a test error")
 
-    # Act
-    await capture_it(error)
+    # Mock is_initialized to return True so capture logic runs
+    with patch("faster.core.sentry.is_initialized", return_value=True):
+        # Act
+        await capture_it(error)
 
-    # Assert
-    mock_sentry_capture_exception.assert_called_once_with(error)
+        # Assert
+        mock_sentry_capture_exception.assert_called_once_with(error)
 
 
 @pytest.mark.asyncio
@@ -270,11 +274,13 @@ async def test_capture_it_with_message(mock_sentry_capture_message: MagicMock) -
     # Arrange
     message = "This is a test message"
 
-    # Act
-    await capture_it(message)
+    # Mock is_initialized to return True so capture logic runs
+    with patch("faster.core.sentry.is_initialized", return_value=True):
+        # Act
+        await capture_it(message)
 
-    # Assert
-    mock_sentry_capture_message.assert_called_once_with(message)
+        # Assert
+        mock_sentry_capture_message.assert_called_once_with(message)
 
 
 @pytest.mark.asyncio
