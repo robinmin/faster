@@ -126,6 +126,9 @@ class Settings(BaseSettings):
     sentry_trace_sample_rate: float = Field(default=0.1, description="Sentry trace sample rate")
     sentry_profiles_sample_rate: float = Field(default=0.1, description="Sentry profiles sample rate")
     sentry_client_dsn: str | None = Field(default=None, description="Client side Sentry DSN for error tracking")
+    sentry_timeout: int = Field(default=10, description="Sentry transport timeout in seconds")
+    sentry_retries: int = Field(default=3, description="Number of retries for failed Sentry requests")
+    sentry_shutdown_timeout: int = Field(default=5, description="Timeout for Sentry shutdown in seconds")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
@@ -185,6 +188,8 @@ def get_default_logger_config() -> dict[str, Any]:
             "propagate": ["uvicorn", "uvicorn.error", "uvicorn.access"],
             "ignore": [
                 "sentry_sdk.errors",
+                "sentry_sdk.transport",
+                "urllib3.connectionpool",
                 "hpack.hpack",
                 "httpcore.http11",
                 "httpcore.connection",
