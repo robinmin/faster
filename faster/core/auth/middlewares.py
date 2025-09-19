@@ -114,7 +114,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if route_info and route_info["path_template"]:
                 current_path = route_info["path_template"]
             else:
-                raise AuthError("Route not found", status.HTTP_404_NOT_FOUND)
+                raise AuthError(f"Route not found :{current_path}", status.HTTP_404_NOT_FOUND)
 
             # 3. Check allowed paths & update request.state
             if self._check_allowed_path(request, current_path):
@@ -133,26 +133,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # 6. Authenticate request and get user profile
             token = extract_bearer_token_from_request(request)
             if not token or await blacklist_exists(token):
-                raise AuthError("Invalid token or already logged out")
+                raise AuthError(f"Invalid token or already logged out: {current_path}")
 
             # 7. Get user profile
             user_id = await self._auth_service.get_user_id_from_token(token)
             if not user_id:
                 self._set_unauthenticated_state(request)
-                raise AuthError("User ID required for authentication")
+                raise AuthError(f"User ID required for authentication: {current_path}")
 
             # 8. Check authentication and authorization
             user_profile = await self._get_authenticated_user_profile(user_id)
             if not user_profile:
                 self._set_unauthenticated_state(request)
-                raise AuthError("Valid user ID required for authentication")
+                raise AuthError(f"Valid user ID required for authentication: {current_path} / {user_id}")
 
             # 9. Cache authentication data
             await self._set_authenticated_state(request, user_profile)
 
             # 10. RBAC check
             if not await self._auth_service.check_access(request.state.roles, route_info["allowed_roles"]):
-                raise AuthError("Permission denied by RBAC", status.HTTP_403_FORBIDDEN)
+                raise AuthError(f"Permission denied by RBAC: {current_path} / {user_id}", status.HTTP_403_FORBIDDEN)
             logger.debug(f"[auth] => pass on {current_method} {current_path} for {user_id}")
 
             # 11. Continue to the next middleware/endpoint
