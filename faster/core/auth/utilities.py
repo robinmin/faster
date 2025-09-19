@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 def _extract_authorization_header(request: Request | None) -> str | None:
     """Extract and validate Authorization header from request."""
     if request is None:
-        logger.debug("No request object provided for token extraction")
+        logger.info("No request object provided for token extraction")
         return None
 
     authorization = request.headers.get("Authorization")
@@ -371,5 +371,3 @@ def generate_trace_id() -> str:
         Unique trace ID string
     """
     return str(uuid.uuid4())
-
-
