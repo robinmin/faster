@@ -928,3 +928,13 @@ If you have any optimizing options, you also can tell me.
 - I've adjusted method's signature to `async def check_access(self, user_roles: set[str], allowed_roles: set[str]) -> bool` for both class AuthService and RouterInfo. Help to adjust the places downstream of the code and it's unit tests.
 - Due to above change, we no longer need RouterInfo.get_roles_by_tags, as it's the only place to call this method. Remove itself and its unit tests.
 - make sure both `make lint` and `make test` all pass
+
+
+### Adjust RBAC page
+We need to enhance the virtual page 'RBAC' in fle @faster/resources/dev-admin.html for the following points:
+- Show the endpoints sorted by Path + Method by default.
+- SHow the different role in different background color instead of the same.
+- Adjust the logic of 'Access Leveel': If the endpoint has a 'public' tag, it belong to the 'Public' group in green background. If the endpoints has no any tag, it belong to 'Unknown' in red background color; The rest belongs to 'Restricted' in yellow background color as you already done.
+- HTTP method may not need background color. But each tag has different background color will help use identify the tag quickly. shift them.
+- For the backend, make sure both `make lint` and `make test` all pass
+- For the frontend, you can use playwright to verify the frontend via http://127.0.0.1:8000/dev/admin(use Google OAuth user). In case of any issue or web console errors, fix them all.
