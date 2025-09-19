@@ -1,4 +1,4 @@
-.PHONY: help run redis-start test lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean
+.PHONY: help run redis-start test-unit lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean
 
 SRC_TARGETS = faster/ tests/ main.py migrations/env.py $(wildcard migrations/versions/*.py)
 
@@ -9,10 +9,12 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "} {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 run: ## Run the FastAPI application
-	uv run uvicorn main:app --reload --reload-exclude logs
+	@lsof -ti:8000|xargs kill -9
+	uv run uvicorn main:app --host localhost --reload --reload-exclude logs
 
-test: ## Run tests
-	PYTHONPATH=. uv run pytest --cov=faster --cov-report=html:build/htmlcov
+test-unit: ## Run unit tests only (no authentication required)
+	@echo "🔬 Running unit tests..."
+	PYTHONPATH=. uv run pytest tests/core --cov=faster --cov-report=html:build/htmlcov
 
 lint: ## Lint the code
 	uv run ruff check $(SRC_TARGETS) --fix
