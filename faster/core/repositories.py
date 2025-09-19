@@ -166,7 +166,7 @@ class AppRepository(BaseRepository):
                         query = select(SysMap).where(
                             SysMap.category == category,
                             SysMap.left_value == left_value,
-                            SysMap.right_value == right_value
+                            SysMap.right_value == right_value,
                         )
                         result = await session.exec(query)
                         existing_map = result.first()
@@ -290,10 +290,7 @@ class AppRepository(BaseRepository):
                 # Create/update entries with new values (skip if values is empty - delete operation)
                 for dict_key, dict_value in values.items():
                     # Query for existing record by category and key (not by primary key)
-                    query = select(SysDict).where(
-                        SysDict.category == category,
-                        SysDict.key == dict_key
-                    )
+                    query = select(SysDict).where(SysDict.category == category, SysDict.key == dict_key)
                     result = await session.exec(query)
                     existing_dict = result.first()
 
@@ -319,6 +316,124 @@ class AppRepository(BaseRepository):
             except Exception as e:
                 logger.error(f"Failed to update sys_dict for category '{category}': {e}")
                 return False
+
+    async def get_sys_dict_with_status(
+        self,
+        category: str | None = None,
+        key: int | None = None,
+        value: str | None = None,
+        in_used_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """
+        Get sys_dict data with status information as a list of records.
+
+        Args:
+            category: Filter by category name (optional)
+            key: Filter by integer key (optional)
+            value: Filter by string value (optional)
+            in_used_only: Only return active records (default: True)
+
+        Returns:
+            List of dictionaries containing sys_dict records with status information
+
+        Raises:
+            DBError: If database query fails
+        """
+        try:
+            async with self.session(readonly=True) as session:
+                # Build query with optional filters
+                query = select(SysDict)
+
+                if category is not None:
+                    query = query.where(SysDict.category == category)
+                if key is not None:
+                    query = query.where(SysDict.key == key)
+                if value is not None:
+                    query = query.where(SysDict.value == value)
+                if in_used_only:
+                    query = query.where(SysDict.in_used == 1)
+
+                # Order by category, then by key
+                query = query.order_by(SysDict.category, SysDict.key)  # type: ignore[arg-type]
+
+                # Execute query
+                result = await session.exec(query)
+                rows = result.all()
+
+                # Convert to list of dictionaries
+                return [
+                    {
+                        "category": sys_dict.category,
+                        "key": sys_dict.key,
+                        "value": sys_dict.value,
+                        "in_used": bool(sys_dict.in_used),
+                    }
+                    for sys_dict in rows
+                ]
+        except Exception as e:
+            logger.error(
+                f"Failed to get sys_dict with status: {e}", extra={"category": category, "key": key, "value": value}
+            )
+            raise DBError(f"Failed to retrieve system dict data with status: {e}") from e
+
+    async def get_sys_map_with_status(
+        self,
+        category: str | None = None,
+        left: str | None = None,
+        right: str | None = None,
+        in_used_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """
+        Get sys_map data with status information as a list of records.
+
+        Args:
+            category: Filter by category name (optional)
+            left: Filter by left_value (optional)
+            right: Filter by right_value (optional)
+            in_used_only: Only return active records (default: True)
+
+        Returns:
+            List of dictionaries containing sys_map records with status information
+
+        Raises:
+            DBError: If database query fails
+        """
+        try:
+            async with self.session(readonly=True) as session:
+                # Build query with optional filters
+                query = select(SysMap)
+
+                if category is not None:
+                    query = query.where(SysMap.category == category)
+                if left is not None:
+                    query = query.where(SysMap.left_value == left)
+                if right is not None:
+                    query = query.where(SysMap.right_value == right)
+                if in_used_only:
+                    query = query.where(SysMap.in_used == 1)
+
+                # Order by category, then by left_value, then by right_value
+                query = query.order_by(SysMap.category, SysMap.left_value, SysMap.right_value)
+
+                # Execute query
+                result = await session.exec(query)
+                rows = result.all()
+
+                # Convert to list of dictionaries
+                return [
+                    {
+                        "category": sys_map.category,
+                        "left_value": sys_map.left_value,
+                        "right_value": sys_map.right_value,
+                        "in_used": bool(sys_map.in_used),
+                    }
+                    for sys_map in rows
+                ]
+        except Exception as e:
+            logger.error(
+                f"Failed to get sys_map with status: {e}", extra={"category": category, "left": left, "right": right}
+            )
+            raise DBError(f"Failed to retrieve system map data with status: {e}") from e
 
     async def disable_category(self, category: str) -> int:
         """
