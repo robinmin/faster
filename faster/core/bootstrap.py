@@ -165,8 +165,8 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
     if not verbose:
         return
 
-    logger.info("=========================================================")
-    logger.info(
+    logger.debug("=========================================================")
+    logger.debug(
         f"\tWe are running '{settings.app_name}' - {settings.app_version} on {settings.environment} in {'DEBUG' if settings.is_debug else 'NON-DEBUG'} mode."
     )
 
@@ -177,22 +177,22 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
     auth_health = latest_status_info.get("auth", {})
 
     if db_health.get("master", False):
-        logger.info(f"\tDB\t: {db_health}")
+        logger.debug(f"\tDB\t: {db_health}")
     else:
         logger.error(f"\tDB\t: {db_health}")
 
     # Only show Redis error if it's required or if there was an attempt to connect
     if redis_health.get("ping", False):
-        logger.info(f"\tRedis\t: {redis_health}")
+        logger.debug(f"\tRedis\t: {redis_health}")
     elif settings.redis_enabled or (settings.redis_url and redis_health.get("ping") is False):
         logger.error(f"\tRedis\t: {redis_health}")
     elif settings.redis_url:
         logger.warning(f"\tRedis\t: {redis_health}")
 
-    logger.info(f"\tSentry\t: {sentry_health}")
-    logger.info(f"\tAuth\t: {auth_health}")
+    logger.debug(f"\tSentry\t: {sentry_health}")
+    logger.debug(f"\tAuth\t: {auth_health}")
 
-    logger.info("=========================================================")
+    logger.debug("=========================================================")
 
 
 def create_app(
