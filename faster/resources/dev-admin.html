@@ -416,24 +416,7 @@
                         >
                       </div>
                     </div>
-                    <div>
-                      <button
-                        class="btn btn-primary"
-                        disabled
-                        title="Edit functionality coming soon"
-                        aria-describedby="edit-tooltip"
-                      >
-                        <i
-                          data-lucide="edit-3"
-                          class="w-4 h-4"
-                          aria-hidden="true"
-                        ></i>
-                        Edit Profile
-                      </button>
-                      <div id="edit-tooltip" class="sr-only">
-                        Edit functionality coming soon
-                      </div>
-                    </div>
+
                   </div>
                 </div>
               </div>
@@ -1802,6 +1785,223 @@
               </footer>
             </div>
           </div>
+
+          <!-- RBAC Page -->
+          <div
+            x-show="$store.app.currentPage === 'rbac'"
+            x-data="rbacPage()"
+            x-cloak
+          >
+            <div class="max-w-7xl mx-auto space-y-6">
+              <!-- RBAC Header -->
+              <div class="navbar bg-base-100 shadow-lg rounded-box">
+                <div class="navbar-start">
+                  <div class="flex items-center gap-3">
+                    <div class="avatar">
+                      <div
+                        class="w-10 h-10 rounded-lg bg-gradient-to-br from-accent to-secondary flex items-center justify-center"
+                      >
+                        <i
+                          data-lucide="shield-check"
+                          class="w-6 h-6 text-accent-content"
+                          aria-hidden="true"
+                        ></i>
+                      </div>
+                    </div>
+                    <div>
+                      <h1 class="text-xl font-bold text-primary">RBAC</h1>
+                      <p
+                        class="text-sm text-base-content/60"
+                        x-text="getPageDescription()"
+                      ></p>
+                    </div>
+                  </div>
+                </div>
+                <div class="navbar-end">
+                  <div class="flex gap-2">
+                    <button
+                      @click="loadRbacData()"
+                      class="btn btn-primary btn-sm"
+                      :class="{ 'loading': loading }"
+                      :disabled="loading"
+                    >
+                      <i data-lucide="refresh-cw" class="w-4 h-4 mr-1"></i>
+                      Refresh
+                    </button>
+                    <div class="dropdown dropdown-end">
+                      <div
+                        tabindex="0"
+                        role="button"
+                        class="btn btn-ghost btn-sm"
+                      >
+                        <i
+                          data-lucide="download"
+                          class="w-4 h-4 mr-1"
+                          aria-hidden="true"
+                        ></i>
+                        Export
+                      </div>
+                      <ul
+                        tabindex="0"
+                        class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52"
+                      >
+                        <li>
+                          <a @click="exportAsJSON()"
+                            ><i data-lucide="file-text" class="w-4 h-4"></i>
+                            JSON</a
+                          >
+                        </li>
+                        <li>
+                          <a @click="copyToClipboard()"
+                            ><i data-lucide="copy" class="w-4 h-4"></i> Copy</a
+                          >
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Statistics Cards -->
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="stat bg-base-100 shadow rounded-box">
+                  <div class="stat-figure text-primary">
+                    <i data-lucide="route" class="w-8 h-8"></i>
+                  </div>
+                  <div class="stat-title">Total Routes</div>
+                  <div class="stat-value text-primary" x-text="rbacData.cache_stats?.total_routes || 0"></div>
+                  <div class="stat-desc">Registered endpoints</div>
+                </div>
+                <div class="stat bg-base-100 shadow rounded-box">
+                  <div class="stat-figure text-secondary">
+                    <i data-lucide="tags" class="w-8 h-8"></i>
+                  </div>
+                  <div class="stat-title">Tag-Role Mappings</div>
+                  <div class="stat-value text-secondary" x-text="rbacData.cache_stats?.tag_role_cache_size || 0"></div>
+                  <div class="stat-desc">Cached mappings</div>
+                </div>
+                <div class="stat bg-base-100 shadow rounded-box">
+                  <div class="stat-figure text-accent">
+                    <i data-lucide="database" class="w-8 h-8"></i>
+                  </div>
+                  <div class="stat-title">Route Cache</div>
+                  <div class="stat-value text-accent" x-text="rbacData.cache_stats?.route_cache_size || 0"></div>
+                  <div class="stat-desc">Cached routes</div>
+                </div>
+              </div>
+
+              <!-- RBAC Table -->
+              <div class="card bg-base-100 shadow-lg">
+                <div class="card-body">
+                  <div class="flex justify-between items-center mb-4">
+                    <h2 class="card-title">
+                      <i data-lucide="table" class="w-5 h-5 mr-2"></i>
+                      Route Access Control
+                    </h2>
+                    <div class="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Search routes..."
+                        class="input input-bordered input-sm w-64"
+                        x-model="searchTerm"
+                        @input="filterRoutes()"
+                      />
+                      <select
+                        class="select select-bordered select-sm"
+                        x-model="methodFilter"
+                        @change="filterRoutes()"
+                      >
+                        <option value="">All Methods</option>
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="DELETE">DELETE</option>
+                        <option value="PATCH">PATCH</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto">
+                    <table class="table table-zebra w-full">
+                      <thead>
+                        <tr>
+                          <th>Method</th>
+                          <th>Path</th>
+                          <th>Name</th>
+                          <th>Tags</th>
+                          <th>Allowed Roles</th>
+                          <th>Access Level</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template x-for="route in filteredRoutes" :key="route.id">
+                          <tr>
+                            <td>
+                              <span
+                                class="badge badge-sm badge-outline"
+                                x-text="route.method"
+                              ></span>
+                            </td>
+                            <td>
+                              <code class="text-sm" x-text="route.path"></code>
+                            </td>
+                            <td x-text="route.name"></td>
+                            <td>
+                              <div class="flex flex-wrap gap-1">
+                                <template x-for="tag in route.tags" :key="tag">
+                                  <span
+                                    class="badge badge-xs"
+                                    :class="getTagColor(tag)"
+                                    x-text="tag"
+                                  ></span>
+                                </template>
+                                <span x-show="route.tags.length === 0" class="text-base-content/50 text-xs">No tags</span>
+                              </div>
+                            </td>
+                            <td>
+                              <div class="flex flex-wrap gap-1">
+                                <template x-for="(role, index) in route.allowed_roles" :key="role">
+                                  <span
+                                    class="badge badge-xs"
+                                    :class="getRoleColor(role, index)"
+                                    x-text="role"
+                                  ></span>
+                                </template>
+                                <span x-show="route.allowed_roles.length === 0" class="text-base-content/50 text-xs">No roles</span>
+                              </div>
+                            </td>
+                            <td>
+                              <span
+                                class="badge badge-sm"
+                                :class="{
+                                  'badge-success': getAccessLevel(route) === 'Public',
+                                  'badge-error': getAccessLevel(route) === 'Unknown',
+                                  'badge-warning': getAccessLevel(route) === 'Restricted'
+                                }"
+                                x-text="getAccessLevel(route)"
+                              ></span>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+
+                    <!-- Empty State -->
+                    <div x-show="filteredRoutes.length === 0 && !loading" class="text-center py-8">
+                      <i data-lucide="search-x" class="w-12 h-12 mx-auto text-base-content/30 mb-4"></i>
+                      <p class="text-base-content/60">No routes found matching your criteria</p>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div x-show="loading" class="text-center py-8">
+                      <span class="loading loading-spinner loading-lg"></span>
+                      <p class="text-base-content/60 mt-4">Loading RBAC data...</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </main>
     </div>
@@ -2022,6 +2222,9 @@
           }
           if (pageId === "sys-health") {
             return await this.call("/health");
+          }
+          if (pageId === "rbac") {
+            return await this.call("/dev/rbac");
           }
           // Virtual pages that don't need server data
           if (pageId === "user-management" || pageId === "dashboard" || pageId === "onboarding") {
@@ -2618,6 +2821,7 @@
              { id: "onboarding", label: "Onboarding", icon: "user-check" },
              { id: "profile", label: "Profile", icon: "user" },
              { id: "user-management", label: "User Management", icon: "users" },
+             { id: "rbac", label: "RBAC", icon: "shield-check" },
              { id: "sys-health", label: "Sys Health", icon: "heart-pulse" },
              { id: "app-state", label: "App State", icon: "settings" },
              { id: "request-state", label: "Request State", icon: "send" }
@@ -3890,6 +4094,230 @@
 
           getUserDisplayName() {
             return utils.getUserDisplayName(Alpine.store("app").user);
+          }
+        };
+      }
+
+      function rbacPage() {
+        return {
+          loading: false,
+          error: null,
+          rbacData: {
+            rbac_entries: [],
+            cache_stats: {
+              total_routes: 0,
+              route_cache_size: 0,
+              tag_role_cache_size: 0
+            }
+          },
+          filteredRoutes: [],
+          searchTerm: "",
+          methodFilter: "",
+          lastUpdate: null,
+          initialized: false,
+
+          init() {
+            if (this.initialized) {
+              return;
+            }
+            this.initialized = true;
+
+            // Load RBAC data when page becomes active
+            this.$watch("$store.app.currentPage", page => {
+              if (page === "rbac") {
+                this.loadRbacData();
+              }
+            });
+
+            // Load data if already on RBAC page
+            if (Alpine.store("app").currentPage === "rbac") {
+              this.loadRbacData();
+            }
+          },
+
+          async loadRbacData() {
+            this.loading = true;
+            this.error = null;
+
+            try {
+              const response = await apiService.call("/dev/rbac");
+
+              if (response.status === "success") {
+                this.rbacData = response.data;
+                this.filteredRoutes = [...this.rbacData.rbac_entries];
+                this.lastUpdate = new Date().toLocaleString();
+                toastService.show("RBAC data loaded successfully", "success");
+              } else {
+                throw new Error(response.message || "Failed to load RBAC data");
+              }
+            } catch (error) {
+              console.error("Error loading RBAC data:", error);
+              this.error = error.message;
+              toastService.show(`Error loading RBAC data: ${error.message}`, "error");
+            } finally {
+              this.loading = false;
+              toastService.refreshIcons();
+            }
+          },
+
+          filterRoutes() {
+            let filtered = [...this.rbacData.rbac_entries];
+
+            // Filter by search term
+            if (this.searchTerm) {
+              const term = this.searchTerm.toLowerCase();
+              filtered = filtered.filter(route =>
+                route.path.toLowerCase().includes(term) ||
+                route.name.toLowerCase().includes(term) ||
+                route.tags.some(tag => tag.toLowerCase().includes(term)) ||
+                route.allowed_roles.some(role => role.toLowerCase().includes(term))
+              );
+            }
+
+            // Filter by method
+            if (this.methodFilter) {
+              filtered = filtered.filter(route => route.method === this.methodFilter);
+            }
+
+            // Sort by Path + Method by default
+            filtered.sort((a, b) => {
+              // First sort by path
+              const pathComparison = a.path.localeCompare(b.path);
+              if (pathComparison !== 0) {
+                return pathComparison;
+              }
+              // If paths are the same, sort by method
+              return a.method.localeCompare(b.method);
+            });
+
+            this.filteredRoutes = filtered;
+          },
+
+          getAccessLevel(route) {
+            // Check if route has 'public' tag
+            if (route.tags && route.tags.includes('public')) {
+              return "Public";
+            }
+            // Check if route has no tags
+            if (!route.tags || route.tags.length === 0) {
+              return "Unknown";
+            }
+            // All other routes are restricted
+            return "Restricted";
+          },
+
+          getRoleColor(role, index) {
+            // Define a set of distinct colors for different roles
+            const colors = [
+              'badge-primary',    // Blue
+              'badge-secondary',  // Gray
+              'badge-accent',     // Purple/Pink
+              'badge-info',       // Cyan
+              'badge-success',    // Green
+              'badge-warning',    // Yellow
+              'badge-error',      // Red
+              'badge-neutral'     // Neutral
+            ];
+
+            // Use role name hash to consistently assign colors
+            let hash = 0;
+            for (let i = 0; i < role.length; i++) {
+              hash = role.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const colorIndex = Math.abs(hash) % colors.length;
+            return colors[colorIndex];
+          },
+
+          getTagColor(tag) {
+            // Define specific colors for common tags
+            const tagColors = {
+              'public': 'badge-success',
+              'auth': 'badge-primary',
+              'admin': 'badge-error',
+              'dev': 'badge-warning',
+              'sys': 'badge-info',
+              'monitoring': 'badge-accent',
+              'protected': 'badge-secondary'
+            };
+
+            // Return specific color if defined, otherwise use hash-based color
+            if (tagColors[tag]) {
+              return tagColors[tag];
+            }
+
+            // Use tag name hash to consistently assign colors for other tags
+            const colors = [
+              'badge-primary',
+              'badge-secondary',
+              'badge-accent',
+              'badge-info',
+              'badge-neutral'
+            ];
+
+            let hash = 0;
+            for (let i = 0; i < tag.length; i++) {
+              hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const colorIndex = Math.abs(hash) % colors.length;
+            return colors[colorIndex];
+          },
+
+          getPageDescription() {
+            const total = this.rbacData.cache_stats?.total_routes || 0;
+            return `Role-Based Access Control - ${total} routes configured`;
+          },
+
+          async exportAsJSON() {
+            if (!this.rbacData.rbac_entries || this.rbacData.rbac_entries.length === 0) {
+              toastService.show("No RBAC data to export", "warning");
+              return;
+            }
+
+            try {
+              const exportData = {
+                exported_at: new Date().toISOString(),
+                cache_stats: this.rbacData.cache_stats,
+                rbac_entries: this.rbacData.rbac_entries
+              };
+
+              const jsonString = JSON.stringify(exportData, null, 2);
+              const blob = new Blob([jsonString], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `rbac-data-${new Date().toISOString().split('T')[0]}.json`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+
+              toastService.show("RBAC data exported successfully", "success");
+            } catch (error) {
+              console.error("Export failed:", error);
+              toastService.show("Export failed", "error");
+            }
+          },
+
+          async copyToClipboard() {
+            if (!this.rbacData.rbac_entries || this.rbacData.rbac_entries.length === 0) {
+              toastService.show("No RBAC data to copy", "warning");
+              return;
+            }
+
+            try {
+              const exportData = {
+                exported_at: new Date().toISOString(),
+                cache_stats: this.rbacData.cache_stats,
+                rbac_entries: this.rbacData.rbac_entries
+              };
+              const jsonString = JSON.stringify(exportData, null, 2);
+              await navigator.clipboard.writeText(jsonString);
+              toastService.show("Copied to clipboard", "success");
+            } catch (error) {
+              console.error("Copy failed:", error);
+              toastService.show("Copy failed", "error");
+            }
           }
         };
       }
