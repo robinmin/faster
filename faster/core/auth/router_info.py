@@ -87,7 +87,6 @@ class RouterInfo:
                     "path": route.path,
                     "path_template": route.path,
                     "name": route.name or "",
-                    "func_name": route.endpoint.__name__,
                     "tags": [str(tag) for tag in tags],  # Convert tags to strings
                     "allowed_roles": allowed_roles,
                 }
@@ -212,3 +211,11 @@ class RouterInfo:
             "tag_role_cache_size": len(self._tag_role_cache),
             "route_cache_size": len(self._route_cache),
         }
+
+    def get_route_cache_size(self) -> int:
+        """Get the current size of the route cache."""
+        return len(self._route_cache)
+
+    def get_tag_role_cache_size(self) -> int:
+        """Get the current size of the tag-role cache."""
+        return len(self._tag_role_cache)
