@@ -252,7 +252,6 @@ class TestAuthServiceRouteManagement:
             assert item["path"] == "/api/test"
             assert item["tags"] == ["protected"]
             assert item["name"] == "test_endpoint"
-            assert item["func_name"] == "test_function"
 
     def test_find_route_success(self, auth_service: AuthService) -> None:
         """Test successful route finding."""
@@ -261,7 +260,6 @@ class TestAuthServiceRouteManagement:
             "path": "/api/test",
             "path_template": "/api/test",
             "name": "test",
-            "func_name": "test_func",
             "tags": ["protected"],
             "allowed_roles": set(),
         }
