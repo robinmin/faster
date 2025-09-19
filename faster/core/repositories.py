@@ -149,29 +149,43 @@ class AppRepository(BaseRepository):
         # Input validation
         if not category or not category.strip():
             raise ValueError("Category cannot be empty")
-        if not values:
-            raise ValueError("Values dictionary cannot be empty")
+        # Note: Empty values dictionary is allowed for delete operations (soft-delete all entries)
 
         async with self.transaction() as session:
             try:
                 # Soft-delete: mark all existing entries as inactive using BaseRepository method
                 _ = await self.soft_delete(self.table_name(SysMap), {"C_CATEGORY": category}, session)
 
-                # Create entries for each left_value -> right_value mapping
+                # Create/update entries for each left_value -> right_value mapping
                 for left_value, right_values in values.items():
                     if not right_values:  # Skip empty lists
                         continue
 
                     for right_value in right_values:
-                        # Create new record for each left-right pair
-                        new_map = SysMap(
-                            category=category,
-                            left_value=left_value,
-                            right_value=right_value,
-                            order=0,
-                            in_used=True,
+                        # Query for existing record by category, left_value, and right_value
+                        query = select(SysMap).where(
+                            SysMap.category == category,
+                            SysMap.left_value == left_value,
+                            SysMap.right_value == right_value
                         )
-                        session.add(new_map)
+                        result = await session.exec(query)
+                        existing_map = result.first()
+
+                        if existing_map:
+                            # Update existing record
+                            existing_map.in_used = True
+                            existing_map.order = 0
+                            existing_map.updated_at = datetime.now()
+                        else:
+                            # Create new record for each left-right pair
+                            new_map = SysMap(
+                                category=category,
+                                left_value=left_value,
+                                right_value=right_value,
+                                order=0,
+                                in_used=True,
+                            )
+                            session.add(new_map)
 
                 await session.flush()
                 return True
@@ -266,17 +280,23 @@ class AppRepository(BaseRepository):
         # Input validation
         if not category or not category.strip():
             raise ValueError("Category cannot be empty")
-        if not values:
-            raise ValueError("Values dictionary cannot be empty")
+        # Note: Empty values dictionary is allowed for delete operations (soft-delete all entries)
 
         async with self.transaction() as session:
             try:
                 # Soft-delete: mark all existing entries as inactive using BaseRepository method
                 _ = await self.soft_delete(self.table_name(SysDict), {"C_CATEGORY": category}, session)
 
-                # Create/update entries with new values
+                # Create/update entries with new values (skip if values is empty - delete operation)
                 for dict_key, dict_value in values.items():
-                    existing_dict = await session.get(SysDict, (category, dict_key))
+                    # Query for existing record by category and key (not by primary key)
+                    query = select(SysDict).where(
+                        SysDict.category == category,
+                        SysDict.key == dict_key
+                    )
+                    result = await session.exec(query)
+                    existing_dict = result.first()
+
                     if existing_dict:
                         # Update existing record
                         existing_dict.value = dict_value
