@@ -41,7 +41,7 @@ test-e2e: ## Run E2E tests automatically (requires existing auth session)
 	@echo "⏳ Waiting for server to be ready..."
 	@PYTHONPATH=. uv run python tests/e2e/wait_for_server.py
 	@echo "🎭 Running Playwright E2E tests (headless mode)..."
-	E2E_AUTOMATED=true PYTHONPATH=. uv run pytest tests/e2e/
+	E2E_AUTOMATED=true PYTHONPATH=. uv run pytest tests/e2e/ --quiet
 	@echo "🛑 Stopping server..."
 	@pkill -f "uvicorn main:app" || true
 
