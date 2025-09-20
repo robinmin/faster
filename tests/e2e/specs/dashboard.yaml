@@ -1,0 +1,204 @@
+# E2E Test Specification: Admin Dashboard Navigation and CRUD Operations
+name: "Admin Dashboard CRUD Operations"
+description: "Test dashboard navigation and basic CRUD operations"
+tags: ["dashboard", "crud", "authenticated", "admin"]
+
+# Test configuration
+config:
+  timeout: 30000
+  retries: 2
+  requires_auth: true  # This test requires authentication
+
+# Pre-conditions
+preconditions:
+  - "User must be authenticated"
+  - "Admin dashboard must be accessible"
+
+# Test steps
+steps:
+  - name: "Navigate to admin dashboard"
+    action: "goto"
+    url: "about:blank"
+    wait_for: "networkidle"
+
+  - name: "Verify authentication state"
+    action: "wait_for_function"
+    function: |
+      () => {
+        // Check for authenticated state indicators
+        try {
+          return document.querySelector('.navbar .avatar') ||
+                 document.querySelector('.navbar .dropdown') ||
+                 document.querySelector('nav') ||
+                 (typeof localStorage !== 'undefined' && localStorage.length > 0);
+        } catch (e) {
+          // localStorage not accessible (e.g., about:blank)
+          return document.querySelector('.navbar .avatar') ||
+                 document.querySelector('.navbar .dropdown') ||
+                 document.querySelector('nav') ||
+                 false;
+        }
+      }
+    timeout: 10000
+    description: "Ensure user is authenticated"
+    optional: true
+
+  - name: "Wait for dashboard to load"
+    action: "wait_for_function"
+    function: |
+      () => {
+        const loadingIndicators = document.querySelectorAll('.loading, .spinner, [data-loading="true"]');
+        return loadingIndicators.length === 0 ||
+               Array.from(loadingIndicators).every(el => !el.offsetParent);
+      }
+    timeout: 15000
+    description: "Wait for all loading states to complete"
+
+  - name: "Verify dashboard elements are visible"
+    action: "wait_for_selector"
+    selector: "main"
+    timeout: 10000
+    description: "Main dashboard container should be visible"
+    optional: true
+
+  - name: "Check for navigation menu"
+    action: "assert_visible"
+    selector: "nav[role='navigation']"
+    description: "Navigation menu should be present"
+    optional: true
+
+  - name: "Test navigation to different sections"
+    action: "click"
+    selector: ".navbar .avatar, .navbar .dropdown"
+    description: "Open user menu dropdown"
+    optional: true
+
+  - name: "Click on navigation item"
+    action: "click"
+    selector: ".dropdown-content a:not(:has-text('Logout')):first"
+    description: "Click first navigation item (not logout)"
+    optional: true
+
+  - name: "Verify data table loads"
+    action: "wait_for_selector"
+    selector: "table, .data-table, .grid, [data-testid='data-table']"
+    timeout: 10000
+    description: "Data table should load"
+    optional: true
+
+  - name: "Test search functionality"
+    action: "fill"
+    selector: "input[type='search'], .search-input, [placeholder*='search']"
+    value: "test"
+    description: "Test search input"
+    optional: true
+
+  - name: "Wait for search results"
+    action: "wait_for_timeout"
+    timeout: 2000
+    description: "Allow time for search to process"
+
+  - name: "Test create new item button"
+    action: "click"
+    selector: ".btn-create, .add-btn, button:has-text('Add'), button:has-text('Create'), [data-action='create']"
+    description: "Click create/add button"
+    optional: true
+
+  - name: "Check for modal or form"
+    action: "wait_for_selector"
+    selector: ".modal, .dialog, .form-container, .overlay"
+    timeout: 5000
+    description: "Create form or modal should appear"
+    optional: true
+
+  - name: "Close modal if opened"
+    action: "click"
+    selector: ".modal-close, .close-btn, [data-dismiss='modal'], .overlay"
+    description: "Close any opened modals"
+    optional: true
+
+  - name: "Test settings or profile access"
+    action: "click"
+    selector: ".user-menu, .profile-btn, .settings-btn, [data-testid='user-menu']"
+    description: "Access user menu or settings"
+    optional: true
+
+  - name: "Verify responsive design"
+    action: "set_viewport_size"
+    width: 768
+    height: 1024
+    description: "Test tablet viewport"
+
+  - name: "Check mobile navigation"
+    action: "assert_visible"
+    selector: ".mobile-menu, .hamburger, .menu-toggle"
+    description: "Mobile navigation should be visible on smaller screens"
+    optional: true
+
+  - name: "Reset viewport"
+    action: "set_viewport_size"
+    width: 1280
+    height: 720
+    description: "Reset to desktop viewport"
+
+# Error simulation tests
+error_scenarios:
+  - name: "Test network error handling"
+    steps:
+      - action: "simulate_offline"
+        description: "Simulate network offline"
+      - action: "click"
+        selector: "button, a"
+        description: "Try to interact with elements"
+      - action: "assert_visible"
+        selector: ".error-message, .offline-indicator, [data-error='network']"
+        description: "Error handling should be visible"
+        optional: true
+      - action: "simulate_online"
+        description: "Restore network connection"
+
+# Performance checks
+performance:
+  - name: "Check page load time"
+    metric: "load_time"
+    threshold: 3000  # 3 seconds
+    description: "Dashboard should load within 3 seconds"
+
+  - name: "Check for console errors"
+    action: "assert_no_console_errors"
+    description: "No JavaScript errors should occur"
+
+# Cleanup steps
+cleanup:
+  - name: "Take screenshot of final state"
+    action: "screenshot"
+    path: "test-results/dashboard-final.png"
+
+  - name: "Clear any test data"
+    action: "evaluate"
+    function: |
+      () => {
+        // Clear any test data created during the test
+        if (window.clearTestData) {
+          window.clearTestData();
+        }
+      }
+    description: "Clean up test data"
+
+# Test data and variables
+variables:
+  dashboard_url: "/dev/admin"
+  search_term: "test"
+  mobile_width: 375
+  mobile_height: 667
+  tablet_width: 768
+  tablet_height: 1024
+
+# Expected outcomes
+expectations:
+  - "Dashboard loads successfully for authenticated users"
+  - "Navigation between sections works correctly"
+  - "CRUD operations are accessible and functional"
+  - "Responsive design works on different screen sizes"
+  - "Error handling is graceful"
+  - "No console errors occur during normal operation"

@@ -1,0 +1,91 @@
+# E2E Test Specification: Google OAuth Login Flow
+name: "Google OAuth Login Flow"
+description: "Test the complete Google OAuth authentication flow"
+tags: ["auth", "oauth", "google", "login"]
+
+# Test configuration
+config:
+  timeout: 120000  # 2 minutes for OAuth flow
+  retries: 1
+  skip_auth: true  # This test handles auth itself
+
+# Test steps
+steps:
+  - name: "Navigate to application"
+    action: "goto"
+    url: "/dev/admin"
+    wait_for: "networkidle"
+
+  - name: "Verify login page loads"
+    action: "assert_visible"
+    selector: "body"
+    description: "Page should load successfully"
+
+  - name: "Look for Google login button"
+    action: "assert_visible"
+    selector: "button:has-text('Google'), button:has-text('Sign in with Google'), [data-provider='google']"
+    description: "Google OAuth button should be visible"
+
+  - name: "Click Google login button"
+    action: "click"
+    selector: "button:has-text('Google'), button:has-text('Sign in with Google'), [data-provider='google']"
+    description: "Initiate Google OAuth flow"
+
+  - name: "Wait for OAuth completion"
+    action: "wait_for_function"
+    function: |
+      () => {
+        // Check if localStorage has Supabase session
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.includes('auth-token')) {
+            try {
+              const session = JSON.parse(localStorage.getItem(key));
+              return session && session.access_token;
+            } catch (e) {
+              continue;
+            }
+          }
+        }
+        return false;
+      }
+    timeout: 120000
+    description: "Wait for authentication to complete"
+
+  - name: "Verify authentication success"
+    action: "assert_visible"
+    selector: "[data-authenticated='true'], .user-profile, .logout-btn"
+    description: "User should be logged in with visible authenticated indicators"
+
+  - name: "Verify session data in localStorage"
+    action: "assert_function"
+    function: |
+      () => {
+        const authKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('supabase') || key.includes('auth'))) {
+            authKeys.push(key);
+          }
+        }
+        return authKeys.length > 0;
+      }
+    description: "Authentication data should be stored in localStorage"
+
+# Cleanup steps (optional)
+cleanup:
+  - name: "Take screenshot of logged in state"
+    action: "screenshot"
+    path: "test-results/login-success.png"
+
+# Test data and variables
+variables:
+  app_url: "http://127.0.0.1:8000"
+  oauth_timeout: 120000
+
+# Expected outcomes
+expectations:
+  - "User successfully authenticates via Google OAuth"
+  - "Session data is stored in localStorage"
+  - "Authenticated UI elements are visible"
+  - "No authentication errors occur"

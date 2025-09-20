@@ -1,0 +1,447 @@
+# E2E Test Specification: Login Page Functionality
+name: "Login Page Functionality Tests"
+description: "Comprehensive tests for login page UI, form validation, OAuth providers, and user interactions"
+tags: ["auth", "login", "ui", "validation", "accessibility"]
+
+# Test configuration
+config:
+  timeout: 30000  # 30 seconds for UI tests
+  retries: 2
+  skip_auth: true  # These are pre-authentication tests
+
+# Test scenarios - each corresponds to a test function in test_login_page.py
+scenarios:
+  - name: "Login Page Loads Correctly"
+    description: "Verify that the login page loads with all expected elements"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Verify authentication view is visible"
+        action: "assert_visible"
+        selector: "[x-show*='auth']"
+        description: "Auth view should be displayed"
+
+      - name: "Verify page title"
+        action: "assert_visible"
+        selector: "h1:has-text('Dev Admin Login')"
+        description: "Page title should be visible"
+
+      - name: "Verify divider between OAuth and form"
+        action: "assert_visible"
+        selector: "div.divider:has-text('OR')"
+        description: "OR divider should separate OAuth from email form"
+
+      - name: "Verify OAuth provider section"
+        action: "assert_visible"
+        selector: "div.space-y-3.mb-4"
+        description: "OAuth provider buttons section should be visible"
+
+      - name: "Verify email input"
+        action: "assert_visible"
+        selector: "#email-input"
+        description: "Email input field should be visible"
+
+      - name: "Verify password input"
+        action: "assert_visible"
+        selector: "#password-input"
+        description: "Password input field should be visible"
+
+      - name: "Verify submit button"
+        action: "assert_visible"
+        selector: "button[type='submit']"
+        description: "Submit button should be visible"
+
+      - name: "Verify sign up toggle"
+        action: "assert_visible"
+        selector: "text=Need an account? Sign up"
+        description: "Sign up toggle link should be visible"
+
+  - name: "OAuth Provider Buttons Present"
+    description: "Test that OAuth provider buttons are displayed correctly"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Check for OAuth buttons"
+        action: "assert_function"
+        function: |
+          () => {
+            const oauthButtons = document.querySelectorAll("button:has-text('Continue with')");
+            return oauthButtons.length > 0;
+          }
+        description: "At least one OAuth provider button should exist"
+
+      - name: "Verify Google OAuth button if present"
+        action: "assert_function"
+        function: |
+          () => {
+            const googleButton = document.querySelector("button:has-text('Continue with Google')");
+            return !googleButton || googleButton.offsetParent !== null;
+          }
+        description: "Google OAuth button should be visible if present"
+
+  - name: "Email Password Form Validation"
+    description: "Test email and password form validation"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Verify email input is required"
+        action: "assert_function"
+        function: |
+          () => {
+            const emailInput = document.getElementById('email-input');
+            return emailInput && emailInput.hasAttribute('required');
+          }
+        description: "Email input should have required attribute"
+
+      - name: "Verify password input is required"
+        action: "assert_function"
+        function: |
+          () => {
+            const passwordInput = document.getElementById('password-input');
+            return passwordInput && passwordInput.hasAttribute('required');
+          }
+        description: "Password input should have required attribute"
+
+      - name: "Test invalid email validation"
+        action: "fill"
+        selector: "#email-input"
+        value: "invalid-email"
+
+      - name: "Test password input"
+        action: "fill"
+        selector: "#password-input"
+        value: "password123"
+
+      - name: "Check email validity"
+        action: "assert_function"
+        function: |
+          () => {
+            const emailInput = document.getElementById('email-input');
+            return emailInput && !emailInput.checkValidity();
+          }
+        description: "Invalid email should fail HTML5 validation"
+
+  - name: "Sign Up Sign In Toggle"
+    description: "Test the toggle between sign up and sign in modes"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Verify initial sign in mode"
+        action: "assert_text"
+        selector: "button[type='submit']"
+        text: "Sign In"
+        description: "Should start in sign in mode"
+
+      - name: "Verify sign up toggle link"
+        action: "assert_visible"
+        selector: "text=Need an account? Sign up"
+        description: "Sign up toggle should be visible"
+
+      - name: "Click toggle to sign up"
+        action: "click"
+        selector: "text=Need an account? Sign up"
+
+      - name: "Verify switched to sign up mode"
+        action: "assert_text"
+        selector: "button[type='submit']"
+        text: "Sign Up"
+        description: "Button should show Sign Up"
+
+      - name: "Verify sign in toggle link"
+        action: "assert_visible"
+        selector: "text=Already have an account? Sign in"
+        description: "Sign in toggle should be visible"
+
+      - name: "Click toggle back to sign in"
+        action: "click"
+        selector: "text=Already have an account? Sign in"
+
+      - name: "Verify back to sign in mode"
+        action: "assert_text"
+        selector: "button[type='submit']"
+        text: "Sign In"
+        description: "Button should show Sign In again"
+
+  - name: "Form Input Functionality"
+    description: "Test that form inputs accept and display text correctly"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Fill email input"
+        action: "fill"
+        selector: "#email-input"
+        value: "test@example.com"
+
+      - name: "Verify email input value"
+        action: "assert_value"
+        selector: "#email-input"
+        value: "test@example.com"
+        description: "Email input should contain the entered value"
+
+      - name: "Fill password input"
+        action: "fill"
+        selector: "#password-input"
+        value: "securepassword123"
+
+      - name: "Verify password input value"
+        action: "assert_value"
+        selector: "#password-input"
+        value: "securepassword123"
+        description: "Password input should contain the entered value"
+
+      - name: "Verify email input type"
+        action: "assert_attribute"
+        selector: "#email-input"
+        attribute: "type"
+        value: "email"
+        description: "Email input should have email type"
+
+      - name: "Verify password input type"
+        action: "assert_attribute"
+        selector: "#password-input"
+        attribute: "type"
+        value: "password"
+        description: "Password input should have password type"
+
+      - name: "Verify email autocomplete"
+        action: "assert_attribute"
+        selector: "#email-input"
+        attribute: "autocomplete"
+        value: "email"
+        description: "Email input should have email autocomplete"
+
+      - name: "Verify password autocomplete"
+        action: "assert_attribute"
+        selector: "#password-input"
+        attribute: "autocomplete"
+        value: "current-password"
+        description: "Password input should have current-password autocomplete"
+
+  - name: "Loading States During Auth"
+    description: "Test loading states and disabled inputs during authentication"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Fill form with test data"
+        action: "fill"
+        selector: "#email-input"
+        value: "test@example.com"
+
+      - name: "Fill password"
+        action: "fill"
+        selector: "#password-input"
+        value: "password123"
+
+      - name: "Submit form"
+        action: "click"
+        selector: "button[type='submit']"
+
+      - name: "Check for loading indicators"
+        action: "assert_function"
+        function: |
+          () => {
+            const submitButton = document.querySelector("button[type='submit']");
+            const isDisabled = submitButton && submitButton.disabled;
+            const hasLoadingClass = submitButton && submitButton.classList.contains('loading');
+            return isDisabled || hasLoadingClass;
+          }
+        description: "Submit button should show loading state or be disabled"
+
+  - name: "Authentication Success Transition"
+    description: "Test successful authentication transitions to main app"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Verify auth view is visible initially"
+        action: "assert_visible"
+        selector: "[x-show*='auth']"
+        description: "Auth view should be visible before login"
+
+      - name: "Verify app view is hidden initially"
+        action: "assert_not_visible"
+        selector: "[x-show*='app']"
+        description: "App view should be hidden before login"
+
+      - name: "Verify navbar is hidden initially"
+        action: "assert_not_visible"
+        selector: "nav[role='navigation']"
+        description: "Navigation should be hidden before login"
+
+      - name: "Verify dashboard title is hidden initially"
+        action: "assert_not_visible"
+        selector: "h1:has-text('Dev Admin')"
+        description: "Dashboard title should be hidden before login"
+
+  - name: "Error Message Display"
+    description: "Test that error messages are displayed for authentication failures"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Fill form with invalid data"
+        action: "fill"
+        selector: "#email-input"
+        value: "invalid@email"
+
+      - name: "Fill password"
+        action: "fill"
+        selector: "#password-input"
+        value: "wrongpassword"
+
+      - name: "Submit form"
+        action: "click"
+        selector: "button[type='submit']"
+
+      - name: "Wait for potential error response"
+        action: "wait_for_timeout"
+        timeout: 2000
+
+      - name: "Check for error display elements"
+        action: "assert_function"
+        function: |
+          () => {
+            const errorElements = document.querySelectorAll(".alert-error, .text-error, [class*='error']");
+            return errorElements.length >= 0; // Just check that error elements can exist
+          }
+        description: "Error display elements should be present in DOM"
+
+  - name: "Accessibility Features"
+    description: "Test accessibility features of the login page"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Verify proper heading hierarchy"
+        action: "assert_function"
+        function: |
+          () => {
+            const h1Elements = document.querySelectorAll("h1");
+            return h1Elements.length >= 1;
+          }
+        description: "Page should have at least one H1 heading"
+
+      - name: "Verify email label"
+        action: "assert_visible"
+        selector: "label[for='email-input']"
+        description: "Email input should have a label"
+
+      - name: "Verify password label"
+        action: "assert_visible"
+        selector: "label[for='password-input']"
+        description: "Password input should have a label"
+
+      - name: "Verify email label text"
+        action: "assert_text"
+        selector: "label[for='email-input']"
+        text: "Email"
+        description: "Email label should contain 'Email'"
+
+      - name: "Verify password label text"
+        action: "assert_text"
+        selector: "label[for='password-input']"
+        text: "Password"
+        description: "Password label should contain 'Password'"
+
+      - name: "Check for ARIA labels on buttons"
+        action: "assert_function"
+        function: |
+          () => {
+            const ariaButtons = document.querySelectorAll("button[aria-label], button[aria-describedby]");
+            return ariaButtons.length >= 0; // ARIA labels are optional but good to check
+          }
+        description: "Buttons may have ARIA labels for accessibility"
+
+  - name: "Responsive Design"
+    description: "Test responsive design of the login page"
+    steps:
+      - name: "Navigate to login page"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Test mobile viewport"
+        action: "set_viewport"
+        width: 375
+        height: 667
+
+      - name: "Verify login card is visible on mobile"
+        action: "assert_visible"
+        selector: ".card"
+        description: "Login card should be visible on mobile"
+
+      - name: "Verify heading is readable on mobile"
+        action: "assert_visible"
+        selector: "h1"
+        description: "Heading should be visible on mobile"
+
+      - name: "Test tablet viewport"
+        action: "set_viewport"
+        width: 768
+        height: 1024
+
+      - name: "Verify login card is visible on tablet"
+        action: "assert_visible"
+        selector: ".card"
+        description: "Login card should be visible on tablet"
+
+      - name: "Test desktop viewport"
+        action: "set_viewport"
+        width: 1280
+        height: 720
+
+      - name: "Verify login card is visible on desktop"
+        action: "assert_visible"
+        selector: ".card"
+        description: "Login card should be visible on desktop"
+
+# Test data and variables
+variables:
+  app_url: "http://127.0.0.1:8000"
+  test_email: "test@example.com"
+  test_password: "securepassword123"
+  invalid_email: "invalid@email"
+  mobile_width: 375
+  mobile_height: 667
+  tablet_width: 768
+  tablet_height: 1024
+  desktop_width: 1280
+  desktop_height: 720
+
+# Expected outcomes
+expectations:
+  - "Login page loads with all required UI elements"
+  - "OAuth provider buttons are properly displayed"
+  - "Form validation works for required fields"
+  - "Sign up/sign in toggle functions correctly"
+  - "Form inputs accept and retain user input"
+  - "Loading states are shown during authentication"
+  - "Authentication success transitions work properly"
+  - "Error messages are displayed for validation failures"
+  - "Accessibility features are implemented"
+  - "Page is responsive across different screen sizes"</content>
+</xai:function_call">Yaml

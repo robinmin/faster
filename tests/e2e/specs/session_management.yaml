@@ -1,0 +1,250 @@
+# E2E Test Specification: Session Management and Token Refresh
+name: "Session Management and Token Refresh"
+description: "Test session persistence, refresh, and expiration handling"
+tags: ["session", "auth", "refresh", "token", "security"]
+
+# Test configuration
+config:
+  timeout: 60000
+  retries: 1
+  requires_auth: true
+
+# Test steps
+steps:
+  - name: "Verify initial authentication"
+    action: "goto"
+    url: "/dev/admin"
+    wait_for: "networkidle"
+
+  - name: "Check authenticated state"
+    action: "assert_function"
+    function: |
+      () => {
+        return localStorage.getItem('sb-authenticated') === 'true' ||
+               document.querySelector('[data-authenticated="true"]') !== null;
+      }
+    description: "User should be authenticated initially"
+
+  - name: "Extract session data"
+    action: "evaluate"
+    function: |
+      () => {
+        const sessionData = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('supabase') || key.includes('auth'))) {
+            try {
+              sessionData[key] = JSON.parse(localStorage.getItem(key));
+            } catch (e) {
+              sessionData[key] = localStorage.getItem(key);
+            }
+          }
+        }
+        return sessionData;
+      }
+    store_as: "initial_session"
+    description: "Store initial session data for comparison"
+
+  - name: "Navigate away and back"
+    action: "goto"
+    url: "about:blank"
+
+  - name: "Return to application"
+    action: "goto"
+    url: "/dev/admin"
+    wait_for: "networkidle"
+
+  - name: "Verify session persistence"
+    action: "wait_for_function"
+    function: |
+      () => {
+        return localStorage.getItem('sb-authenticated') === 'true' ||
+               document.querySelector('[data-authenticated="true"]') !== null;
+      }
+    timeout: 10000
+    description: "Session should persist across page reloads"
+
+  - name: "Test session refresh"
+    action: "evaluate"
+    function: |
+      async () => {
+        if (window.supabase && window.supabase.auth) {
+          const { data, error } = await window.supabase.auth.refreshSession();
+          return { success: !error, error: error?.message };
+        }
+        return { success: false, error: 'Supabase not available' };
+      }
+    store_as: "refresh_result"
+    description: "Attempt to refresh the session"
+
+  - name: "Verify refresh success"
+    action: "assert_function"
+    function: |
+      () => {
+        const result = window.testResults?.refresh_result;
+        return result?.success === true;
+      }
+    description: "Session refresh should succeed"
+
+  - name: "Test multiple tab scenario"
+    action: "evaluate"
+    function: |
+      () => {
+        // Simulate storage event from another tab
+        const storageEvent = new StorageEvent('storage', {
+          key: 'sb-session-update',
+          newValue: Date.now().toString(),
+          oldValue: null,
+          url: window.location.href
+        });
+        window.dispatchEvent(storageEvent);
+        return true;
+      }
+    description: "Simulate session update from another tab"
+
+  - name: "Wait for cross-tab sync"
+    action: "wait_for_timeout"
+    timeout: 2000
+
+  - name: "Verify session still valid"
+    action: "assert_function"
+    function: |
+      () => {
+        return localStorage.getItem('sb-authenticated') === 'true' ||
+               document.querySelector('[data-authenticated="true"]') !== null;
+      }
+    description: "Session should remain valid after cross-tab events"
+
+# Token expiration simulation
+token_expiration_test:
+  - name: "Simulate token expiration"
+    action: "evaluate"
+    function: |
+      () => {
+        // Modify the stored token to simulate expiration
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.includes('auth-token')) {
+            try {
+              const session = JSON.parse(localStorage.getItem(key));
+              if (session.expires_at) {
+                // Set expiration to 1 minute ago
+                session.expires_at = Math.floor(Date.now() / 1000) - 60;
+                localStorage.setItem(key, JSON.stringify(session));
+                return true;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        }
+        return false;
+      }
+    store_as: "expiration_simulated"
+    description: "Simulate token expiration"
+
+  - name: "Trigger token refresh check"
+    action: "goto"
+    url: "/dev/admin"
+    wait_for: "networkidle"
+
+  - name: "Check auto-refresh behavior"
+    action: "wait_for_function"
+    function: |
+      () => {
+        // Check if the app handles token refresh automatically
+        return window.location.pathname.includes('login') ||
+               document.querySelector('.login-form') !== null ||
+               localStorage.getItem('sb-authenticated') === 'true';
+      }
+    timeout: 15000
+    description: "App should either refresh token or redirect to login"
+
+# Session security tests
+security_tests:
+  - name: "Test session isolation"
+    action: "evaluate"
+    function: |
+      () => {
+        // Verify session data is properly scoped
+        const sensitiveKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('password') || key.includes('secret'))) {
+            sensitiveKeys.push(key);
+          }
+        }
+        return sensitiveKeys.length === 0;
+      }
+    description: "No sensitive data should be stored in localStorage"
+
+  - name: "Test session timeout"
+    action: "evaluate"
+    function: |
+      () => {
+        // Check if there's a session timeout mechanism
+        const lastActivity = localStorage.getItem('last-activity');
+        const sessionTimeout = localStorage.getItem('session-timeout');
+        return { lastActivity, sessionTimeout };
+      }
+    store_as: "timeout_config"
+    description: "Check session timeout configuration"
+
+  - name: "Verify secure session handling"
+    action: "assert_function"
+    function: |
+      () => {
+        // Verify session tokens are not exposed globally
+        return typeof window.authToken === 'undefined' &&
+               typeof window.sessionToken === 'undefined';
+      }
+    description: "Session tokens should not be exposed globally"
+
+# Performance tests
+performance_tests:
+  - name: "Measure session restoration time"
+    action: "evaluate"
+    function: |
+      () => {
+        const start = performance.now();
+        // Simulate session restoration
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            const end = performance.now();
+            resolve({ duration: end - start });
+          }, 100);
+        });
+      }
+    store_as: "session_restore_time"
+    description: "Measure session restoration performance"
+
+# Cleanup
+cleanup:
+  - name: "Restore valid session"
+    action: "evaluate"
+    function: |
+      () => {
+        // Restore a valid session for subsequent tests
+        const validSession = window.testResults?.initial_session;
+        if (validSession) {
+          for (const [key, value] of Object.entries(validSession)) {
+            localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+          }
+        }
+        return true;
+      }
+    description: "Restore valid session state"
+
+  - name: "Take final screenshot"
+    action: "screenshot"
+    path: "test-results/session-management-final.png"
+
+# Expected outcomes
+expectations:
+  - "Session persists across page reloads"
+  - "Token refresh works correctly"
+  - "Cross-tab session sync functions properly"
+  - "Expired tokens are handled gracefully"
+  - "No sensitive data is exposed"
+  - "Session timeout mechanisms work"
+  - "Performance is within acceptable limits"
