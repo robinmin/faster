@@ -27,6 +27,7 @@ AGENTS.md
 
 tests/e2e/test-results/
 tests/e2e/screenshots/
+tests/e2e/videos/
 tests/e2e/playwright-auth.json
 tests/e2e/__pycache__/
 tests/e2e/.pytest_cache/
