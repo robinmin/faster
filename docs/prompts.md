@@ -938,3 +938,40 @@ We need to enhance the virtual page 'RBAC' in fle @faster/resources/dev-admin.ht
 - HTTP method may not need background color. But each tag has different background color will help use identify the tag quickly. shift them.
 - For the backend, make sure both `make lint` and `make test` all pass
 - For the frontend, you can use playwright to verify the frontend via http://127.0.0.1:8000/dev/admin(use Google OAuth user). In case of any issue or web console errors, fix them all.
+
+### Add Metadata Page
+- In file @faster/resources/dev-admin.html, add a new page for metadata management -- 'Metadata'. It contains two parts: Sys Dict and Sys Map.
+- In the Sys Dict section, there is a dropdown list to represent the `category`, a `key` input field, and a `value` input field. If any of them with values, the values will be used to filter the following table. After the row to show the filters, we use a Table component to show the content of SYS_DICT under particular category. (Only category, key, value and in_used will be shown.) There also have buttons to manage the data.
+-For the Sys Map section, almost the same as Sys Dict, except one thing the source of category:
+  - Sys Dict category: .get_sys_dict(category="dict_category") ## so far blank, will be added later.
+  - Sys Map category: .get_sys_map(category="map_category") ## so far blank, will be added later.
+
+- In the backeend in file @faster/core/routers.py, at least add the following endpoints:
+  - `/sys_dict/show` : show the content in sys_dict by category
+  - `/sys_dict/adjust` : maintain the content in sys_dict by category(support add, soft delete and update existing items)
+  - `/sys_map/show` : show the content in sys_map by category
+  - `/sys_map/adjust` : maintain the content in sys_map by category(support add, soft delete and update existing items)
+  - there are four existing repository methods for your use in the @faster/core/services.py: get_sys_dict/set_sys_dict/get_sys_map/set_sys_map
+
+- For the backend, add or enhance unit tests, and make sure both `make lint` and `make test` all pass
+- For the frontend, you can use playwright to verify the frontend via http://127.0.0.1:8000/dev/admin(use Google OAuth user). In case of any issue or web console errors, fix them all.
+
+#### bug fix on Metadata page
+When I try to run the application, I encounter the following errors:
+- call `/dev/sys_dict/show` without Bearer token
+- call `/dev/sys_map/show` without Bearer token
+- call to non existing endpoint `/auth/metadata`
+
+Here comes the log for your reference:
+```
+18 23:08:23.281 [error   ] [101b2ce4] [auth] Authentication error: Route not found :/auth/metadata
+18 23:08:23.316 [info    ] 127.0.0.1:63472 - "GET /auth/metadata HTTP/1.1" 404
+18 23:08:23.328 [debug   ] [ad7e12d7] No Authorization header found in request
+18 23:08:23.329 [error   ] [ad7e12d7] [auth] Authentication error: Invalid token or already logged out: /dev/sys_dict/show
+18 23:08:23.348 [info    ] 127.0.0.1:63472 - "GET /dev/sys_dict/show HTTP/1.1" 401
+18 23:08:23.349 [debug   ] [b093197f] No Authorization header found in request
+18 23:08:23.349 [error   ] [b093197f] [auth] Authentication error: Invalid token or already logged out: /dev/sys_map/show
+18 23:08:23.370 [info    ] 127.0.0.1:63474 - "GET /dev/sys_map/show HTTP/1.1" 401
+```
+
+Fix them all, and make sure both `make lint` and `make test` all pass.For the frontend, you can use playwright to verify the frontend via http://127.0.0.1:8000/dev/admin(use Google OAuth user). In case of any issue or web console errors, fix them all.
