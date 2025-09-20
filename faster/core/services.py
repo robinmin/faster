@@ -78,3 +78,51 @@ class SysService:
             return False
 
         return not sys_map or await self._set_sys_map_info(sys_map, to_cache)
+
+    async def get_sys_dict(
+        self,
+        category: str | None = None,
+        key: int | None = None,
+        value: str | None = None,
+        in_used_only: bool = True,
+    ) -> dict[str, dict[int, Any]]:
+        """Get sys_dict data with optional filters."""
+        return await self._repository.get_sys_dict(category, key, value, in_used_only)
+
+    async def get_sys_dict_with_status(
+        self,
+        category: str | None = None,
+        key: int | None = None,
+        value: str | None = None,
+        in_used_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Get sys_dict data with status information as a list of records."""
+        return await self._repository.get_sys_dict_with_status(category, key, value, in_used_only)
+
+    async def set_sys_dict(self, category: str, values: dict[int, str]) -> bool:
+        """Set sys_dict data for a category."""
+        return await self._repository.set_sys_dict(category, values)
+
+    async def get_sys_map(
+        self,
+        category: str | None = None,
+        left: str | None = None,
+        right: str | None = None,
+        in_used_only: bool = True,
+    ) -> dict[str, dict[str, list[str]]]:
+        """Get sys_map data with optional filters."""
+        return await self._repository.get_sys_map(category, left, right, in_used_only)
+
+    async def get_sys_map_with_status(
+        self,
+        category: str | None = None,
+        left: str | None = None,
+        right: str | None = None,
+        in_used_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Get sys_map data with status information as a list of records."""
+        return await self._repository.get_sys_map_with_status(category, left, right, in_used_only)
+
+    async def set_sys_map(self, category: str, values: dict[str, list[str]]) -> bool:
+        """Set sys_map data for a category."""
+        return await self._repository.set_sys_map(category, values)
