@@ -2002,6 +2002,638 @@
               </div>
             </div>
           </div>
+
+          <!-- Metadata Page -->
+          <div
+            x-show="$store.app.currentPage === 'metadata'"
+            x-data="metadataPage()"
+            x-cloak
+          >
+            <div class="max-w-7xl mx-auto space-y-6">
+              <!-- Metadata Header -->
+              <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                  <h1 class="card-title">
+                    <i
+                      data-lucide="database"
+                      class="w-6 h-6"
+                      aria-hidden="true"
+                    ></i>
+                    Metadata Management
+                  </h1>
+                  <p class="text-base-content/70">
+                    Manage system dictionaries and mappings
+                  </p>
+                </div>
+              </div>
+
+              <!-- Sys Dict Section -->
+              <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                  <h2 class="card-title">
+                    <i
+                      data-lucide="book"
+                      class="w-5 h-5"
+                      aria-hidden="true"
+                    ></i>
+                    System Dictionary (Sys Dict)
+                  </h2>
+
+                  <!-- Filters -->
+                  <div class="flex flex-col md:flex-row gap-4 mb-4">
+                    <div class="form-control w-full md:w-1/4">
+                      <label class="label">
+                        <span class="label-text">Category</span>
+                      </label>
+                      <select
+                        x-model="sysDictFilters.category"
+                        class="select select-bordered"
+                      >
+                        <option value="">All Categories</option>
+                        <template x-for="category in sysDictCategories" :key="category">
+                          <option :value="category" x-text="category"></option>
+                        </template>
+                      </select>
+                    </div>
+                    <div class="form-control w-full md:w-1/4">
+                      <label class="label">
+                        <span class="label-text">Key</span>
+                      </label>
+                      <input
+                        x-model="sysDictFilters.key"
+                        type="number"
+                        placeholder="Filter by key"
+                        class="input input-bordered"
+                      />
+                    </div>
+                    <div class="form-control w-full md:w-5/12">
+                      <label class="label">
+                        <span class="label-text">Value</span>
+                      </label>
+                      <input
+                        x-model="sysDictFilters.value"
+                        type="text"
+                        placeholder="Filter by value"
+                        class="input input-bordered"
+                      />
+                    </div>
+                    <div class="form-control w-full md:w-1/6">
+                      <label class="label">
+                        <span class="label-text">Status</span>
+                      </label>
+                      <select
+                        x-model="sysDictFilters.status"
+                        class="select select-bordered"
+                      >
+                        <option value="">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- Action Buttons -->
+                  <div class="flex gap-2 mb-4">
+                    <button
+                      @click="showAddSysDictModal = true"
+                      class="btn btn-primary btn-sm"
+                    >
+                      <i data-lucide="plus" class="w-4 h-4"></i>
+                      Add Entry
+                    </button>
+                    <button
+                      @click="loadSysDictData()"
+                      class="btn btn-outline btn-sm"
+                      :class="{ 'loading': sysDictLoading }"
+                      :disabled="sysDictLoading"
+                    >
+                      <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                      Refresh
+                    </button>
+                  </div>
+
+                  <!-- Sys Dict Table -->
+                  <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                      <thead>
+                        <tr>
+                          <th>Category</th>
+                          <th>Key</th>
+                          <th>Value</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template x-for="item in filteredSysDictData" :key="`${item.category}-${item.key}`">
+                          <tr>
+                            <td x-text="item.category"></td>
+                            <td x-text="item.key"></td>
+                            <td x-text="item.value"></td>
+                            <td>
+                              <div class="badge" :class="item.in_used ? 'badge-success' : 'badge-error'">
+                                <span x-text="item.in_used ? 'Active' : 'Inactive'"></span>
+                              </div>
+                            </td>
+                            <td>
+                              <div class="flex gap-1">
+                                <button
+                                  @click="editSysDictItem(item)"
+                                  class="btn btn-ghost btn-xs"
+                                  title="Edit"
+                                >
+                                  <i data-lucide="edit" class="w-3 h-3"></i>
+                                </button>
+                                <button
+                                  @click="confirmDeleteSysDict(item)"
+                                  class="btn btn-ghost btn-xs text-error"
+                                  title="Delete"
+                                >
+                                  <i data-lucide="trash-2" class="w-3 h-3"></i>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+
+                    <!-- Empty State -->
+                    <div x-show="sysDictData.length === 0 && !sysDictLoading" class="text-center py-8">
+                      <i data-lucide="database" class="w-12 h-12 mx-auto text-base-content/30 mb-4"></i>
+                      <p class="text-base-content/60">No dictionary entries found</p>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div x-show="sysDictLoading" class="text-center py-8">
+                      <span class="loading loading-spinner loading-lg"></span>
+                      <p class="text-base-content/60 mt-4">Loading dictionary data...</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sys Map Section -->
+              <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                  <h2 class="card-title">
+                    <i
+                      data-lucide="map"
+                      class="w-5 h-5"
+                      aria-hidden="true"
+                    ></i>
+                    System Mapping (Sys Map)
+                  </h2>
+
+                  <!-- Filters -->
+                  <div class="flex flex-col md:flex-row gap-4 mb-4">
+                    <div class="form-control w-full md:w-1/4">
+                      <label class="label">
+                        <span class="label-text">Category</span>
+                      </label>
+                      <select
+                        x-model="sysMapFilters.category"
+                        class="select select-bordered"
+                      >
+                        <option value="">All Categories</option>
+                        <template x-for="category in sysMapCategories" :key="category">
+                          <option :value="category" x-text="category"></option>
+                        </template>
+                      </select>
+                    </div>
+                    <div class="form-control w-full md:w-1/4">
+                      <label class="label">
+                        <span class="label-text">Left Value</span>
+                      </label>
+                      <input
+                        x-model="sysMapFilters.left"
+                        type="text"
+                        placeholder="Filter by left value"
+                        class="input input-bordered"
+                      />
+                    </div>
+                    <div class="form-control w-full md:w-5/12">
+                      <label class="label">
+                        <span class="label-text">Right Value</span>
+                      </label>
+                      <input
+                        x-model="sysMapFilters.right"
+                        type="text"
+                        placeholder="Filter by right value"
+                        class="input input-bordered"
+                      />
+                    </div>
+                    <div class="form-control w-full md:w-1/6">
+                      <label class="label">
+                        <span class="label-text">Status</span>
+                      </label>
+                      <select
+                        x-model="sysMapFilters.status"
+                        class="select select-bordered"
+                      >
+                        <option value="">All Status</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- Action Buttons -->
+                  <div class="flex gap-2 mb-4">
+                    <button
+                      @click="showAddSysMapModal = true"
+                      class="btn btn-primary btn-sm"
+                    >
+                      <i data-lucide="plus" class="w-4 h-4"></i>
+                      Add Mapping
+                    </button>
+                    <button
+                      @click="loadSysMapData()"
+                      class="btn btn-outline btn-sm"
+                      :class="{ 'loading': sysMapLoading }"
+                      :disabled="sysMapLoading"
+                    >
+                      <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                      Refresh
+                    </button>
+                  </div>
+
+                  <!-- Sys Map Table -->
+                  <div class="overflow-x-auto">
+                    <table class="table table-zebra">
+                      <thead>
+                        <tr>
+                          <th>Category</th>
+                          <th>Left Value</th>
+                          <th>Right Value</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <template x-for="item in filteredSysMapData" :key="`${item.category}-${item.left_value}-${item.right_value}`">
+                          <tr>
+                            <td x-text="item.category"></td>
+                            <td x-text="item.left_value"></td>
+                            <td x-text="item.right_value"></td>
+                            <td>
+                              <div class="badge" :class="item.in_used ? 'badge-success' : 'badge-error'">
+                                <span x-text="item.in_used ? 'Active' : 'Inactive'"></span>
+                              </div>
+                            </td>
+                            <td>
+                              <div class="flex gap-1">
+                                <button
+                                  @click="editSysMapItem(item)"
+                                  class="btn btn-ghost btn-xs"
+                                  title="Edit"
+                                >
+                                  <i data-lucide="edit" class="w-3 h-3"></i>
+                                </button>
+                                <button
+                                  @click="confirmDeleteSysMap(item)"
+                                  class="btn btn-ghost btn-xs text-error"
+                                  title="Delete"
+                                >
+                                  <i data-lucide="trash-2" class="w-3 h-3"></i>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+
+                    <!-- Empty State -->
+                    <div x-show="sysMapData.length === 0 && !sysMapLoading" class="text-center py-8">
+                      <i data-lucide="map" class="w-12 h-12 mx-auto text-base-content/30 mb-4"></i>
+                      <p class="text-base-content/60">No mapping entries found</p>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div x-show="sysMapLoading" class="text-center py-8">
+                      <span class="loading loading-spinner loading-lg"></span>
+                      <p class="text-base-content/60 mt-4">Loading mapping data...</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Metadata Modals -->
+              <!-- Add Sys Dict Modal -->
+              <template x-if="showAddSysDictModal">
+              <div class="modal modal-open" x-cloak>
+                <div class="modal-box">
+                  <h3 class="font-bold text-lg">
+                    <i data-lucide="plus" class="w-5 h-5 inline mr-2"></i>
+                    Add Sys Dict Entry
+                  </h3>
+                  <form @submit.prevent="saveSysDictEntry()" class="py-4">
+                    <div class="form-control">
+                      <label class="label" for="dict-category">
+                        <span class="label-text">Category</span>
+                      </label>
+                      <input
+                        id="dict-category"
+                        x-model="sysDictForm.category"
+                        type="text"
+                        placeholder="Enter category"
+                        class="input input-bordered"
+                        required
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="dict-key">
+                        <span class="label-text">Key</span>
+                      </label>
+                      <input
+                        id="dict-key"
+                        x-model="sysDictForm.key"
+                        type="number"
+                        placeholder="Enter key"
+                        class="input input-bordered"
+                        required
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="dict-value">
+                        <span class="label-text">Value</span>
+                      </label>
+                      <input
+                        id="dict-value"
+                        x-model="sysDictForm.value"
+                        type="text"
+                        placeholder="Enter value"
+                        class="input input-bordered"
+                        required
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label cursor-pointer">
+                        <span class="label-text">Active</span>
+                        <input
+                          type="checkbox"
+                          x-model="sysDictForm.in_used"
+                          class="checkbox checkbox-primary"
+                        />
+                      </label>
+                    </div>
+                  </form>
+                  <div class="modal-action">
+                    <button
+                      @click="showAddSysDictModal = false; resetSysDictForm()"
+                      class="btn"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      @click="confirmSaveSysDictEntry()"
+                      class="btn btn-primary"
+                    >
+                      Add Entry
+                    </button>
+                  </div>
+                </div>
+              </div>
+              </template>
+
+              <!-- Add Sys Map Modal -->
+              <template x-if="showAddSysMapModal">
+              <div class="modal modal-open" x-cloak>
+                <div class="modal-box">
+                  <h3 class="font-bold text-lg">
+                    <i data-lucide="plus" class="w-5 h-5 inline mr-2"></i>
+                    Add Sys Map Entry
+                  </h3>
+                  <form @submit.prevent="saveSysMapEntry()" class="py-4">
+                    <div class="form-control">
+                      <label class="label" for="map-category">
+                        <span class="label-text">Category</span>
+                      </label>
+                      <input
+                        id="map-category"
+                        x-model="sysMapForm.category"
+                        type="text"
+                        placeholder="Enter category"
+                        class="input input-bordered"
+                        required
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="map-left">
+                        <span class="label-text">Left Value</span>
+                      </label>
+                      <input
+                        id="map-left"
+                        x-model="sysMapForm.left_value"
+                        type="text"
+                        placeholder="Enter left value"
+                        class="input input-bordered"
+                        required
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="map-right">
+                        <span class="label-text">Right Value</span>
+                      </label>
+                      <input
+                        id="map-right"
+                        x-model="sysMapForm.right_value"
+                        type="text"
+                        placeholder="Enter right value"
+                        class="input input-bordered"
+                        required
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label cursor-pointer">
+                        <span class="label-text">Active</span>
+                        <input
+                          type="checkbox"
+                          x-model="sysMapForm.in_used"
+                          class="checkbox checkbox-primary"
+                        />
+                      </label>
+                    </div>
+                  </form>
+                  <div class="modal-action">
+                    <button
+                      @click="showAddSysMapModal = false; resetSysMapForm()"
+                      class="btn"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      @click="confirmSaveSysMapEntry()"
+                      class="btn btn-primary"
+                    >
+                      Add Mapping
+                    </button>
+                  </div>
+                </div>
+              </div>
+              </template>
+
+              <!-- Edit Sys Dict Modal -->
+              <template x-if="showEditSysDictModal">
+              <div class="modal modal-open" x-cloak>
+                <div class="modal-box">
+                  <h3 class="font-bold text-lg">
+                    <i data-lucide="edit" class="w-5 h-5 inline mr-2"></i>
+                    Edit Sys Dict Entry
+                  </h3>
+                  <form @submit.prevent="saveSysDictEntry()" class="py-4">
+                    <div class="form-control">
+                      <label class="label" for="edit-dict-category">
+                        <span class="label-text">Category</span>
+                      </label>
+                      <input
+                        id="edit-dict-category"
+                        x-model="sysDictForm.category"
+                        type="text"
+                        placeholder="Enter category"
+                        class="input input-bordered"
+                        required
+                        readonly
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="edit-dict-key">
+                        <span class="label-text">Key</span>
+                      </label>
+                      <input
+                        id="edit-dict-key"
+                        x-model="sysDictForm.key"
+                        type="number"
+                        placeholder="Enter key"
+                        class="input input-bordered"
+                        required
+                        readonly
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="edit-dict-value">
+                        <span class="label-text">Value</span>
+                      </label>
+                      <input
+                        id="edit-dict-value"
+                        x-model="sysDictForm.value"
+                        type="text"
+                        placeholder="Enter value"
+                        class="input input-bordered"
+                        required
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label cursor-pointer">
+                        <span class="label-text">Active</span>
+                        <input
+                          type="checkbox"
+                          x-model="sysDictForm.in_used"
+                          class="checkbox checkbox-primary"
+                        />
+                      </label>
+                    </div>
+                  </form>
+                  <div class="modal-action">
+                    <button
+                      @click="cancelEditSysDict()"
+                      class="btn"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      @click="confirmSaveSysDictEntry()"
+                      class="btn btn-primary"
+                    >
+                      Update Entry
+                    </button>
+                  </div>
+                </div>
+              </div>
+              </template>
+
+              <!-- Edit Sys Map Modal -->
+              <template x-if="showEditSysMapModal">
+              <div class="modal modal-open" x-cloak>
+                <div class="modal-box">
+                  <h3 class="font-bold text-lg">
+                    <i data-lucide="edit" class="w-5 h-5 inline mr-2"></i>
+                    Edit Sys Map Entry
+                  </h3>
+                  <form @submit.prevent="saveSysMapEntry()" class="py-4">
+                    <div class="form-control">
+                      <label class="label" for="edit-map-category">
+                        <span class="label-text">Category</span>
+                      </label>
+                      <input
+                        id="edit-map-category"
+                        x-model="sysMapForm.category"
+                        type="text"
+                        placeholder="Enter category"
+                        class="input input-bordered"
+                        required
+                        readonly
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="edit-map-left">
+                        <span class="label-text">Left Value</span>
+                      </label>
+                      <input
+                        id="edit-map-left"
+                        x-model="sysMapForm.left_value"
+                        type="text"
+                        placeholder="Enter left value"
+                        class="input input-bordered"
+                        required
+                        readonly
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="edit-map-right">
+                        <span class="label-text">Right Value</span>
+                      </label>
+                      <input
+                        id="edit-map-right"
+                        x-model="sysMapForm.right_value"
+                        type="text"
+                        placeholder="Enter right value"
+                        class="input input-bordered"
+                        required
+                        readonly
+                      />
+                    </div>
+                    <div class="form-control">
+                      <label class="label cursor-pointer">
+                        <span class="label-text">Active</span>
+                        <input
+                          type="checkbox"
+                          x-model="sysMapForm.in_used"
+                          class="checkbox checkbox-primary"
+                        />
+                      </label>
+                    </div>
+                  </form>
+                  <div class="modal-action">
+                    <button
+                      @click="cancelEditSysMap()"
+                      class="btn"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      @click="confirmSaveSysMapEntry()"
+                      class="btn btn-primary"
+                    >
+                      Update Entry
+                    </button>
+                  </div>
+                </div>
+              </div>
+              </template>
+            </div>
+          </div>
         </div>
       </main>
     </div>
@@ -2037,7 +2669,8 @@
           config: null,
           supabase: null,
           pageData: {},
-          availableRoles: []
+          availableRoles: [],
+          isFirstTimeLogin: false  // Track if this is a genuine first-time login
         });
 
         Alpine.store("auth", {
@@ -2227,7 +2860,7 @@
             return await this.call("/dev/rbac");
           }
           // Virtual pages that don't need server data
-          if (pageId === "user-management" || pageId === "dashboard" || pageId === "onboarding") {
+          if (pageId === "user-management" || pageId === "dashboard" || pageId === "onboarding" || pageId === "metadata") {
             return { message: `${pageId.charAt(0).toUpperCase() + pageId.slice(1).replace('-', ' ')} Page` };
           }
           return await this.call(`/auth/${pageId}`);
@@ -2259,6 +2892,56 @@
       };
 
       // Services
+      const pageNavigationService = {
+        STORAGE_KEY: "dev_admin_last_page",
+
+        saveCurrentPage(pageId) {
+          try {
+            localStorage.setItem(this.STORAGE_KEY, pageId);
+          } catch (error) {
+            console.warn("Could not save current page to localStorage:", error);
+          }
+        },
+
+        getLastVisitedPage() {
+          try {
+            return localStorage.getItem(this.STORAGE_KEY) || "dashboard";
+          } catch (error) {
+            console.warn("Could not retrieve last page from localStorage:", error);
+            return "dashboard";
+          }
+        },
+
+        clearLastVisitedPage() {
+          try {
+            localStorage.removeItem(this.STORAGE_KEY);
+          } catch (error) {
+            console.warn("Could not clear last page from localStorage:", error);
+          }
+        },
+
+        isValidPage(pageId) {
+          const validPages = [
+            "dashboard", "onboarding", "profile", "user-management",
+            "rbac", "sys-health", "app-state", "request-state"
+          ];
+          return validPages.includes(pageId);
+        },
+
+        getDefaultPageForUser(user, isFirstTime = false) {
+          // For first-time login, check if user needs onboarding
+          if (isFirstTime) {
+            // This logic could be enhanced to check user profile completeness
+            // For now, we'll default to dashboard for all users
+            return "dashboard";
+          }
+
+          // For returning users, use their last visited page
+          const lastPage = this.getLastVisitedPage();
+          return this.isValidPage(lastPage) ? lastPage : "dashboard";
+        }
+      };
+
       const configService = {
         async load() {
           return await apiService.getConfig();
@@ -2333,8 +3016,20 @@
           // console.log("User signed in:", session.user.email);
           store.user = session.user;
           store.currentView = "app";
-          store.currentPage = "dashboard";
-          toastService.show("Login successful!", "success");
+
+          // Determine if this is a first-time login or returning user
+          const isFirstTime = store.isFirstTimeLogin;
+
+          // Navigate to appropriate page
+          const targetPage = pageNavigationService.getDefaultPageForUser(session.user, isFirstTime);
+          store.currentPage = targetPage;
+
+          // Reset first-time login flag
+          store.isFirstTimeLogin = false;
+
+          // Show appropriate message
+          const message = isFirstTime ? "Welcome! Login successful!" : "Welcome back!";
+          toastService.show(message, "success");
 
           // Notify backend and capture response
           try {
@@ -2366,6 +3061,9 @@
             console.warn("Failed to notify backend about sign out:", error);
             // Continue with local sign out even if backend notification fails
           }
+
+          // Clear saved page when user explicitly signs out
+          pageNavigationService.clearLastVisitedPage();
 
           store.user = null;
           store.currentView = "auth";
@@ -2541,7 +3239,9 @@
 
             Alpine.store("app").currentView = isAuthenticated ? "app" : "auth";
             if (isAuthenticated) {
-              Alpine.store("app").currentPage = "dashboard";
+              // For existing sessions, restore the last visited page
+              const lastPage = pageNavigationService.getDefaultPageForUser(Alpine.store("app").user, false);
+              Alpine.store("app").currentPage = lastPage;
             }
           },
 
@@ -2634,6 +3334,9 @@
             Alpine.store("auth").loading = true;
 
             try {
+              // Mark this as a first-time login attempt
+              Alpine.store("app").isFirstTimeLogin = true;
+
               const { error } = await supabase.auth.signInWithOAuth({
                 provider,
                 options: { redirectTo: window.location.href }
@@ -2645,6 +3348,8 @@
                 `${provider} login failed: ${error.message}`,
                 "error"
               );
+              // Reset flag on error
+              Alpine.store("app").isFirstTimeLogin = false;
             } finally {
               Alpine.store("auth").loading = false;
             }
@@ -2678,6 +3383,9 @@
             console.log("Attempting email login...");
 
             try {
+              // Mark this as a first-time login attempt
+              Alpine.store("app").isFirstTimeLogin = true;
+
               const { data, error } = await supabase.auth.signInWithPassword({
                 email: this.formData.email,
                 password: this.formData.password
@@ -2690,6 +3398,8 @@
             } catch (error) {
               console.error("Email login failed:", error);
               toastService.show(`Login failed: ${error.message}`, "error");
+              // Reset flag on error
+              Alpine.store("app").isFirstTimeLogin = false;
             }
           },
 
@@ -2821,6 +3531,7 @@
              { id: "onboarding", label: "Onboarding", icon: "user-check" },
              { id: "profile", label: "Profile", icon: "user" },
              { id: "user-management", label: "User Management", icon: "users" },
+             { id: "metadata", label: "Metadata", icon: "database" },
              { id: "rbac", label: "RBAC", icon: "shield-check" },
              { id: "sys-health", label: "Sys Health", icon: "heart-pulse" },
              { id: "app-state", label: "App State", icon: "settings" },
@@ -2835,6 +3546,9 @@
               // Update the page
               Alpine.store("app").currentPage = item.id;
 
+              // Save the current page to localStorage for future sessions
+              pageNavigationService.saveCurrentPage(item.id);
+
               // Store page data for components to use, including the message
               Alpine.store("app").pageData = {
                 ...(data.data || {}),
@@ -2847,6 +3561,9 @@
 
               // Fallback to local navigation
               Alpine.store("app").currentPage = item.id;
+
+              // Still save the page even on error
+              pageNavigationService.saveCurrentPage(item.id);
               Alpine.store("app").pageData = {};
             }
 
@@ -4318,6 +5035,536 @@
               console.error("Copy failed:", error);
               toastService.show("Copy failed", "error");
             }
+          }
+        };
+      }
+
+      function metadataPage() {
+        return {
+          // Sys Dict data and state
+          sysDictData: [],
+          sysDictCategories: [],
+          sysDictFilters: {
+            category: "",
+            key: "",
+            value: "",
+            status: ""
+          },
+          sysDictLoading: false,
+
+          // Sys Map data and state
+          sysMapData: [],
+          sysMapCategories: [],
+          sysMapFilters: {
+            category: "",
+            left: "",
+            right: "",
+            status: ""
+          },
+          sysMapLoading: false,
+
+          // Modal states
+          showAddSysDictModal: false,
+          showAddSysMapModal: false,
+          showEditSysDictModal: false,
+          showEditSysMapModal: false,
+
+          // Form data
+          sysDictForm: {
+            category: "",
+            key: "",
+            value: "",
+            in_used: true
+          },
+          sysMapForm: {
+            category: "",
+            left_value: "",
+            right_value: "",
+            in_used: true
+          },
+
+          // Edit state
+          editingSysDictItem: null,
+          editingSysMapItem: null,
+
+          initialized: false,
+
+          init() {
+            if (this.initialized) {
+              return;
+            }
+            this.initialized = true;
+
+            // Load data when page becomes active
+            this.$watch("$store.app.currentPage", page => {
+              if (page === "metadata") {
+                this.loadSysDictData();
+                this.loadSysMapData();
+              }
+            });
+
+            // Initial load if we're already on this page
+            if (Alpine.store("app").currentPage === "metadata") {
+              this.loadSysDictData();
+              this.loadSysMapData();
+            }
+          },
+
+          async loadSysDictData() {
+            this.sysDictLoading = true;
+            try {
+              // Load all data without filters (filtering is done client-side)
+              const result = await apiService.call('/dev/sys_dict/show');
+
+              if (result.status === 'success') {
+                this.sysDictData = result.data.items || [];
+                // Extract unique categories for dropdown
+                this.sysDictCategories = [...new Set(this.sysDictData.map(item => item.category))];
+                toastService.show(result.message || "Sys Dict data loaded", "success");
+              } else {
+                throw new Error(result.message || "Failed to load sys dict data");
+              }
+            } catch (error) {
+              console.error("Error loading sys dict data:", error);
+              toastService.show("Failed to load sys dict data", "error");
+              this.sysDictData = [];
+            } finally {
+              this.sysDictLoading = false;
+            }
+          },
+
+          async loadSysMapData() {
+            this.sysMapLoading = true;
+            try {
+              // Load all data without filters (filtering is done client-side)
+              const result = await apiService.call('/dev/sys_map/show');
+
+              if (result.status === 'success') {
+                this.sysMapData = result.data.items || [];
+                // Extract unique categories for dropdown
+                this.sysMapCategories = [...new Set(this.sysMapData.map(item => item.category))];
+                toastService.show(result.message || "Sys Map data loaded", "success");
+              } else {
+                throw new Error(result.message || "Failed to load sys map data");
+              }
+            } catch (error) {
+              console.error("Error loading sys map data:", error);
+              toastService.show("Failed to load sys map data", "error");
+              this.sysMapData = [];
+            } finally {
+              this.sysMapLoading = false;
+            }
+          },
+
+          editSysDictItem(item) {
+            this.editingSysDictItem = item;
+            this.sysDictForm = {
+              category: item.category,
+              key: item.key,
+              value: item.value,
+              in_used: item.in_used
+            };
+            this.showEditSysDictModal = true;
+          },
+
+          editSysMapItem(item) {
+            this.editingSysMapItem = item;
+            this.sysMapForm = {
+              category: item.category,
+              left_value: item.left_value,
+              right_value: item.right_value,
+              in_used: item.in_used
+            };
+            this.showEditSysMapModal = true;
+          },
+
+          async deleteSysDictItem(item) {
+            try {
+              // Create a request with the item marked as inactive
+              const requestData = {
+                category: item.category,
+                items: this.sysDictData
+                  .filter(i => i.category === item.category)
+                  .map(i => ({
+                    category: i.category,
+                    key: i.key,
+                    value: i.value,
+                    in_used: i.category === item.category && i.key === item.key ? false : i.in_used
+                  }))
+              };
+
+              const result = await apiService.call('/dev/sys_dict/adjust', {
+                method: 'POST',
+                data: requestData
+              });
+              if (result.status === 'success') {
+                toastService.show("Sys Dict entry deleted successfully", "success");
+                await this.loadSysDictData();
+              } else {
+                throw new Error(result.message || "Failed to delete sys dict entry");
+              }
+            } catch (error) {
+              console.error("Error deleting sys dict entry:", error);
+              toastService.show("Failed to delete sys dict entry", "error");
+            }
+          },
+
+          async deleteSysMapItem(item) {
+            try {
+              // Create a request with the item marked as inactive
+              const requestData = {
+                category: item.category,
+                items: this.sysMapData
+                  .filter(i => i.category === item.category)
+                  .map(i => ({
+                    category: i.category,
+                    left_value: i.left_value,
+                    right_value: i.right_value,
+                    in_used: i.category === item.category &&
+                             i.left_value === item.left_value &&
+                             i.right_value === item.right_value ? false : i.in_used
+                  }))
+              };
+
+              const result = await apiService.call('/dev/sys_map/adjust', {
+                method: 'POST',
+                data: requestData
+              });
+              if (result.status === 'success') {
+                toastService.show("Sys Map entry deleted successfully", "success");
+                await this.loadSysMapData();
+              } else {
+                throw new Error(result.message || "Failed to delete sys map entry");
+              }
+            } catch (error) {
+              console.error("Error deleting sys map entry:", error);
+              toastService.show("Failed to delete sys map entry", "error");
+            }
+          },
+
+          async saveSysDictEntry() {
+            try {
+              // Validate form
+              if (!this.sysDictForm.category || !this.sysDictForm.key || !this.sysDictForm.value) {
+                toastService.show("Please fill in all required fields", "warning");
+                return;
+              }
+
+              // Get all items for this category and add/update the new one
+              const categoryItems = this.sysDictData.filter(item => item.category === this.sysDictForm.category);
+
+              // Check if key already exists (for add mode)
+              if (!this.editingSysDictItem && categoryItems.some(item => item.key === parseInt(this.sysDictForm.key))) {
+                toastService.show("Key already exists in this category", "warning");
+                return;
+              }
+
+              // Create the items array with the new/updated item
+              const items = categoryItems.map(item => ({
+                category: item.category,
+                key: item.key,
+                value: item.key === parseInt(this.sysDictForm.key) ? this.sysDictForm.value : item.value,
+                in_used: item.key === parseInt(this.sysDictForm.key) ? this.sysDictForm.in_used : item.in_used
+              }));
+
+              // Add new item if not editing
+              if (!this.editingSysDictItem) {
+                items.push({
+                  category: this.sysDictForm.category,
+                  key: parseInt(this.sysDictForm.key),
+                  value: this.sysDictForm.value,
+                  in_used: this.sysDictForm.in_used
+                });
+              }
+
+              const requestData = {
+                category: this.sysDictForm.category,
+                items: items
+              };
+
+              const result = await apiService.call('/dev/sys_dict/adjust', {
+                method: 'POST',
+                data: requestData
+              });
+              if (result.status === 'success') {
+                toastService.show(this.editingSysDictItem ? "Sys Dict entry updated successfully" : "Sys Dict entry added successfully", "success");
+                this.showAddSysDictModal = false;
+                this.showEditSysDictModal = false;
+                this.resetSysDictForm();
+                await this.loadSysDictData();
+              } else {
+                throw new Error(result.message || "Failed to save sys dict entry");
+              }
+            } catch (error) {
+              console.error("Error saving sys dict entry:", error);
+              toastService.show("Failed to save sys dict entry", "error");
+            }
+          },
+
+          async saveSysMapEntry() {
+            try {
+              // Validate form
+              if (!this.sysMapForm.category || !this.sysMapForm.left_value || !this.sysMapForm.right_value) {
+                toastService.show("Please fill in all required fields", "warning");
+                return;
+              }
+
+              // Get all items for this category and add/update the new one
+              const categoryItems = this.sysMapData.filter(item => item.category === this.sysMapForm.category);
+
+              // Check if mapping already exists (for add mode)
+              if (!this.editingSysMapItem && categoryItems.some(item =>
+                item.left_value === this.sysMapForm.left_value &&
+                item.right_value === this.sysMapForm.right_value)) {
+                toastService.show("Mapping already exists in this category", "warning");
+                return;
+              }
+
+              // Create the items array with the new/updated item
+              const items = categoryItems.map(item => ({
+                category: item.category,
+                left_value: item.left_value,
+                right_value: item.right_value,
+                in_used: (item.left_value === this.sysMapForm.left_value &&
+                         item.right_value === this.sysMapForm.right_value) ?
+                         this.sysMapForm.in_used : item.in_used
+              }));
+
+              // Add new item if not editing
+              if (!this.editingSysMapItem) {
+                items.push({
+                  category: this.sysMapForm.category,
+                  left_value: this.sysMapForm.left_value,
+                  right_value: this.sysMapForm.right_value,
+                  in_used: this.sysMapForm.in_used
+                });
+              }
+
+              const requestData = {
+                category: this.sysMapForm.category,
+                items: items
+              };
+
+              const result = await apiService.call('/dev/sys_map/adjust', {
+                method: 'POST',
+                data: requestData
+              });
+              if (result.status === 'success') {
+                toastService.show(this.editingSysMapItem ? "Sys Map entry updated successfully" : "Sys Map entry added successfully", "success");
+                this.showAddSysMapModal = false;
+                this.showEditSysMapModal = false;
+                this.resetSysMapForm();
+                await this.loadSysMapData();
+              } else {
+                throw new Error(result.message || "Failed to save sys map entry");
+              }
+            } catch (error) {
+              console.error("Error saving sys map entry:", error);
+              toastService.show("Failed to save sys map entry", "error");
+            }
+          },
+
+          resetSysDictForm() {
+            this.sysDictForm = {
+              category: "",
+              key: "",
+              value: "",
+              in_used: true
+            };
+            this.editingSysDictItem = null;
+          },
+
+          resetSysMapForm() {
+            this.sysMapForm = {
+              category: "",
+              left_value: "",
+              right_value: "",
+              in_used: true
+            };
+            this.editingSysMapItem = null;
+          },
+
+          // Enhanced confirmation functions
+          async confirmDeleteSysDict(item) {
+            const result = await this.showConfirmDialog(
+              'Delete Sys Dict Entry',
+              `Are you sure you want to delete this entry?
+
+Category: ${item.category}
+Key: ${item.key}
+Value: ${item.value}
+
+This action will mark the entry as inactive and cannot be undone.`,
+              'Delete',
+              'btn-error'
+            );
+
+            if (result) {
+              await this.deleteSysDictItem(item);
+            }
+          },
+
+          async confirmDeleteSysMap(item) {
+            const result = await this.showConfirmDialog(
+              'Delete Sys Map Entry',
+              `Are you sure you want to delete this mapping?
+
+Category: ${item.category}
+Mapping: ${item.left_value} → ${item.right_value}
+
+This action will mark the entry as inactive and cannot be undone.`,
+              'Delete',
+              'btn-error'
+            );
+
+            if (result) {
+              await this.deleteSysMapItem(item);
+            }
+          },
+
+          async confirmSaveSysDictEntry() {
+            const action = this.editingSysDictItem ? 'update' : 'create';
+            const result = await this.showConfirmDialog(
+              `${action === 'update' ? 'Update' : 'Create'} Sys Dict Entry`,
+              `Are you sure you want to ${action} this entry?
+
+Category: ${this.sysDictForm.category}
+Key: ${this.sysDictForm.key}
+Value: ${this.sysDictForm.value}
+Status: ${this.sysDictForm.in_used ? 'Active' : 'Inactive'}`,
+              action === 'update' ? 'Update' : 'Create',
+              'btn-primary'
+            );
+
+            if (result) {
+              await this.saveSysDictEntry();
+            }
+          },
+
+          async confirmSaveSysMapEntry() {
+            const action = this.editingSysMapItem ? 'update' : 'create';
+            const result = await this.showConfirmDialog(
+              `${action === 'update' ? 'Update' : 'Create'} Sys Map Entry`,
+              `Are you sure you want to ${action} this mapping?
+
+Category: ${this.sysMapForm.category}
+Mapping: ${this.sysMapForm.left_value} → ${this.sysMapForm.right_value}
+Status: ${this.sysMapForm.in_used ? 'Active' : 'Inactive'}`,
+              action === 'update' ? 'Update' : 'Create',
+              'btn-primary'
+            );
+
+            if (result) {
+              await this.saveSysMapEntry();
+            }
+          },
+
+          cancelEditSysDict() {
+            this.showEditSysDictModal = false;
+            this.resetSysDictForm();
+          },
+
+          cancelEditSysMap() {
+            this.showEditSysMapModal = false;
+            this.resetSysMapForm();
+          },
+
+          // Enhanced confirmation dialog
+          showConfirmDialog(title, message, confirmText = 'Confirm', confirmClass = 'btn-primary') {
+            return new Promise((resolve) => {
+              // Create modal HTML
+              const modalHtml = `
+                <div class="modal modal-open" id="confirmModal">
+                  <div class="modal-box">
+                    <h3 class="font-bold text-lg mb-4">${title}</h3>
+                    <div class="py-4">
+                      <p class="whitespace-pre-line">${message}</p>
+                    </div>
+                    <div class="modal-action">
+                      <button class="btn" onclick="closeConfirmModal(false)">Cancel</button>
+                      <button class="btn ${confirmClass}" onclick="closeConfirmModal(true)">${confirmText}</button>
+                    </div>
+                  </div>
+                </div>
+              `;
+
+              // Add modal to DOM
+              const modalContainer = document.createElement('div');
+              modalContainer.innerHTML = modalHtml;
+              document.body.appendChild(modalContainer);
+
+              // Add global close function
+              window.closeConfirmModal = (result) => {
+                document.body.removeChild(modalContainer);
+                delete window.closeConfirmModal;
+                resolve(result);
+              };
+            });
+          },
+
+          // Computed properties for filtered data
+          get filteredSysDictData() {
+            return this.sysDictData.filter(item => {
+              // Category filter
+              if (this.sysDictFilters.category && item.category !== this.sysDictFilters.category) {
+                return false;
+              }
+
+              // Key filter
+              if (this.sysDictFilters.key && item.key.toString() !== this.sysDictFilters.key.toString()) {
+                return false;
+              }
+
+              // Value filter
+              if (this.sysDictFilters.value && !item.value.toLowerCase().includes(this.sysDictFilters.value.toLowerCase())) {
+                return false;
+              }
+
+              // Status filter
+              if (this.sysDictFilters.status) {
+                const isActive = item.in_used;
+                if (this.sysDictFilters.status === 'active' && !isActive) {
+                  return false;
+                }
+                if (this.sysDictFilters.status === 'inactive' && isActive) {
+                  return false;
+                }
+              }
+
+              return true;
+            });
+          },
+
+          get filteredSysMapData() {
+            return this.sysMapData.filter(item => {
+              // Category filter
+              if (this.sysMapFilters.category && item.category !== this.sysMapFilters.category) {
+                return false;
+              }
+
+              // Left value filter
+              if (this.sysMapFilters.left && !item.left_value.toLowerCase().includes(this.sysMapFilters.left.toLowerCase())) {
+                return false;
+              }
+
+              // Right value filter
+              if (this.sysMapFilters.right && !item.right_value.toLowerCase().includes(this.sysMapFilters.right.toLowerCase())) {
+                return false;
+              }
+
+              // Status filter
+              if (this.sysMapFilters.status) {
+                const isActive = item.in_used;
+                if (this.sysMapFilters.status === 'active' && !isActive) {
+                  return false;
+                }
+                if (this.sysMapFilters.status === 'inactive' && isActive) {
+                  return false;
+                }
+              }
+
+              return true;
+            });
           }
         };
       }
