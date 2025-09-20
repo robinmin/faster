@@ -32,6 +32,7 @@ dependencies = [
     "asgi-correlation-id>=4.3.4",
     "sentry-sdk[fastapi]>=2.35.1",
     "gunicorn>=23.0.0",
+    "types-pyyaml>=6.0.12.20250915",
 ]
 
 [project.optional-dependencies]

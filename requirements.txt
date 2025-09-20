@@ -203,6 +203,8 @@ types-pygments==2.19.0.20250809
     # via faster (pyproject.toml)
 types-python-jose==3.5.0.20250531
     # via faster (pyproject.toml)
+types-pyyaml==6.0.12.20250915
+    # via faster (pyproject.toml)
 typing-extensions==4.14.1
     # via
     #   faster (pyproject.toml)
