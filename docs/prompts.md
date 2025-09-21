@@ -992,3 +992,28 @@ I found a few things need your help to verify and fix them all:
 #### Goal
 - Fix all above 4 issues.
 - As the source code has been changed by other LLM several times. It looks like a little bit messy. Help to tidy it up. Make it more readable and maintainable, and improve the overall structure and organization of the code. BUT KEEP ALL FUNCTIONALITY WORKS AS IT IS.
+
+
+### Enhance Auth component in page 'Sys Health'
+
+In the Auth component of the page 'Sys Health', we only need to show number of cached keys for JWKS should be okay. Help to adjust the UI components to display the correct data in file @faster/resources/dev-admin.html. You can use MCP playwright to access the frontend via http://127.0.0.1:8000/dev/admin. In case of any issue or web console errors, fix them all.
+
+For the simplicity reason, help to replacee all the `{target_user_id}` with `{user_id}` for the following endpoints in file @faster/core/auth/routers.py:
+- /users/{target_user_id}/ban
+- /users/{target_user_id}/unban
+- /users/{target_user_id}/roles/adjust
+- /users/{target_user_id}/basic
+
+
+### Fix NULL fields in table `AUTH_USER_ACTION`
+
+According to the values of table `AUTH_USER_ACTION`, we can see the following issues need to be fixed:
+- For the following events, its C_IP_ADDRESS, C_USER_AGENT and C_EXTRA_METADATA are all null(for C_EXTRA_METADATA, the value may be null but the others must have their values). `C_EVENT_NAME` including:
+- `roles_adjusted`
+- `user_basic_info_accessed`
+- `user_basic_info_viewed`
+- `user_roles_adjusted`
+- `onboarding_accessed`
+- `profile_accessed`
+
+Help to find the root cause and fix them all.
