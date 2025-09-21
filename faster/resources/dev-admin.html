@@ -12,9 +12,8 @@
       type="text/css"
     />
     <script src="https://cdn.tailwindcss.com" defer></script>
-     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" defer></script>
-     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
-     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" defer></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer></script>
     <script
       src="https://js.sentry-cdn.com/d2a200c0751f88c697a50ea7adb176e8.min.js"
       defer
@@ -417,7 +416,6 @@
                         >
                       </div>
                     </div>
-
                   </div>
                 </div>
               </div>
@@ -594,136 +592,131 @@
                           </span>
                         </div>
                       </div>
-
-
                     </div>
                   </div>
                 </div>
               </div>
-              </div>
             </div>
 
             <!-- Profile Modals -->
-           <!-- Password Change Modal -->
-           <template x-if="showPasswordChangeModal">
-           <div class="modal modal-open" x-cloak>
-             <div class="modal-box">
-               <h3 class="font-bold text-lg">
-                 <i data-lucide="key" class="w-5 h-5 inline mr-2"></i>
-                 Change Password
-               </h3>
-               <form @submit.prevent="changePassword" class="py-4">
-                 <div class="form-control">
-                   <label class="label" for="current-password">
-                     <span class="label-text">Current Password</span>
-                   </label>
-                   <input
-                     id="current-password"
-                     x-model="passwordForm.current"
-                     type="password"
-                     placeholder="Enter current password"
-                     class="input input-bordered"
-                     required
-                   />
-                 </div>
-                 <div class="form-control">
-                   <label class="label" for="new-password">
-                     <span class="label-text">New Password</span>
-                   </label>
-                   <input
-                     id="new-password"
-                     x-model="passwordForm.new"
-                     type="password"
-                     placeholder="Enter new password"
-                     class="input input-bordered"
-                     required
-                   />
-                 </div>
-                 <div class="form-control">
-                   <label class="label" for="confirm-password">
-                     <span class="label-text">Confirm New Password</span>
-                   </label>
-                   <input
-                     id="confirm-password"
-                     x-model="passwordForm.confirm"
-                     type="password"
-                     placeholder="Confirm new password"
-                     class="input input-bordered"
-                     required
-                   />
-                 </div>
-               </form>
-               <div class="modal-action">
-                 <button
-                   @click="showPasswordChangeModal = false; resetPasswordForm()"
-                   class="btn"
-                 >
-                   Cancel
-                 </button>
-                 <button
-                   @click="changePassword()"
-                   class="btn btn-primary"
-                   :class="{ 'loading': passwordChangeLoading }"
-                   :disabled="passwordChangeLoading"
-                 >
-                   Change Password
-                 </button>
-               </div>
-             </div>
-           </div>
-           </template>
+            <!-- Password Change Modal -->
+            <template x-if="showPasswordChangeModal">
+            <div class="modal modal-open" x-cloak>
+              <div class="modal-box">
+                <h3 class="font-bold text-lg">
+                  <i data-lucide="key" class="w-5 h-5 inline mr-2"></i>
+                  Change Password
+                </h3>
+                <form @submit.prevent="changePassword" class="py-4">
+                  <div class="form-control">
+                    <label class="label" for="current-password">
+                      <span class="label-text">Current Password</span>
+                    </label>
+                    <input
+                      id="current-password"
+                      x-model="passwordForm.current"
+                      type="password"
+                      placeholder="Enter current password"
+                      class="input input-bordered"
+                      required
+                    />
+                  </div>
+                  <div class="form-control">
+                    <label class="label" for="new-password">
+                      <span class="label-text">New Password</span>
+                    </label>
+                    <input
+                      id="new-password"
+                      x-model="passwordForm.new"
+                      type="password"
+                      placeholder="Enter new password"
+                      class="input input-bordered"
+                      required
+                    />
+                  </div>
+                  <div class="form-control">
+                    <label class="label" for="confirm-password">
+                      <span class="label-text">Confirm New Password</span>
+                    </label>
+                    <input
+                      id="confirm-password"
+                      x-model="passwordForm.confirm"
+                      type="password"
+                      placeholder="Confirm new password"
+                      class="input input-bordered"
+                      required
+                    />
+                  </div>
+                </form>
+                <div class="modal-action">
+                  <button
+                    @click="showPasswordChangeModal = false; resetPasswordForm()"
+                    class="btn"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    @click="changePassword()"
+                    class="btn btn-primary"
+                    :class="{ 'loading': passwordChangeLoading }"
+                    :disabled="passwordChangeLoading"
+                  >
+                    Change Password
+                  </button>
+                </div>
+              </div>
+            </div>
+            </template>
 
-           <!-- Deactivate Account Modal -->
-           <template x-if="showDeactivateModal">
-           <div class="modal modal-open" x-cloak>
-             <div class="modal-box">
-               <h3 class="font-bold text-lg text-warning">
-                 <i data-lucide="user-x" class="w-5 h-5 inline mr-2"></i>
-                 Deactivate Account
-               </h3>
-               <div class="py-4">
-                 <div class="alert alert-warning">
-                   <i data-lucide="alert-triangle" class="w-5 h-5"></i>
-                   <div>
-                     <h4 class="font-bold">Are you sure you want to deactivate your account?</h4>
-                     <div class="text-sm">
-                       This will deactivate your account and all associated data including profile, roles, and metadata.
-                       This action cannot be easily undone and you won't be able to access the system.
-                     </div>
-                   </div>
-                 </div>
-                 <div class="form-control mt-4">
-                   <label class="label cursor-pointer">
-                     <span class="label-text">I understand the consequences</span>
-                     <input
-                       type="checkbox"
-                       x-model="deactivateConfirmed"
-                       class="checkbox checkbox-warning"
-                     />
-                   </label>
-                 </div>
-               </div>
-               <div class="modal-action">
-                 <button
-                   @click="showDeactivateModal = false; deactivateConfirmed = false"
-                   class="btn"
-                 >
-                   Cancel
-                 </button>
-                 <button
-                   @click="deactivateAccount()"
-                   class="btn btn-warning"
-                   :class="{ 'loading': deactivateLoading }"
-                   :disabled="deactivateLoading || !deactivateConfirmed"
-                 >
-                   Deactivate Account
-                 </button>
-               </div>
-             </div>
-           </div>
-           </template>
-
-
+            <!-- Deactivate Account Modal -->
+            <template x-if="showDeactivateModal">
+            <div class="modal modal-open" x-cloak>
+              <div class="modal-box">
+                <h3 class="font-bold text-lg text-warning">
+                  <i data-lucide="user-x" class="w-5 h-5 inline mr-2"></i>
+                  Deactivate Account
+                </h3>
+                <div class="py-4">
+                  <div class="alert alert-warning">
+                    <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                    <div>
+                      <h4 class="font-bold">Are you sure you want to deactivate your account?</h4>
+                      <div class="text-sm">
+                        This will deactivate your account and all associated data including profile, roles, and metadata.
+                        This action cannot be easily undone and you won't be able to access the system.
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-control mt-4">
+                    <label class="label cursor-pointer">
+                      <span class="label-text">I understand the consequences</span>
+                      <input
+                        type="checkbox"
+                        x-model="deactivateConfirmed"
+                        class="checkbox checkbox-warning"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div class="modal-action">
+                  <button
+                    @click="showDeactivateModal = false; deactivateConfirmed = false"
+                    class="btn"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    @click="deactivateAccount()"
+                    class="btn btn-warning"
+                    :class="{ 'loading': deactivateLoading }"
+                    :disabled="deactivateLoading || !deactivateConfirmed"
+                  >
+                    Deactivate Account
+                  </button>
+                </div>
+              </div>
+            </div>
+            </template>
           </div>
           </template>
 
@@ -2641,7 +2634,10 @@
 
     <!-- JavaScript Application -->
     <script>
-      // Application Constants
+      // ===================================================================
+      // APPLICATION CONFIGURATION
+      // ===================================================================
+
       const APP_CONFIG = {
         TOAST_DURATION: 5000,
         API_TIMEOUT: 10000,
@@ -2660,7 +2656,10 @@
         info: { icon: "info", class: "alert-info" }
       };
 
-      // Global Store
+      // ===================================================================
+      // GLOBAL STORE & STATE MANAGEMENT
+      // ===================================================================
+
       document.addEventListener("alpine:init", () => {
         Alpine.store("app", {
           currentView: "loading",
@@ -2686,8 +2685,17 @@
         });
       });
 
-      // Utility Functions
+      // ===================================================================
+      // UTILITY FUNCTIONS
+      // ===================================================================
+
       const utils = {
+        /**
+         * Wraps a promise with a timeout to prevent hanging operations
+         * @param {Promise} promise - Promise to wrap
+         * @param {number} ms - Timeout in milliseconds
+         * @returns {Promise} Promise that resolves or rejects with timeout
+         */
         async withTimeout(promise, ms = APP_CONFIG.API_TIMEOUT) {
           const timeout = new Promise((_, reject) =>
             setTimeout(() => reject(new Error("Operation timed out")), ms)
@@ -2708,6 +2716,11 @@
           }
         },
 
+        /**
+         * Formats a date string for display
+         * @param {string} dateString - ISO date string
+         * @returns {string} Formatted date string
+         */
         formatDate(dateString) {
           if (!dateString) return "Unknown";
           try {
@@ -2725,6 +2738,11 @@
             .toUpperCase();
         },
 
+        /**
+         * Gets the display name for a user from available metadata
+         * @param {Object} user - User object from Supabase
+         * @returns {string} Display name or fallback
+         */
         getUserDisplayName(user) {
           if (!user) return "Developer";
           return (
@@ -2744,7 +2762,10 @@
         }
       };
 
-      // Centralized API Service with Whitelist Management
+      // ===================================================================
+      // API SERVICE & HTTP CLIENT
+      // ===================================================================
+
       const apiService = {
         // Whitelist of endpoints that don't require authentication
         AUTH_WHITELIST: [
@@ -2755,11 +2776,16 @@
           /^\/custom$/
         ],
 
-        // Check if endpoint is in whitelist (doesn't require auth)
         isWhitelisted(endpoint) {
           return this.AUTH_WHITELIST.some(pattern => pattern.test(endpoint));
         },
 
+        /**
+         * Makes an authenticated HTTP request to the API
+         * @param {string} endpoint - API endpoint path
+         * @param {Object} options - Request options
+         * @returns {Promise<Object>} API response data
+         */
         async call(endpoint, options = {}) {
           const { method = "GET", data = null, requireAuth } = options;
 
@@ -2768,25 +2794,18 @@
             Accept: "application/json"
           };
 
-          // Determine if auth is required
-          // If requireAuth is explicitly set, use that value
-          // Otherwise, require auth unless endpoint is in whitelist
           const needsAuth =
             requireAuth !== undefined
               ? requireAuth
               : !this.isWhitelisted(endpoint);
-
-          // Add auth token if required
           if (needsAuth) {
             const supabase = Alpine.store("app").supabase;
 
-            // Special handling for SIGNED_OUT event - use pending token if available
             if (
               endpoint.includes("/auth/callback/SIGNED_OUT") &&
               window.pendingSignOutToken
             ) {
               headers["Authorization"] = `Bearer ${window.pendingSignOutToken}`;
-              // Clear the pending token after use
               delete window.pendingSignOutToken;
             } else if (supabase) {
               try {
@@ -2834,9 +2853,7 @@
           return await response.json();
         },
 
-        // Specific API methods
         async getConfig() {
-          // console.log("Loading configuration...");
           const data = await this.call(APP_CONFIG.ENDPOINTS.CONFIG);
 
           if (!data?.data) {
@@ -2846,32 +2863,69 @@
           return data.data;
         },
 
+        /**
+         * Fetches page data from backend or returns virtual page data
+         * @param {string} pageId - Page identifier
+         * @returns {Promise<Object>} Page data object
+         */
         async getPage(pageId) {
-          // console.log(`Loading ${pageId} page data...`);
-          if (pageId === "app-state") {
-            return await this.call("/dev/app_state");
+          // Handle profile page with backend data
+          if (pageId === "profile") {
+            try {
+              const profileData = await this.call("/auth/profile");
+              return {
+                status: "success",
+                message: "Profile Page",
+                data: profileData
+              };
+            } catch (error) {
+              console.error("Error loading profile data:", error);
+              return {
+                status: "error",
+                message: "Profile Page",
+                data: {},
+                error: error.message
+              };
+            }
           }
-          if (pageId === "request-state") {
-            return await this.call("/dev/request_state");
-          }
-          if (pageId === "sys-health") {
-            return await this.call("/health");
-          }
-          if (pageId === "rbac") {
-            return await this.call("/dev/rbac");
-          }
-          // Virtual pages that don't need server data
+
           if (pageId === "user-management" || pageId === "dashboard" || pageId === "onboarding" || pageId === "metadata") {
-            return { message: `${pageId.charAt(0).toUpperCase() + pageId.slice(1).replace('-', ' ')} Page` };
+            return {
+              status: "success",
+              message: `${pageId.charAt(0).toUpperCase() + pageId.slice(1).replace('-', ' ')} Page`,
+              data: {}
+            };
           }
-          return await this.call(`/auth/${pageId}`);
+
+          try {
+            if (pageId === "app-state") {
+              return await this.call("/dev/app_state");
+            }
+            if (pageId === "request-state") {
+              return await this.call("/dev/request_state");
+            }
+            if (pageId === "sys-health") {
+              return await this.call("/health");
+            }
+            if (pageId === "rbac") {
+              return await this.call("/dev/rbac");
+            }
+
+            return await this.call(`/auth/${pageId}`);
+          } catch (error) {
+            console.warn(`Failed to load server data for ${pageId}:`, error.message);
+            return {
+              status: "offline",
+              message: `${pageId.charAt(0).toUpperCase() + pageId.slice(1).replace('-', ' ')} Page (Offline Mode)`,
+              data: {},
+              error: error.message
+            };
+          }
         },
 
         async notifyAuthEvent(event, eventData = {}) {
           console.log(`Notifying backend about auth event: ${event}`);
 
-          // Public events (no auth required): INITIAL_SESSION
-          // Private events (auth required): SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED, PASSWORD_RECOVERY
           const publicEvents = ["INITIAL_SESSION"];
           const isPublicEvent = publicEvents.includes(event);
 
@@ -2892,7 +2946,10 @@
         }
       };
 
-      // Services
+      // ===================================================================
+      // CORE SERVICES
+      // ===================================================================
+
       const pageNavigationService = {
         STORAGE_KEY: "dev_admin_last_page",
 
@@ -2930,14 +2987,9 @@
         },
 
         getDefaultPageForUser(user, isFirstTime = false) {
-          // For first-time login, check if user needs onboarding
           if (isFirstTime) {
-            // This logic could be enhanced to check user profile completeness
-            // For now, we'll default to dashboard for all users
             return "dashboard";
           }
-
-          // For returning users, use their last visited page
           const lastPage = this.getLastVisitedPage();
           return this.isValidPage(lastPage) ? lastPage : "dashboard";
         }
@@ -3055,6 +3107,9 @@
         async _handleSignedOut(store) {
           // console.log("User signed out");
 
+          // Check if this is an automatic sign-out due to expired tokens
+          const wasSignedIn = store.user !== null;
+
           // Notify backend first, before clearing store (access token still available)
           try {
             await apiService.notifyAuthEvent("SIGNED_OUT");
@@ -3068,7 +3123,12 @@
 
           store.user = null;
           store.currentView = "auth";
-          toastService.show("Signed out successfully", "info");
+
+          // Only show sign-out message if user was previously signed in
+          // This prevents showing confusing messages during automatic token refreshes
+          if (wasSignedIn) {
+            toastService.show("Session expired, please sign in again", "info");
+          }
         },
 
         async _handleTokenRefreshed(session, store) {
@@ -3116,7 +3176,20 @@
               data: { session },
               error
             } = await supabase.auth.getSession();
-            if (error) throw error;
+
+            // Don't treat missing session as an error - it's normal for unauthenticated users
+            if (error) {
+              console.warn("Session check warning:", error.message);
+              // Only show error for unexpected errors, not auth failures
+              if (!error.message.includes("Invalid Refresh Token") &&
+                  !error.message.includes("Refresh Token Not Found")) {
+                toastService.show(
+                  `Session check failed: ${error.message}`,
+                  "error"
+                );
+              }
+              return false;
+            }
 
             if (session?.user) {
               Alpine.store("app").user = session.user;
@@ -3124,11 +3197,15 @@
             }
             return false;
           } catch (error) {
-            console.error("Session check failed:", error);
-            toastService.show(
-              `Session check failed: ${error.message}`,
-              "error"
-            );
+            console.warn("Session check failed:", error);
+            // Don't show toast for common auth errors
+            if (!error.message.includes("Invalid Refresh Token") &&
+                !error.message.includes("Refresh Token Not Found")) {
+              toastService.show(
+                `Session check failed: ${error.message}`,
+                "error"
+              );
+            }
             return false;
           }
         }
@@ -3162,7 +3239,10 @@
         }
       };
 
-      // Main Application Component
+      // ===================================================================
+      // MAIN APPLICATION COMPONENT
+      // ===================================================================
+
       function devAdminApp() {
         return {
           initialized: false,
@@ -3238,11 +3318,37 @@
 
             const isAuthenticated = await authService.checkSession();
 
-            Alpine.store("app").currentView = isAuthenticated ? "app" : "auth";
+            const targetView = isAuthenticated ? "app" : "auth";
+            Alpine.store("app").currentView = targetView;
+
             if (isAuthenticated) {
               // For existing sessions, restore the last visited page
               const lastPage = pageNavigationService.getDefaultPageForUser(Alpine.store("app").user, false);
               Alpine.store("app").currentPage = lastPage;
+            }
+
+            // Force DOM update by manually updating x-show elements
+            this.forceViewUpdate(targetView);
+          },
+
+          forceViewUpdate(targetView) {
+            // Manually update display styles to ensure the correct view shows
+            const loadingDiv = document.querySelector('[x-show="$store.app.currentView === \'loading\'"]');
+            const authDiv = document.querySelector('[x-show="$store.app.currentView === \'auth\'"]');
+            const appDiv = document.querySelector('[x-show="$store.app.currentView === \'app\'"]');
+
+            // Hide all views first
+            [loadingDiv, authDiv, appDiv].forEach(div => {
+              if (div) div.style.display = 'none';
+            });
+
+            // Show the target view
+            if (targetView === 'loading' && loadingDiv) {
+              loadingDiv.style.display = 'block';
+            } else if (targetView === 'auth' && authDiv) {
+              authDiv.style.display = 'block';
+            } else if (targetView === 'app' && appDiv) {
+              appDiv.style.display = 'block';
             }
           },
 
@@ -3306,7 +3412,10 @@
         };
       }
 
-      // Component Functions
+      // ===================================================================
+      // UI COMPONENT FUNCTIONS
+      // ===================================================================
+
       function toastManager() {
         return {
           // This component uses the global store
@@ -3554,8 +3663,14 @@
               Alpine.store("app").pageData = {
                 ...(data.data || {}),
                 message: data.message,
-                status: data.status
+                status: data.status,
+                error: data.error
               };
+
+              // Show appropriate message based on status
+              if (data.status === "offline") {
+                toastService.show(`${item.label} loaded in offline mode`, "warning");
+              }
             } catch (error) {
               console.error(`Error loading ${item.id} page:`, error);
               toastService.show(`Error loading ${item.label} page`, "error");
@@ -3565,7 +3680,11 @@
 
               // Still save the page even on error
               pageNavigationService.saveCurrentPage(item.id);
-              Alpine.store("app").pageData = {};
+              Alpine.store("app").pageData = {
+                message: `${item.label} Page`,
+                status: "error",
+                error: error.message
+              };
             }
 
             this.closeDropdown();
@@ -3681,13 +3800,47 @@
 
           handlePageTransition() {
             this.isTransitioning = true;
+
+            // Force page visibility update
+            this.forcePageUpdate();
+
             setTimeout(() => {
               this.isTransitioning = false;
               toastService.refreshIcons();
             }, 50);
+          },
+
+          forcePageUpdate() {
+            const currentPage = Alpine.store("app").currentPage;
+
+            // Hide all x-show pages first
+            const allPageElements = document.querySelectorAll('[x-show*="currentPage"]');
+            allPageElements.forEach(el => {
+              el.style.display = 'none';
+            });
+
+            // Show the current x-show page
+            const targetPageElement = document.querySelector(`[x-show="$store.app.currentPage === '${currentPage}'"]`);
+            if (targetPageElement) {
+              targetPageElement.style.display = 'block';
+            }
+
+            // Clean up all template-rendered content to prevent duplication
+            const allTemplateContent = document.querySelectorAll('[data-if-template]');
+            allTemplateContent.forEach(element => element.remove());
+
+            // Trigger Alpine.js reactivity refresh without manual template handling
+            Alpine.nextTick(() => {
+              // Ensure icons are refreshed after DOM updates
+              toastService.refreshIcons();
+            });
           }
         };
       }
+
+      // ===================================================================
+      // PAGE COMPONENT FUNCTIONS
+      // ===================================================================
 
       function dashboardPage() {
         return {
@@ -3721,7 +3874,7 @@
         };
       }
 
-       function profilePage() {
+      function profilePage() {
          return {
            personalFields: [],
            accountFields: [],
@@ -3739,8 +3892,6 @@
            showDeactivateModal: false,
            deactivateConfirmed: false,
            deactivateLoading: false,
-
-
 
            init() {
              if (this.initialized) {
@@ -3761,8 +3912,9 @@
             const user = Alpine.store("app").user;
             const pageData = Alpine.store("app").pageData;
 
-            // Use backend profile data if available, fallback to user data
-            const profileData = pageData || user;
+            // Use backend profile data if available and contains user fields, fallback to user data
+            const profileData = (pageData && pageData.id) ? pageData : user;
+
 
             this.personalFields = [
               {
@@ -3943,7 +4095,7 @@
          };
        }
 
-       function userManagementPage() {
+      function userManagementPage() {
          return {
            targetUserId: "",
            userIdError: "",
@@ -4183,7 +4335,7 @@
          };
        }
 
-       function appStatePage() {
+      function appStatePage() {
         return {
           appStateData: null,
           loading: false,
@@ -4863,6 +5015,7 @@
               if (response.status === "success") {
                 this.rbacData = response.data;
                 this.filteredRoutes = [...this.rbacData.rbac_entries];
+                this.filterRoutes(); // Apply sorting after loading data
                 this.lastUpdate = new Date().toLocaleString();
                 toastService.show("RBAC data loaded successfully", "success");
               } else {
@@ -4899,8 +5052,8 @@
 
             // Sort by Path + Method by default
             filtered.sort((a, b) => {
-              // First sort by path
-              const pathComparison = a.path.localeCompare(b.path);
+              // First sort by path (case-insensitive)
+              const pathComparison = a.path.toLowerCase().localeCompare(b.path.toLowerCase());
               if (pathComparison !== 0) {
                 return pathComparison;
               }
@@ -5570,21 +5723,38 @@ Status: ${this.sysMapForm.in_used ? 'Active' : 'Inactive'}`,
         };
       }
 
-      // Global Error Handling
+      // ===================================================================
+      // GLOBAL ERROR HANDLING & INITIALIZATION
+      // ===================================================================
+
       window.addEventListener("error", e => {
+        // Filter out browser extension errors that we can't control
+        if (e.filename && (e.filename.includes('content.js') || e.filename.includes('chrome-extension://'))) {
+          console.warn("Browser extension error detected and ignored:", e.message);
+          return;
+        }
+
         console.error("Global error:", e.error);
         if (typeof Sentry !== "undefined") {
           Sentry.captureException(e.error);
         }
       });
 
+      // Handle unhandled promise rejections (including extension errors)
       window.addEventListener("unhandledrejection", e => {
+        // Filter out browser extension promise rejections
+        if (e.reason && e.reason.stack && e.reason.stack.includes('content.js')) {
+          console.warn("Browser extension promise rejection detected and ignored:", e.reason.message);
+          e.preventDefault(); // Prevent the error from being logged to console
+          return;
+        }
+
         console.error("Unhandled promise rejection:", e.reason);
         if (typeof Sentry !== "undefined") {
           Sentry.captureException(e.reason);
         }
-        e.preventDefault();
       });
+
 
       // Initialize icons when DOM is ready
       document.addEventListener("DOMContentLoaded", () => {
@@ -5594,6 +5764,6 @@ Status: ${this.sysMapForm.in_used ? 'Active' : 'Inactive'}`,
     </script>
 
     <!-- Alpine.js -->
-    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
   </body>
 </html>
