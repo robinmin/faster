@@ -126,3 +126,11 @@ class SysService:
     async def set_sys_map(self, category: str, values: dict[str, list[str]]) -> bool:
         """Set sys_map data for a category."""
         return await self._repository.set_sys_map(category, values)
+
+    async def hard_delete_sys_dict_entry(self, category: str, key: int, value: str) -> bool:
+        """Hard delete a specific SYS_DICT entry."""
+        return await self._repository.hard_delete_sys_dict_entry(category, key, value)
+
+    async def hard_delete_sys_map_entry(self, category: str, left_value: str, right_value: str) -> bool:
+        """Hard delete a specific SYS_MAP entry."""
+        return await self._repository.hard_delete_sys_map_entry(category, left_value, right_value)
