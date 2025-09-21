@@ -8,7 +8,7 @@ from ..redisex import blacklist_delete
 from .middlewares import get_current_user, has_role
 from .models import UserProfileData
 from .services import AuthService
-from .utilities import extract_bearer_token_from_request
+from .utilities import extract_bearer_token_from_request, log_event
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -40,7 +40,8 @@ async def onboarding(
     has_profile = await auth_service.check_user_onboarding_complete(user.id)
 
     # Log onboarding access event
-    _ = await auth_service.log_event(
+    _ = await log_event(
+        request=request,
         event_type="user",
         event_name="onboarding_accessed",
         event_source="user_action",
@@ -84,7 +85,8 @@ async def dashboard(
     has_profile = await auth_service.check_user_onboarding_complete(user.id)
 
     # Log dashboard access event
-    _ = await auth_service.log_event(
+    _ = await log_event(
+        request=request,
         event_type="user",
         event_name="dashboard_accessed",
         event_source="user_action",
@@ -136,18 +138,13 @@ async def on_callback(
     logger.info(f"Received auth callback event: {event}, user: {user.id}")
 
     # Log the event to database for tracking and analytics (never throws exceptions)
-    client_ip = getattr(request.client, "host", None) if request.client else None
-    user_agent = request.headers.get("user-agent")
-
-    _ = await auth_service.log_event(
+    _ = await log_event(
+        request=request,
         event_type="auth",
         event_name=event,
         event_source="supabase",
         user_auth_id=user.id,
-        ip_address=client_ip,
-        user_agent=user_agent,
         event_payload={"status": "success", "endpoint": "callback"},
-        extra_metadata={"request_method": request.method, "url": str(request.url)},
     )
 
     # Route to specific event handlers
@@ -199,18 +196,13 @@ async def on_notification(
     logger.info(f"Received public auth notification event: {event}")
 
     # Log the public event to database for tracking and analytics (never throws exceptions)
-    client_ip = getattr(request.client, "host", None) if request.client else None
-    user_agent = request.headers.get("user-agent")
-
-    _ = await auth_service.log_event(
+    _ = await log_event(
+        request=request,
         event_type="auth",
         event_name=event,
         event_source="supabase",
         user_auth_id=None,  # Public events don't have authenticated users
-        ip_address=client_ip,
-        user_agent=user_agent,
         event_payload={"status": "success", "endpoint": "notification"},
-        extra_metadata={"request_method": request.method, "url": str(request.url)},
     )
 
     # Route to specific event handlers
@@ -354,8 +346,8 @@ async def profile(request: Request, user: UserProfileData | None = Depends(get_c
     app_metadata = getattr(user, "app_metadata", {}) or {}
 
     # Log profile access event
-    auth_service = get_auth_service()
-    _ = await auth_service.log_event(
+    _ = await log_event(
+        request=request,
         event_type="user",
         event_name="profile_accessed",
         event_source="user_action",
@@ -423,7 +415,8 @@ async def change_password(
         result = await auth_service.change_password(user.id, current_password, new_password)
 
         # Log password change event
-        _ = await auth_service.log_event(
+        _ = await log_event(
+            request=request,
             event_type="password",
             event_name="password_changed",
             event_source="user_action",
@@ -475,7 +468,8 @@ async def initiate_password_reset(
         result = await auth_service.initiate_password_reset(email)
 
         # Log password reset initiation event (no user_auth_id since it's public)
-        _ = await auth_service.log_event(
+        _ = await log_event(
+            request=request,
             event_type="password",
             event_name="password_reset_initiated",
             event_source="user_action",
@@ -528,7 +522,8 @@ async def confirm_password_reset(
         result = await auth_service.confirm_password_reset(token, new_password)
 
         # Log password reset confirmation event (no user_auth_id since it's public)
-        _ = await auth_service.log_event(
+        _ = await log_event(
+            request=request,
             event_type="password",
             event_name="password_reset_confirmed",
             event_source="user_action",
@@ -594,7 +589,8 @@ async def deactivate(
         result = await auth_service.deactivate(user.id, password)
 
         # Log account deactivation event
-        _ = await auth_service.log_event(
+        _ = await log_event(
+            request=request,
             event_type="user",
             event_name="account_deactivated",
             event_source="user_action",
@@ -655,7 +651,8 @@ async def ban_user(
         result = await auth_service.ban_user(user.id, user_id, reason)
 
         # Log user ban event
-        _ = await auth_service.log_event(
+        _ = await log_event(
+            request=request,
             event_type="admin",
             event_name="user_banned",
             event_source="admin_action",
@@ -709,7 +706,8 @@ async def unban_user(
         result = await auth_service.unban_user(user.id, user_id)
 
         # Log user unban event
-        _ = await auth_service.log_event(
+        _ = await log_event(
+            request=request,
             event_type="admin",
             event_name="user_unbanned",
             event_source="admin_action",
@@ -779,10 +777,15 @@ async def adjust_roles(
                 data={},
             )
 
-        result = await auth_service.adjust_roles(user.id, user_id, roles)
+        result = await auth_service.adjust_roles(
+            user.id,
+            user_id,
+            roles,
+        )
 
         # Log role adjustment event
-        _ = await auth_service.log_event(
+        _ = await log_event(
+            request=request,
             event_type="admin",
             event_name="roles_adjusted",
             event_source="admin_action",
@@ -818,6 +821,7 @@ async def adjust_roles(
 @router.get("/users/{user_id}/basic", include_in_schema=False, response_model=None, tags=["admin"])
 async def get_user_basic_info(
     user_id: str,
+    request: Request,
     user: UserProfileData | None = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AppResponseDict:
@@ -832,10 +836,14 @@ async def get_user_basic_info(
         )
 
     try:
-        basic_info = await auth_service.get_user_basic_info_by_id(user.id, user_id)
+        basic_info = await auth_service.get_user_basic_info_by_id(
+            user.id,
+            user_id,
+        )
 
         # Log user basic info access event
-        _ = await auth_service.log_event(
+        _ = await log_event(
+            request=request,
             event_type="admin",
             event_name="user_basic_info_accessed",
             event_source="admin_action",
