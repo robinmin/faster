@@ -975,3 +975,20 @@ Here comes the log for your reference:
 ```
 
 Fix them all, and make sure both `make lint` and `make test` all pass.For the frontend, you can use playwright to verify the frontend via http://127.0.0.1:8000/dev/admin(use Google OAuth user). In case of any issue or web console errors, fix them all.
+
+
+### Simplify the fronend source code.
+#### Background
+- The source code of the frontend is in file @faster/resources/dev-admin.html .
+- You can use MCP playwright to access it via http://127.0.0.1:8000/dev/admin.
+
+#### Current issues
+I found a few things need your help to verify and fix them all:
+- In page 'Profile', The UI components have been shown twice. And not rendered by the response data from the backend( That's mean no real user profile data have been shown).
+- In page 'User Management', we have the same issue: The UI components have been shown twice.
+- In page 'RBAC', the endpoints are not as expected as sorted by 'Path'.
+- I also found 16 errors in web console when I check with the frontend page.
+
+#### Goal
+- Fix all above 4 issues.
+- As the source code has been changed by other LLM several times. It looks like a little bit messy. Help to tidy it up. Make it more readable and maintainable, and improve the overall structure and organization of the code. BUT KEEP ALL FUNCTIONALITY WORKS AS IT IS.
