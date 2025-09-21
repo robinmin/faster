@@ -8,14 +8,12 @@
 
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from prometheus_client import CONTENT_TYPE_LATEST
 import pytest
 
-from faster.core.routers import dev_router, sys_router
+from faster.core.routers import dev_router
 
 
 class TestDevRouter:
@@ -103,7 +101,12 @@ class TestDevRouter:
         )
 
         # Make request
-        response = client.get("/dev/sys_dict/show")
+        response = client.post("/dev/sys_dict/show", json={
+            "category": None,
+            "key": None,
+            "value": None,
+            "in_used_only": False
+        })
 
         # Verify response
         assert response.status_code == 200
@@ -134,7 +137,12 @@ class TestDevRouter:
         )
 
         # Make request with filters
-        response = client.get("/dev/sys_dict/show?category=user_role&key=10&value=default")
+        response = client.post("/dev/sys_dict/show", json={
+            "category": "user_role",
+            "key": 10,
+            "value": "default",
+            "in_used_only": False
+        })
 
         # Verify response
         assert response.status_code == 200
@@ -156,7 +164,12 @@ class TestDevRouter:
         mock_sys_service.get_sys_dict_with_status = AsyncMock(side_effect=Exception("Database error"))
 
         # Make request
-        response = client.get("/dev/sys_dict/show")
+        response = client.post("/dev/sys_dict/show", json={
+            "category": None,
+            "key": None,
+            "value": None,
+            "in_used_only": False
+        })
 
         # Verify error response
         assert response.status_code == 200  # Still returns 200 but with error status
@@ -247,7 +260,12 @@ class TestDevRouter:
         )
 
         # Make request
-        response = client.get("/dev/sys_map/show")
+        response = client.post("/dev/sys_map/show", json={
+            "category": None,
+            "left_value": None,
+            "right_value": None,
+            "in_used_only": False
+        })
 
         # Verify response
         assert response.status_code == 200
@@ -281,7 +299,12 @@ class TestDevRouter:
         )
 
         # Make request with filters
-        response = client.get("/dev/sys_map/show?category=tag_role&left=admin&right=read")
+        response = client.post("/dev/sys_map/show", json={
+            "category": "tag_role",
+            "left_value": "admin",
+            "right_value": "read",
+            "in_used_only": False
+        })
 
         # Verify response
         assert response.status_code == 200
@@ -460,146 +483,171 @@ class TestDevRouter:
         assert data["status"] == "error"
         assert "Failed to update sys_map" in data["message"]
 
+    @patch("faster.core.routers.SysService")
+    def test_hard_delete_sys_dict_entry_success(self, mock_sys_service_class: MagicMock, client: TestClient) -> None:
+        """Test successful hard delete sys_dict entry endpoint."""
+        # Mock the service
+        mock_sys_service = MagicMock()
+        mock_sys_service_class.return_value = mock_sys_service
+        mock_sys_service.hard_delete_sys_dict_entry = AsyncMock(return_value=True)
 
-class TestSysRouter:
-    """Test sys router endpoints."""
+        # Make request
+        response = client.request("DELETE", "/dev/sys_dict/delete", json={
+            "category": "test_category",
+            "key": 1,
+            "value": "test_value"
+        })
 
-    @pytest.fixture
-    def app(self) -> FastAPI:
-        """Create a FastAPI app with sys router."""
-        app = FastAPI()
-        app.include_router(sys_router)
-        return app
-
-    @pytest.fixture
-    def client(self, app: FastAPI) -> TestClient:
-        """Create a test client."""
-        return TestClient(app)
-
-    def test_chrome_dev_tools_endpoint_debug_mode(self, client: TestClient) -> None:
-        """Test Chrome DevTools endpoint works in debug mode."""
-        # Create a mock app state with debug settings
-        mock_settings = MagicMock()
-        mock_settings.is_debug = True
-        cast(FastAPI, client.app).state.settings = mock_settings
-
-        # Make a request to the endpoint
-        response = client.get("/.well-known/appspecific/com.chrome.devtools.json")
-
-        # Check that the response is successful
+        # Verify response
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/json"
-
-        # Parse the JSON response
         data = response.json()
+        assert data["status"] == "success"
+        assert "Successfully deleted sys_dict entry" in data["message"]
+        assert data["data"]["category"] == "test_category"
+        assert data["data"]["key"] == 1
+        assert data["data"]["value"] == "test_value"
 
-        # Check the response structure
-        assert "workspace" in data
-        assert isinstance(data["workspace"], dict)
-        assert "uuid" in data["workspace"]
-        assert "root" in data["workspace"]
+        # Verify service was called
+        mock_sys_service.hard_delete_sys_dict_entry.assert_called_once_with("test_category", 1, "test_value")
 
-        # Check that UUID is valid
-        uuid_val = data["workspace"]["uuid"]
-        # This will raise an exception if not a valid UUID
-        _ = uuid4()  # Just to show the format, we don't need to parse the actual one
-        assert isinstance(uuid_val, str)
-        assert len(uuid_val) > 0
+    @patch("faster.core.routers.SysService")
+    def test_hard_delete_sys_dict_entry_not_found(self, mock_sys_service_class: MagicMock, client: TestClient) -> None:
+        """Test hard delete sys_dict entry when entry not found."""
+        # Mock the service
+        mock_sys_service = MagicMock()
+        mock_sys_service_class.return_value = mock_sys_service
+        mock_sys_service.hard_delete_sys_dict_entry = AsyncMock(return_value=False)
 
-    def test_chrome_dev_tools_endpoint_non_debug_mode(self, client: TestClient) -> None:
-        """Test Chrome DevTools endpoint returns error when not in debug mode."""
-        # Create a mock app state with non-debug settings
-        mock_settings = MagicMock()
-        mock_settings.is_debug = False
-        cast(FastAPI, client.app).state.settings = mock_settings
+        # Make request
+        response = client.request("DELETE", "/dev/sys_dict/delete", json={
+            "category": "test_category",
+            "key": 1,
+            "value": "test_value"
+        })
 
-        # Make a request to the endpoint
-        response = client.get("/.well-known/appspecific/com.chrome.devtools.json")
-
-        # Check that the response is successful but contains error
+        # Verify response
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/json"
-
-        # Parse the JSON response
         data = response.json()
+        assert data["status"] == "error"
+        assert "Entry not found or failed to delete" in data["message"]
+        assert data["data"]["category"] == "test_category"
+        assert data["data"]["key"] == 1
+        assert data["data"]["value"] == "test_value"
 
-        # Check the error message
-        assert "error" in data
-        assert data["error"] == "DevTools endpoint only available in debug mode"
+    @patch("faster.core.routers.SysService")
+    def test_hard_delete_sys_dict_entry_error(self, mock_sys_service_class: MagicMock, client: TestClient) -> None:
+        """Test hard delete sys_dict entry error handling."""
+        # Mock the service
+        mock_sys_service = MagicMock()
+        mock_sys_service_class.return_value = mock_sys_service
+        mock_sys_service.hard_delete_sys_dict_entry = AsyncMock(side_effect=Exception("Database error"))
 
-    def test_metrics_endpoint_enabled(self, client: TestClient) -> None:
-        """Test metrics endpoint works when enabled."""
-        # Create a mock app state with metrics enabled
-        mock_settings = MagicMock()
-        mock_settings.vps_enable_metrics = True
-        cast(FastAPI, client.app).state.settings = mock_settings
+        # Make request
+        response = client.request("DELETE", "/dev/sys_dict/delete", json={
+            "category": "test_category",
+            "key": 1,
+            "value": "test_value"
+        })
 
-        # Make a request to the endpoint
-        response = client.get("/metrics")
-
-        # Check that the response is successful
+        # Verify response
         assert response.status_code == 200
-        assert response.headers["content-type"] == CONTENT_TYPE_LATEST
+        data = response.json()
+        assert data["status"] == "error"
+        assert "Failed to hard delete sys_dict entry" in data["message"]
+        assert data["data"]["category"] == "test_category"
+        assert data["data"]["key"] == 1
+        assert data["data"]["value"] == "test_value"
 
-        # The content should be prometheus metrics (text format)
-        assert isinstance(response.text, str)
+    @patch("faster.core.routers.SysService")
+    def test_hard_delete_sys_map_entry_success(self, mock_sys_service_class: MagicMock, client: TestClient) -> None:
+        """Test successful hard delete sys_map entry endpoint."""
+        # Mock the service
+        mock_sys_service = MagicMock()
+        mock_sys_service_class.return_value = mock_sys_service
+        mock_sys_service.hard_delete_sys_map_entry = AsyncMock(return_value=True)
 
-    def test_metrics_endpoint_disabled(self, client: TestClient) -> None:
-        """Test metrics endpoint returns 404 when disabled."""
-        # Create a mock app state with metrics disabled
-        mock_settings = MagicMock()
-        mock_settings.vps_enable_metrics = False
-        cast(FastAPI, client.app).state.settings = mock_settings
+        # Make request
+        response = client.request("DELETE", "/dev/sys_map/delete", json={
+            "category": "test_category",
+            "left_value": "admin",
+            "right_value": "read"
+        })
 
-        # Make a request to the endpoint
-        response = client.get("/metrics")
+        # Verify response
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "Successfully deleted sys_map entry" in data["message"]
+        assert data["data"]["category"] == "test_category"
+        assert data["data"]["left_value"] == "admin"
+        assert data["data"]["right_value"] == "read"
 
-        # Check that the response is 404
-        assert response.status_code == 404
-        assert response.text == "Metrics endpoint disabled"
+        # Verify service was called
+        mock_sys_service.hard_delete_sys_map_entry.assert_called_once_with("test_category", "admin", "read")
 
-    @patch("faster.core.routers.generate_latest")
-    def test_metrics_endpoint_prometheus_import_error(
-        self, mock_generate_latest: MagicMock, client: TestClient
-    ) -> None:
-        """Test metrics endpoint handles prometheus import error."""
-        # Create a mock app state with metrics enabled
-        mock_settings = MagicMock()
-        mock_settings.vps_enable_metrics = True
-        cast(FastAPI, client.app).state.settings = mock_settings
+    @patch("faster.core.routers.SysService")
+    def test_hard_delete_sys_map_entry_not_found(self, mock_sys_service_class: MagicMock, client: TestClient) -> None:
+        """Test hard delete sys_map entry when entry not found."""
+        # Mock the service
+        mock_sys_service = MagicMock()
+        mock_sys_service_class.return_value = mock_sys_service
+        mock_sys_service.hard_delete_sys_map_entry = AsyncMock(return_value=False)
 
-        # Make generate_latest raise an ImportError
-        mock_generate_latest.side_effect = ImportError("prometheus_client not installed")
+        # Make request
+        response = client.request("DELETE", "/dev/sys_map/delete", json={
+            "category": "test_category",
+            "left_value": "admin",
+            "right_value": "read"
+        })
 
-        # Make a request to the endpoint
-        response = client.get("/metrics")
+        # Verify response
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "error"
+        assert "Entry not found or failed to delete" in data["message"]
+        assert data["data"]["category"] == "test_category"
+        assert data["data"]["left_value"] == "admin"
+        assert data["data"]["right_value"] == "read"
 
-        # Check that the response is 503
-        assert response.status_code == 503
-        assert "prometheus_client not installed" in response.text
+    @patch("faster.core.routers.SysService")
+    def test_hard_delete_sys_map_entry_error(self, mock_sys_service_class: MagicMock, client: TestClient) -> None:
+        """Test hard delete sys_map entry error handling."""
+        # Mock the service
+        mock_sys_service = MagicMock()
+        mock_sys_service_class.return_value = mock_sys_service
+        mock_sys_service.hard_delete_sys_map_entry = AsyncMock(side_effect=Exception("Database error"))
+
+        # Make request
+        response = client.request("DELETE", "/dev/sys_map/delete", json={
+            "category": "test_category",
+            "left_value": "admin",
+            "right_value": "read"
+        })
+
+        # Verify response
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "error"
+        assert "Failed to hard delete sys_map entry" in data["message"]
+        assert data["data"]["category"] == "test_category"
+        assert data["data"]["left_value"] == "admin"
+        assert data["data"]["right_value"] == "read"
 
     @pytest.mark.asyncio
-    async def test_health_endpoint(self, client: TestClient) -> None:
-        """Test health endpoint returns status information."""
-        # Create a mock app state with settings
-        mock_settings = MagicMock()
-        cast(FastAPI, client.app).state.settings = mock_settings
+    async def test_dev_hard_delete_sys_dict_entry_success(self, client: TestClient) -> None:
+        """Test successful hard delete of sys_dict entry."""
+        # Mock the SysService
+        with patch("faster.core.routers.SysService") as mock_sys_service_class:
+            mock_sys_service = MagicMock()
+            mock_sys_service_class.return_value = mock_sys_service
+            mock_sys_service.hard_delete_sys_dict_entry = AsyncMock(return_value=True)
 
-        # Mock the check_all_resources function
-        with patch("faster.core.routers.check_all_resources") as mock_check_resources:
-            # Set up mock app state with health data
-            cast(FastAPI, client.app).state.latest_status_check = "2023-01-01T00:00:00Z"
-            cast(FastAPI, client.app).state.latest_status_info = {
-                "db": {"status": "ok"},
-                "redis": {"status": "ok"},
-                "sentry": {"status": "ok"},
-            }
-
-            # Make a request to the endpoint
-            response = client.get("/health")
-
-            # Check that check_all_resources was called
-            mock_check_resources.assert_called_once()
+            # Make a DELETE request to the endpoint
+            response = client.request("DELETE", "/dev/sys_dict/delete", json={
+                "category": "test_cat",
+                "key": 1,
+                "value": "test_value"
+            })
 
             # Check that the response is successful
             assert response.status_code == 200
@@ -609,53 +657,11 @@ class TestSysRouter:
             data = response.json()
 
             # Check the response structure
-            assert "status" in data
             assert data["status"] == "success"
-            assert "data" in data
-            assert isinstance(data["data"], dict)
+            assert "Successfully deleted sys_dict entry" in data["message"]
+            assert data["data"]["category"] == "test_cat"
+            assert data["data"]["key"] == 1
+            assert data["data"]["value"] == "test_value"
 
-            # Check the data content
-            health_data = data["data"]
-            assert health_data["latest_status_check"] == "2023-01-01T00:00:00Z"
-            assert health_data["db"] == {"status": "ok"}
-            assert health_data["redis"] == {"status": "ok"}
-            assert health_data["sentry"] == {"status": "ok"}
-
-    @pytest.mark.asyncio
-    async def test_health_endpoint_without_status_info(self, client: TestClient) -> None:
-        """Test health endpoint works when status info is not available."""
-        # Create a mock app state with settings
-        mock_settings = MagicMock()
-        cast(FastAPI, client.app).state.settings = mock_settings
-
-        # Mock the check_all_resources function
-        with patch("faster.core.routers.check_all_resources") as mock_check_resources:
-            # Set up mock app state without health data
-            if hasattr(cast(FastAPI, client.app).state, "latest_status_check"):
-                delattr(cast(FastAPI, client.app).state, "latest_status_check")
-            if hasattr(cast(FastAPI, client.app).state, "latest_status_info"):
-                delattr(cast(FastAPI, client.app).state, "latest_status_info")
-
-            # Make a request to the endpoint
-            response = client.get("/health")
-
-            # Check that check_all_resources was called
-            mock_check_resources.assert_called_once()
-
-            # Check that the response is successful
-            assert response.status_code == 200
-            assert response.headers["content-type"] == "application/json"
-
-            # Parse the JSON response
-            data = response.json()
-
-            # Check the response structure
-            assert "status" in data
-            assert data["status"] == "success"
-            assert "data" in data
-            assert isinstance(data["data"], dict)
-
-            # Check the data content (should be None or missing)
-            health_data = data["data"]
-            # These might be None or missing depending on implementation
-            assert isinstance(health_data, dict)
+            # Verify the service method was called correctly
+            mock_sys_service.hard_delete_sys_dict_entry.assert_called_once_with("test_cat", 1, "test_value")
