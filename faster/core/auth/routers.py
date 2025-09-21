@@ -631,9 +631,9 @@ async def deactivate(
 # =============================================================================
 
 
-@router.post("/users/{target_user_id}/ban", include_in_schema=False, response_model=None, tags=["admin"])
+@router.post("/users/{user_id}/ban", include_in_schema=False, response_model=None, tags=["admin"])
 async def ban_user(
-    target_user_id: str,
+    user_id: str,
     request: Request,
     user: UserProfileData | None = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
@@ -652,7 +652,7 @@ async def ban_user(
         body = await request.json()
         reason = body.get("reason", "")
 
-        result = await auth_service.ban_user(user.id, target_user_id, reason)
+        result = await auth_service.ban_user(user.id, user_id, reason)
 
         # Log user ban event
         _ = await auth_service.log_event(
@@ -661,7 +661,7 @@ async def ban_user(
             event_source="admin_action",
             user_auth_id=user.id,
             event_payload={
-                "target_user_id": target_user_id,
+                "target_user_id": user_id,
                 "reason": reason,
                 "status": "success" if result else "failed",
             },
@@ -671,7 +671,7 @@ async def ban_user(
             return AppResponseDict(
                 status="success",
                 message="User banned successfully.",
-                data={"target_user_id": target_user_id, "banned_by": user.id},
+                data={"target_user_id": user_id, "banned_by": user.id},
             )
         return AppResponseDict(
             status="failed",
@@ -680,7 +680,7 @@ async def ban_user(
         )
 
     except Exception as e:
-        logger.error(f"Error banning user {target_user_id} by admin {user.id}: {e}")
+        logger.error(f"Error banning user {user_id} by admin {user.id}: {e}")
         return AppResponseDict(
             status="failed",
             message="An error occurred while banning user.",
@@ -688,9 +688,9 @@ async def ban_user(
         )
 
 
-@router.post("/users/{target_user_id}/unban", include_in_schema=False, response_model=None, tags=["admin"])
+@router.post("/users/{user_id}/unban", include_in_schema=False, response_model=None, tags=["admin"])
 async def unban_user(
-    target_user_id: str,
+    user_id: str,
     request: Request,
     user: UserProfileData | None = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
@@ -706,7 +706,7 @@ async def unban_user(
         )
 
     try:
-        result = await auth_service.unban_user(user.id, target_user_id)
+        result = await auth_service.unban_user(user.id, user_id)
 
         # Log user unban event
         _ = await auth_service.log_event(
@@ -714,14 +714,14 @@ async def unban_user(
             event_name="user_unbanned",
             event_source="admin_action",
             user_auth_id=user.id,
-            event_payload={"target_user_id": target_user_id, "status": "success" if result else "failed"},
+            event_payload={"target_user_id": user_id, "status": "success" if result else "failed"},
         )
 
         if result:
             return AppResponseDict(
                 status="success",
                 message="User unbanned successfully.",
-                data={"target_user_id": target_user_id, "unbanned_by": user.id},
+                data={"target_user_id": user_id, "unbanned_by": user.id},
             )
         return AppResponseDict(
             status="failed",
@@ -730,7 +730,7 @@ async def unban_user(
         )
 
     except Exception as e:
-        logger.error(f"Error unbanning user {target_user_id} by admin {user.id}: {e}")
+        logger.error(f"Error unbanning user {user_id} by admin {user.id}: {e}")
         return AppResponseDict(
             status="failed",
             message="An error occurred while unbanning user.",
@@ -743,9 +743,9 @@ async def unban_user(
 # =============================================================================
 
 
-@router.post("/users/{target_user_id}/roles/adjust", include_in_schema=False, response_model=None, tags=["admin"])
+@router.post("/users/{user_id}/roles/adjust", include_in_schema=False, response_model=None, tags=["admin"])
 async def adjust_roles(
-    target_user_id: str,
+    user_id: str,
     request: Request,
     user: UserProfileData | None = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
@@ -779,7 +779,7 @@ async def adjust_roles(
                 data={},
             )
 
-        result = await auth_service.adjust_roles(user.id, target_user_id, roles)
+        result = await auth_service.adjust_roles(user.id, user_id, roles)
 
         # Log role adjustment event
         _ = await auth_service.log_event(
@@ -788,7 +788,7 @@ async def adjust_roles(
             event_source="admin_action",
             user_auth_id=user.id,
             event_payload={
-                "target_user_id": target_user_id,
+                "target_user_id": user_id,
                 "new_roles": roles,
                 "status": "success" if result else "failed",
             },
@@ -798,7 +798,7 @@ async def adjust_roles(
             return AppResponseDict(
                 status="success",
                 message="User roles adjusted successfully.",
-                data={"target_user_id": target_user_id, "new_roles": roles, "adjusted_by": user.id},
+                data={"target_user_id": user_id, "new_roles": roles, "adjusted_by": user.id},
             )
         return AppResponseDict(
             status="failed",
@@ -807,7 +807,7 @@ async def adjust_roles(
         )
 
     except Exception as e:
-        logger.error(f"Error adjusting roles for user {target_user_id} by admin {user.id}: {e}")
+        logger.error(f"Error adjusting roles for user {user_id} by admin {user.id}: {e}")
         return AppResponseDict(
             status="failed",
             message="An error occurred while adjusting roles.",
@@ -815,9 +815,9 @@ async def adjust_roles(
         )
 
 
-@router.get("/users/{target_user_id}/basic", include_in_schema=False, response_model=None, tags=["admin"])
+@router.get("/users/{user_id}/basic", include_in_schema=False, response_model=None, tags=["admin"])
 async def get_user_basic_info(
-    target_user_id: str,
+    user_id: str,
     user: UserProfileData | None = Depends(get_current_user),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AppResponseDict:
@@ -832,7 +832,7 @@ async def get_user_basic_info(
         )
 
     try:
-        basic_info = await auth_service.get_user_basic_info_by_id(user.id, target_user_id)
+        basic_info = await auth_service.get_user_basic_info_by_id(user.id, user_id)
 
         # Log user basic info access event
         _ = await auth_service.log_event(
@@ -841,7 +841,7 @@ async def get_user_basic_info(
             event_source="admin_action",
             user_auth_id=user.id,
             event_payload={
-                "target_user_id": target_user_id,
+                "target_user_id": user_id,
                 "status": "success" if basic_info is not None else "failed",
             },
         )
@@ -851,7 +851,7 @@ async def get_user_basic_info(
                 status="success",
                 message="User basic information retrieved successfully.",
                 data={
-                    "target_user_id": target_user_id,
+                    "target_user_id": user_id,
                     "id": basic_info.get("id"),
                     "email": basic_info.get("email"),
                     "status": basic_info.get("status", "unknown"),
@@ -865,7 +865,7 @@ async def get_user_basic_info(
         )
 
     except Exception as e:
-        logger.error(f"Error getting basic info for user {target_user_id} by admin {user.id}: {e}")
+        logger.error(f"Error getting basic info for user {user_id} by admin {user.id}: {e}")
         return AppResponseDict(
             status="failed",
             message="An error occurred while retrieving user basic information.",
