@@ -668,7 +668,7 @@ class AuthService(BasePlugin):
         for key, value in sanitized.items():
             if isinstance(value, str) and len(value) > 1000:
                 sanitized[key] = value[:1000] + "...[truncated]"
-            elif isinstance(value, (list, dict)) and len(str(value)) > 2000:
+            elif isinstance(value, list | dict) and len(str(value)) > 2000:
                 sanitized[key] = f"{type(value).__name__} too large to log"
 
         return sanitized
