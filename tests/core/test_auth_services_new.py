@@ -73,14 +73,14 @@ class TestPasswordManagementMethods:
         with patch.object(auth_service, "_auth_client") as mock_auth_client:
             mock_auth_client.change_password = AsyncMock(return_value=True)
 
-            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                mock_log_event.return_value = True
+            with patch.object(auth_service, "log_event_raw", new_callable=AsyncMock) as mock_log_event_raw:
+                mock_log_event_raw.return_value = True
 
                 result = await auth_service.change_password(TEST_USER_ID, "old_password", "new_password")
 
                 assert result is True
                 mock_auth_client.change_password.assert_called_once_with(TEST_USER_ID, "old_password", "new_password")
-                mock_log_event.assert_called_once()
+                mock_log_event_raw.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_change_password_failure(self, auth_service: AuthService) -> None:
@@ -107,14 +107,14 @@ class TestPasswordManagementMethods:
         with patch.object(auth_service, "_auth_client") as mock_auth_client:
             mock_auth_client.initiate_password_reset = AsyncMock(return_value=True)
 
-            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                mock_log_event.return_value = True
+            with patch.object(auth_service, "log_event_raw", new_callable=AsyncMock) as mock_log_event_raw:
+                mock_log_event_raw.return_value = True
 
                 result = await auth_service.initiate_password_reset(TEST_EMAIL)
 
                 assert result is True
                 mock_auth_client.initiate_password_reset.assert_called_once_with(TEST_EMAIL)
-                mock_log_event.assert_called_once()
+                mock_log_event_raw.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_confirm_password_reset_success(self, auth_service: AuthService) -> None:
@@ -122,14 +122,14 @@ class TestPasswordManagementMethods:
         with patch.object(auth_service, "_auth_client") as mock_auth_client:
             mock_auth_client.confirm_password_reset = AsyncMock(return_value=True)
 
-            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                mock_log_event.return_value = True
+            with patch.object(auth_service, "log_event_raw", new_callable=AsyncMock) as mock_log_event_raw:
+                mock_log_event_raw.return_value = True
 
                 result = await auth_service.confirm_password_reset("reset_token", "new_password")
 
                 assert result is True
                 mock_auth_client.confirm_password_reset.assert_called_once_with("reset_token", "new_password")
-                mock_log_event.assert_called_once()
+                mock_log_event_raw.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_confirm_password_reset_failure(self, auth_service: AuthService) -> None:
@@ -160,8 +160,8 @@ class TestAccountManagementMethods:
                     with patch.object(auth_service, "refresh_user_cache", new_callable=AsyncMock) as mock_refresh_cache:
                         mock_refresh_cache.return_value = True
 
-                        with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                            mock_log_event.return_value = True
+                        with patch.object(auth_service, "log_event_raw", new_callable=AsyncMock) as mock_log_event_raw:
+                            mock_log_event_raw.return_value = True
 
                             result = await auth_service.deactivate(TEST_USER_ID, "correct_password")
 
@@ -196,8 +196,8 @@ class TestUserAdministrationMethods:
             mock_repository.ban_user = AsyncMock(return_value=True)
             mock_repository.get_user_by_auth_id = AsyncMock(return_value=mock_user)
 
-            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                mock_log_event.return_value = True
+            with patch.object(auth_service, "log_event_raw", new_callable=AsyncMock) as mock_log_event_raw:
+                mock_log_event_raw.return_value = True
 
                 with patch.object(auth_service, "refresh_user_cache", new_callable=AsyncMock) as mock_refresh_cache:
                     mock_refresh_cache.return_value = True
@@ -227,8 +227,8 @@ class TestUserAdministrationMethods:
             mock_repository.unban_user = AsyncMock(return_value=True)
             mock_repository.get_user_by_auth_id = AsyncMock(return_value=mock_user)
 
-            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                mock_log_event.return_value = True
+            with patch.object(auth_service, "log_event_raw", new_callable=AsyncMock) as mock_log_event_raw:
+                mock_log_event_raw.return_value = True
 
                 with patch.object(auth_service, "refresh_user_cache", new_callable=AsyncMock) as mock_refresh_cache:
                     mock_refresh_cache.return_value = True
@@ -375,8 +375,8 @@ class TestRoleManagementMethods:
         with patch.object(auth_service, "get_roles", new_callable=AsyncMock) as mock_get_roles:
             mock_get_roles.return_value = expected_roles
 
-            with patch.object(auth_service, "log_event", new_callable=AsyncMock) as mock_log_event:
-                mock_log_event.return_value = True
+            with patch.object(auth_service, "log_event_raw", new_callable=AsyncMock) as mock_log_event_raw:
+                mock_log_event_raw.return_value = True
 
                 result = await auth_service.get_user_roles_by_id(TEST_ADMIN_USER_ID, TEST_TARGET_USER_ID)
 
