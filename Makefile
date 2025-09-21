@@ -1,4 +1,4 @@
-.PHONY: help run redis-start test-unit test-e2e test-e2e-manual test-e2e-setup test-e2e-clean lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean
+.PHONY: help run redis-start test test-e2e test-e2e-manual test-e2e-setup test-e2e-clean lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean
 
 SRC_TARGETS = faster/ tests/ main.py migrations/env.py $(wildcard migrations/versions/*.py)
 
@@ -12,7 +12,7 @@ run: ## Run the FastAPI application
 	@lsof -ti:8000|xargs kill -9
 	uv run uvicorn main:app --host localhost --reload --reload-exclude logs
 
-test-unit: ## Run unit tests only (no authentication required)
+test: ## Run unit tests only (no authentication required)
 	@echo "🔬 Running unit tests..."
 	PYTHONPATH=. uv run pytest tests/core --cov=faster --cov-report=html:build/htmlcov
 
