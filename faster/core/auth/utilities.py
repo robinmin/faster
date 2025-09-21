@@ -1,3 +1,4 @@
+from typing import Any
 import uuid
 
 from fastapi import Request
@@ -371,3 +372,75 @@ def generate_trace_id() -> str:
         Unique trace ID string
     """
     return str(uuid.uuid4())
+
+
+# =============================================================================
+# Event Logging Utilities
+# =============================================================================
+
+
+async def log_event(
+    request: Request | None = None,
+    event_type: str = "",
+    event_name: str = "",
+    event_source: str = "",
+    user_auth_id: str | None = None,
+    trace_id: str | None = None,
+    session_id: str | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    client_info: str | None = None,
+    referrer: str | None = None,
+    country_code: str | None = None,
+    city: str | None = None,
+    timezone: str | None = None,
+    event_payload: dict[str, Any] | None = None,
+    extra_metadata: dict[str, Any] | None = None,
+) -> bool:
+    """
+    Log a user action/event to the AUTH_USER_ACTION table with automatic field extraction.
+
+    This utility function automatically extracts common fields from the request object
+    when not explicitly provided, providing sensible defaults for audit logging.
+
+    Args:
+        request: FastAPI Request object for automatic field extraction
+        event_type: Type of event (e.g., 'user', 'admin', 'auth')
+        event_name: Specific event name (e.g., 'login', 'profile_update')
+        event_source: Source of the event (e.g., 'user_action', 'admin_action')
+        user_auth_id: User authentication ID (auto-extracted if request provided)
+        trace_id: Request trace ID (auto-extracted from X-Request-ID header)
+        session_id: Session identifier (defaults to user_auth_id for grouping)
+        ip_address: Client IP address (auto-extracted from request)
+        user_agent: User agent string (auto-extracted from request headers)
+        client_info: Additional client information
+        referrer: HTTP referrer header
+        country_code: Client country code
+        city: Client city
+        timezone: Client timezone
+        event_payload: Structured event data
+        extra_metadata: Additional metadata (auto-includes request method/URL)
+
+    Returns:
+        True if logging successful, False otherwise
+    """
+    from .services import AuthService  # noqa: PLC0415  # Import here to avoid circular imports
+
+    return await AuthService.get_instance().log_event_raw(
+        event_type=event_type,
+        event_name=event_name,
+        event_source=event_source,
+        user_auth_id=user_auth_id,
+        trace_id=trace_id,
+        session_id=session_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        client_info=client_info,
+        referrer=referrer,
+        country_code=country_code,
+        city=city,
+        timezone=timezone,
+        event_payload=event_payload,
+        extra_metadata=extra_metadata,
+        request=request,
+    )
