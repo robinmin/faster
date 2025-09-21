@@ -325,51 +325,6 @@
           class="page-transition"
           :class="{ 'page-enter': isTransitioning, 'page-enter-active': !isTransitioning }"
         >
-          <!-- Dashboard Page -->
-          <div
-            x-show="$store.app.currentPage === 'dashboard'"
-            x-data="dashboardPage()"
-          >
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <!-- Welcome Card -->
-              <div
-                class="card bg-gradient-to-r from-primary to-secondary text-primary-content col-span-full"
-              >
-                <div class="card-body">
-                  <h2 class="card-title">
-                    <i
-                      data-lucide="hand-heart"
-                      class="w-6 h-6"
-                      aria-hidden="true"
-                    ></i>
-                    <span
-                      x-text="`Welcome back, ${getUserDisplayName()}!`"
-                    ></span>
-                  </h2>
-                  <p>Your development admin dashboard is ready to go.</p>
-                </div>
-              </div>
-
-              <!-- Dynamic Stats Cards -->
-              <template x-for="stat in stats" :key="stat.id">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body">
-                    <div class="flex items-center justify-between">
-                      <div>
-                        <p class="text-base-content/60" x-text="stat.label"></p>
-                        <p class="text-3xl font-bold" x-text="stat.value"></p>
-                      </div>
-                      <i
-                        :data-lucide="stat.icon"
-                        :class="`w-10 h-10 text-${stat.color}`"
-                        aria-hidden="true"
-                      ></i>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
 
           <!-- Profile Page -->
           <template x-if="$store.app.currentPage === 'profile'">
@@ -2663,7 +2618,7 @@
       document.addEventListener("alpine:init", () => {
         Alpine.store("app", {
           currentView: "loading",
-          currentPage: "dashboard",
+          currentPage: "sys-health",
           loadingMessage: "Initializing...",
           user: null,
           config: null,
@@ -2889,7 +2844,7 @@
             }
           }
 
-          if (pageId === "user-management" || pageId === "dashboard" || pageId === "onboarding" || pageId === "metadata") {
+          if (pageId === "user-management" || pageId === "onboarding" || pageId === "metadata") {
             return {
               status: "success",
               message: `${pageId.charAt(0).toUpperCase() + pageId.slice(1).replace('-', ' ')} Page`,
@@ -2963,10 +2918,10 @@
 
         getLastVisitedPage() {
           try {
-            return localStorage.getItem(this.STORAGE_KEY) || "dashboard";
+            return localStorage.getItem(this.STORAGE_KEY) || "sys-health";
           } catch (error) {
             console.warn("Could not retrieve last page from localStorage:", error);
-            return "dashboard";
+            return "sys-health";
           }
         },
 
@@ -2980,18 +2935,45 @@
 
         isValidPage(pageId) {
           const validPages = [
-            "dashboard", "onboarding", "profile", "user-management",
+            "onboarding", "profile", "user-management",
             "rbac", "sys-health", "app-state", "request-state"
           ];
           return validPages.includes(pageId);
         },
 
-        getDefaultPageForUser(user, isFirstTime = false) {
-          if (isFirstTime) {
-            return "dashboard";
+        async getDefaultPageForUser(user, isFirstTime = false) {
+          // For authenticated users, check onboarding status from backend
+          if (user) {
+            try {
+              const response = await apiService.call("/auth/onboarding");
+              if (response.status === "success") {
+                // User has completed onboarding, redirect to sys-health (default for existing users)
+                const lastPage = this.getLastVisitedPage();
+                return this.isValidPage(lastPage) ? lastPage : "sys-health";
+              } else if (response.status === "redirect") {
+                // User has completed onboarding, use last visited page or sys-health
+                const lastPage = this.getLastVisitedPage();
+                return this.isValidPage(lastPage) ? lastPage : "sys-health";
+              } else {
+                // User needs onboarding
+                return "onboarding";
+              }
+            } catch (error) {
+              console.warn("Could not check onboarding status:", error);
+              // Fallback to sys-health for existing users
+              const lastPage = this.getLastVisitedPage();
+              return this.isValidPage(lastPage) ? lastPage : "sys-health";
+            }
           }
+
+          // For first-time or non-authenticated users, go to onboarding
+          if (isFirstTime) {
+            return "onboarding";
+          }
+
+          // Fallback to sys-health instead of dashboard
           const lastPage = this.getLastVisitedPage();
-          return this.isValidPage(lastPage) ? lastPage : "dashboard";
+          return this.isValidPage(lastPage) ? lastPage : "sys-health";
         }
       };
 
@@ -3074,7 +3056,7 @@
           const isFirstTime = store.isFirstTimeLogin;
 
           // Navigate to appropriate page
-          const targetPage = pageNavigationService.getDefaultPageForUser(session.user, isFirstTime);
+          const targetPage = await pageNavigationService.getDefaultPageForUser(session.user, isFirstTime);
           store.currentPage = targetPage;
 
           // Reset first-time login flag
@@ -3323,7 +3305,7 @@
 
             if (isAuthenticated) {
               // For existing sessions, restore the last visited page
-              const lastPage = pageNavigationService.getDefaultPageForUser(Alpine.store("app").user, false);
+              const lastPage = await pageNavigationService.getDefaultPageForUser(Alpine.store("app").user, false);
               Alpine.store("app").currentPage = lastPage;
             }
 
@@ -3637,13 +3619,12 @@
       function userMenu() {
         return {
            menuItems: [
-             { id: "dashboard", label: "Dashboard", icon: "layout-dashboard" },
+             { id: "sys-health", label: "Sys Health", icon: "heart-pulse" },
              { id: "onboarding", label: "Onboarding", icon: "user-check" },
              { id: "profile", label: "Profile", icon: "user" },
              { id: "user-management", label: "User Management", icon: "users" },
              { id: "metadata", label: "Metadata", icon: "database" },
              { id: "rbac", label: "RBAC", icon: "shield-check" },
-             { id: "sys-health", label: "Sys Health", icon: "heart-pulse" },
              { id: "app-state", label: "App State", icon: "settings" },
              { id: "request-state", label: "Request State", icon: "send" }
            ],
@@ -3842,37 +3823,6 @@
       // PAGE COMPONENT FUNCTIONS
       // ===================================================================
 
-      function dashboardPage() {
-        return {
-          stats: [
-            {
-              id: "projects",
-              label: "Total Projects",
-              value: "12",
-              icon: "folder",
-              color: "primary"
-            },
-            {
-              id: "tasks",
-              label: "Active Tasks",
-              value: "8",
-              icon: "check-circle",
-              color: "success"
-            },
-            {
-              id: "issues",
-              label: "Issues",
-              value: "3",
-              icon: "alert-circle",
-              color: "warning"
-            }
-          ],
-
-          getUserDisplayName() {
-            return utils.getUserDisplayName(Alpine.store("app").user);
-          }
-        };
-      }
 
       function profilePage() {
          return {
@@ -4864,9 +4814,17 @@
               formatted.push({ key: "Connected", value: plugin.connected ? "Yes" : "No" });
             }
 
+            // Special handling for auth plugin - highlight JWKS cached keys count
+            if (plugin.jwks_cache && plugin.jwks_cache.cached_keys_count !== undefined) {
+              formatted.push({
+                key: "JWKS Cached Keys",
+                value: plugin.jwks_cache.cached_keys_count.toLocaleString()
+              });
+            }
+
             // Add all other fields, excluding some internal ones
             Object.entries(plugin).forEach(([key, value]) => {
-              if (!["status", "connected", "healthy"].includes(key)) {
+              if (!["status", "connected", "healthy", "jwks_cache"].includes(key)) {
                 let displayValue = value;
 
                 // Format different types of values
@@ -4913,7 +4871,7 @@
           progressSteps: [
             { id: "profile", label: "Profile Setup", progress: 100 },
             { id: "auth", label: "Authentication", progress: 100 },
-            { id: "dashboard", label: "Dashboard Exploration", progress: 25 }
+            { id: "sys-health", label: "Sys Health Exploration", progress: 25 }
           ],
           initialized: false,
           headlineMessage: "",
@@ -4931,12 +4889,12 @@
             });
 
             this.$watch("$store.app.currentPage", page => {
-              // Update dashboard exploration progress
-              const dashboardStep = this.progressSteps.find(
-                s => s.id === "dashboard"
+              // Update sys health exploration progress
+              const sysHealthStep = this.progressSteps.find(
+                s => s.id === "sys-health"
               );
-              if (dashboardStep) {
-                dashboardStep.progress = page === "dashboard" ? 100 : 25;
+              if (sysHealthStep) {
+                sysHealthStep.progress = page === "sys-health" ? 100 : 25;
               }
 
               // Update headline when switching to onboarding page
