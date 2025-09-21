@@ -5,6 +5,7 @@ import pytest
 
 from faster.core.auth.models import AuthServiceConfig, RouterItem, UserProfileData
 from faster.core.auth.services import AuthService
+from faster.core.auth.utilities import log_event
 from faster.core.config import Settings
 from faster.core.exceptions import DBError
 
@@ -834,12 +835,13 @@ class TestAuthServiceEventLogging:
 
     @pytest.mark.asyncio
     async def test_log_event_success(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
-        """Test successful event logging."""
+        """Test successful event logging via utility function."""
         with (
             patch.object(mock_repository, "log_event", return_value=True) as mock_method,
             patch.object(auth_service, "_repository", mock_repository),
+            patch.object(AuthService, "get_instance", return_value=auth_service),
         ):
-            result = await auth_service.log_event(
+            result = await log_event(
                 event_type="auth", event_name="login", event_source="supabase", user_auth_id=TEST_USER_ID
             )
 
@@ -848,11 +850,12 @@ class TestAuthServiceEventLogging:
 
     @pytest.mark.asyncio
     async def test_log_event_failure(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
-        """Test event logging failure."""
+        """Test event logging failure via utility function."""
         with (
             patch.object(mock_repository, "log_event", side_effect=Exception("Log failed")),
             patch.object(auth_service, "_repository", mock_repository),
+            patch.object(AuthService, "get_instance", return_value=auth_service),
         ):
-            result = await auth_service.log_event(event_type="auth", event_name="login", event_source="supabase")
+            result = await log_event(event_type="auth", event_name="login", event_source="supabase")
 
             assert result is False
