@@ -9,7 +9,15 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from .auth.routers import get_auth_service
 from .auth.services import AuthService
 from .logger import get_logger
-from .models import AppResponseDict, SysDictAdjustRequest, SysMapAdjustRequest
+from .models import (
+    AppResponseDict,
+    SysDictAdjustRequest,
+    SysDictDeleteRequest,
+    SysDictShowRequest,
+    SysMapAdjustRequest,
+    SysMapDeleteRequest,
+    SysMapShowRequest,
+)
 from .services import SysService
 from .utilities import check_all_resources
 
@@ -139,26 +147,25 @@ async def rbac_data(
         )
 
 
-@dev_router.get("/sys_dict/show", response_model=None)
-async def show_sys_dict(
-    category: str | None = None,
-    key: int | None = None,
-    value: str | None = None,
-) -> AppResponseDict:
+@dev_router.post("/sys_dict/show", response_model=None)
+async def show_sys_dict(request: SysDictShowRequest) -> AppResponseDict:
     """
     Show the content in sys_dict by category with optional filters.
 
     Args:
-        category: Filter by category name (optional)
-        key: Filter by key (optional)
-        value: Filter by value (optional)
+        request: SysDictShowRequest containing optional filter criteria
 
     Returns:
         AppResponseDict with sys_dict data
     """
     try:
         sys_service = SysService()
-        data = await sys_service.get_sys_dict_with_status(category=category, key=key, value=value, in_used_only=False)
+        data = await sys_service.get_sys_dict_with_status(
+            category=request.category,
+            key=request.key,
+            value=request.value,
+            in_used_only=request.in_used_only
+        )
 
         # Convert to list format for frontend table display
         items = []
@@ -222,26 +229,25 @@ async def adjust_sys_dict(request: SysDictAdjustRequest) -> AppResponseDict:
         )
 
 
-@dev_router.get("/sys_map/show", response_model=None)
-async def show_sys_map(
-    category: str | None = None,
-    left: str | None = None,
-    right: str | None = None,
-) -> AppResponseDict:
+@dev_router.post("/sys_map/show", response_model=None)
+async def show_sys_map(request: SysMapShowRequest) -> AppResponseDict:
     """
     Show the content in sys_map by category with optional filters.
 
     Args:
-        category: Filter by category name (optional)
-        left: Filter by left_value (optional)
-        right: Filter by right_value (optional)
+        request: SysMapShowRequest containing optional filter criteria
 
     Returns:
         AppResponseDict with sys_map data
     """
     try:
         sys_service = SysService()
-        data = await sys_service.get_sys_map_with_status(category=category, left=left, right=right, in_used_only=False)
+        data = await sys_service.get_sys_map_with_status(
+            category=request.category,
+            left=request.left_value,
+            right=request.right_value,
+            in_used_only=request.in_used_only
+        )
 
         # Convert to list format for frontend table display
         items = []
@@ -305,6 +311,76 @@ async def adjust_sys_map(request: SysMapAdjustRequest) -> AppResponseDict:
             status="error",
             message=f"Failed to adjust sys_map data: {e!s}",
             data={"category": request.category if request else None},
+        )
+
+
+@dev_router.delete("/sys_dict/delete", response_model=None)
+async def hard_delete_sys_dict_entry(request: SysDictDeleteRequest) -> AppResponseDict:
+    """
+    Permanently delete a specific SYS_DICT entry.
+
+    Args:
+        request: SysDictDeleteRequest containing category, key, and value
+
+    Returns:
+        AppResponseDict with deletion result
+    """
+    try:
+        sys_service = SysService()
+        success = await sys_service.hard_delete_sys_dict_entry(request.category, request.key, request.value)
+
+        if success:
+            return AppResponseDict(
+                status="success",
+                message=f"Successfully deleted sys_dict entry: category='{request.category}', key={request.key}, value='{request.value}'",
+                data={"category": request.category, "key": request.key, "value": request.value},
+            )
+        return AppResponseDict(
+            status="error",
+            message=f"Entry not found or failed to delete: category='{request.category}', key={request.key}, value='{request.value}'",
+            data={"category": request.category, "key": request.key, "value": request.value},
+        )
+    except Exception as e:
+        logger.error(f"Error hard deleting sys_dict entry: {e}")
+        return AppResponseDict(
+            status="error",
+            message=f"Failed to hard delete sys_dict entry: {e!s}",
+            data={"category": request.category, "key": request.key, "value": request.value},
+        )
+
+
+@dev_router.delete("/sys_map/delete", response_model=None)
+async def hard_delete_sys_map_entry(request: SysMapDeleteRequest) -> AppResponseDict:
+    """
+    Permanently delete a specific SYS_MAP entry.
+
+    Args:
+        request: SysMapDeleteRequest containing category, left_value, and right_value
+
+    Returns:
+        AppResponseDict with deletion result
+    """
+    try:
+        sys_service = SysService()
+        success = await sys_service.hard_delete_sys_map_entry(request.category, request.left_value, request.right_value)
+
+        if success:
+            return AppResponseDict(
+                status="success",
+                message=f"Successfully deleted sys_map entry: category='{request.category}', left='{request.left_value}', right='{request.right_value}'",
+                data={"category": request.category, "left_value": request.left_value, "right_value": request.right_value},
+            )
+        return AppResponseDict(
+            status="error",
+            message=f"Entry not found or failed to delete: category='{request.category}', left='{request.left_value}', right='{request.right_value}'",
+            data={"category": request.category, "left_value": request.left_value, "right_value": request.right_value},
+        )
+    except Exception as e:
+        logger.error(f"Error hard deleting sys_map entry: {e}")
+        return AppResponseDict(
+            status="error",
+            message=f"Failed to hard delete sys_map entry: {e!s}",
+            data={"category": request.category, "left_value": request.left_value, "right_value": request.right_value},
         )
 
 
