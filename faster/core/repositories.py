@@ -467,3 +467,119 @@ class AppRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to disable category '{category}': {e}")
             raise DBError(f"Failed to disable category '{category}': {e}") from e
+
+    async def hard_delete_sys_dict_entry(self, category: str, key: int, value: str) -> bool:
+        """
+        Permanently delete a specific SYS_DICT entry from the database.
+
+        Args:
+            category: Dictionary category (required, non-empty string)
+            key: Dictionary key (required integer)
+            value: Dictionary value (required, non-empty string)
+
+        Returns:
+            True if entry was deleted, False if entry not found
+
+        Raises:
+            ValueError: If parameters are invalid
+            DBError: If database operation fails
+
+        Example:
+            >>> repo = AppRepository()
+            >>> success = await repo.hard_delete_sys_dict_entry("user_role", 10, "default")
+            >>> print(success)  # True if deleted, False if not found
+        """
+        # Input validation
+        if not category or not category.strip():
+            raise ValueError("Category cannot be empty")
+        if not isinstance(key, int):
+            raise ValueError("Key must be an integer")
+        if not value or not value.strip():
+            raise ValueError("Value cannot be empty")
+
+        try:
+            async with self.transaction() as session:
+                # Find the specific entry
+                query = select(SysDict).where(
+                    SysDict.category == category.strip(),
+                    SysDict.key == key,
+                    SysDict.value == value.strip(),
+                )
+                result = await session.exec(query)
+                existing_entry = result.first()
+
+                if not existing_entry:
+                    logger.warning(
+                        f"SysDict entry not found for deletion: category={category}, key={key}, value={value}"
+                    )
+                    return False
+
+                # Hard delete the entry
+                await session.delete(existing_entry)
+                logger.info(f"Hard deleted SysDict entry: category={category}, key={key}, value={value}")
+                return True
+
+        except Exception as e:
+            logger.error(
+                f"Failed to hard delete SysDict entry: {e}",
+                extra={"category": category, "key": key, "value": value},
+            )
+            raise DBError(f"Failed to hard delete SysDict entry: {e}") from e
+
+    async def hard_delete_sys_map_entry(self, category: str, left_value: str, right_value: str) -> bool:
+        """
+        Permanently delete a specific SYS_MAP entry from the database.
+
+        Args:
+            category: Map category (required, non-empty string)
+            left_value: Left side value (required, non-empty string)
+            right_value: Right side value (required, non-empty string)
+
+        Returns:
+            True if entry was deleted, False if entry not found
+
+        Raises:
+            ValueError: If parameters are invalid
+            DBError: If database operation fails
+
+        Example:
+            >>> repo = AppRepository()
+            >>> success = await repo.hard_delete_sys_map_entry("tag_role", "auth", "default")
+            >>> print(success)  # True if deleted, False if not found
+        """
+        # Input validation
+        if not category or not category.strip():
+            raise ValueError("Category cannot be empty")
+        if not left_value or not left_value.strip():
+            raise ValueError("Left value cannot be empty")
+        if not right_value or not right_value.strip():
+            raise ValueError("Right value cannot be empty")
+
+        try:
+            async with self.transaction() as session:
+                # Find the specific entry
+                query = select(SysMap).where(
+                    SysMap.category == category.strip(),
+                    SysMap.left_value == left_value.strip(),
+                    SysMap.right_value == right_value.strip(),
+                )
+                result = await session.exec(query)
+                existing_entry = result.first()
+
+                if not existing_entry:
+                    logger.warning(
+                        f"SysMap entry not found for deletion: category={category}, left={left_value}, right={right_value}"
+                    )
+                    return False
+
+                # Hard delete the entry
+                await session.delete(existing_entry)
+                logger.info(f"Hard deleted SysMap entry: category={category}, left={left_value}, right={right_value}")
+                return True
+
+        except Exception as e:
+            logger.error(
+                f"Failed to hard delete SysMap entry: {e}",
+                extra={"category": category, "left_value": left_value, "right_value": right_value},
+            )
+            raise DBError(f"Failed to hard delete SysMap entry: {e}") from e
