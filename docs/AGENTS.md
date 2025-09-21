@@ -9,6 +9,7 @@
 - [⚡ Quick Reference](#-quick-reference)
 - [🔧 Core Tasks](#-core-tasks)
 - [📐 Architecture Principles](#-architecture-principles)
+- [🌐 API Design Standards](#-api-design-standards)
 - [🗄️ Database Patterns](#%EF%B8%8F-database-patterns)
 - [🔒 Security & Authentication](#-security--authentication)
 - [🧪 Testing Guidelines](#-testing-guidelines)
@@ -137,6 +138,56 @@ make lock                           # Update the lock file
 | **🛠️ utilities.py** | Pure functions | Helper & utility functions |
 
 > **🎨 Architecture Goal**: Thin layers with clear boundaries - fat services, thin the rest, and provide utilities maximum possible reusability
+
+[↑ Back to Top](#quick-navigation)
+
+---
+
+## 🌐 API Design Standards
+
+### 📡 RESTful API Consistency Rules
+
+#### 🔄 CRUD Operations Pattern
+**🎯 Golden Rule**: All CRUD operations uniformly use JSON body data instead of mixing query parameters and body data.
+
+```python
+# ✅ Correct: JSON Body for All Operations
+@router.post("/users/create")
+async def create_user(request: CreateUserRequest) -> AppResponseDict:
+    """Create - JSON body data"""
+
+@router.post("/users/show")
+async def show_users(request: ShowUsersRequest) -> AppResponseDict:
+    """Read - JSON body data with filters"""
+
+@router.post("/users/update")
+async def update_user(request: UpdateUserRequest) -> AppResponseDict:
+    """Update - JSON body data"""
+
+@router.delete("/users/delete")
+async def delete_user(request: DeleteUserRequest) -> AppResponseDict:
+    """Delete - JSON body data"""
+```
+
+#### 📋 API Design Rules
+- ✅ **Consistent Data Format**: All dynamic data via JSON body
+- ✅ **Pydantic Models**: Always use request/response models
+- ✅ **POST for Reads**: Use POST with filters for complex queries
+- ❌ **Mixed Patterns**: Never mix query params with JSON body
+- ❌ **GET with Body**: Avoid GET requests with request bodies
+
+#### 🏗️ Request Model Structure
+```python
+# ✅ Standard Request Model Pattern
+class EntityShowRequest(BaseModel):
+    """Request model for showing Entity entries with optional filters."""
+
+    category: str | None = Field(None, description="Filter by category")
+    status: bool | None = Field(None, description="Filter by status")
+    in_used_only: bool = Field(False, description="Show only active entries")
+```
+
+> **💡 Consistency Benefits**: Uniform patterns reduce cognitive load, improve maintainability, and eliminate parameter confusion.
 
 [↑ Back to Top](#quick-navigation)
 
