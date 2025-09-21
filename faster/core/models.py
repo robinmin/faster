@@ -89,3 +89,37 @@ class SysMapAdjustRequest(BaseModel):
 
     category: str = Field(..., description="Map category")
     items: list[SysMapItem] = Field(..., description="List of map items to set")
+
+
+class SysDictDeleteRequest(BaseModel):
+    """Request model for deleting a specific SysDict entry."""
+
+    category: str = Field(..., description="Dictionary category")
+    key: int = Field(..., description="Dictionary key")
+    value: str = Field(..., description="Dictionary value")
+
+
+class SysMapDeleteRequest(BaseModel):
+    """Request model for deleting a specific SysMap entry."""
+
+    category: str = Field(..., description="Map category")
+    left_value: str = Field(..., description="Left side value for mapping")
+    right_value: str = Field(..., description="Right side value for mapping")
+
+
+class SysDictShowRequest(BaseModel):
+    """Request model for showing SysDict entries with optional filters."""
+
+    category: str | None = Field(None, description="Filter by dictionary category")
+    key: int | None = Field(None, description="Filter by dictionary key")
+    value: str | None = Field(None, description="Filter by dictionary value")
+    in_used_only: bool = Field(False, description="Show only active entries")
+
+
+class SysMapShowRequest(BaseModel):
+    """Request model for showing SysMap entries with optional filters."""
+
+    category: str | None = Field(None, description="Filter by map category")
+    left_value: str | None = Field(None, description="Filter by left side value")
+    right_value: str | None = Field(None, description="Filter by right side value")
+    in_used_only: bool = Field(False, description="Show only active entries")
