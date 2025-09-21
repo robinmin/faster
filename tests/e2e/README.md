@@ -204,11 +204,16 @@ expectations:
 ### Python Test Files
 
 #### `test_dashboard.py`
-- Dashboard UI loading and authentication checks
-- Navigation menu functionality
-- Create button and modal interactions
-- User management interface tests
-- YAML specification execution for dashboard flows
+- Dashboard page loading and navigation verification
+- Welcome card display with personalized greetings
+- Dynamic stats cards rendering and content validation
+- Responsive grid layout across different screen sizes
+- Navigation menu functionality and branding
+- Theme toggle button and icon verification
+- User menu dropdown and avatar placeholder
+- Accessibility features (ARIA roles, screen reader text)
+- Page transition effects and loading states
+- Error handling for missing UI elements with graceful test skipping
 
 #### `test_login_flow.py`
 - Google OAuth login flow (manual and automated)

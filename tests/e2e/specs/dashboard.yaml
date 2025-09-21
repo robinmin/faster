@@ -1,204 +1,283 @@
-# E2E Test Specification: Admin Dashboard Navigation and CRUD Operations
-name: "Admin Dashboard CRUD Operations"
-description: "Test dashboard navigation and basic CRUD operations"
-tags: ["dashboard", "crud", "authenticated", "admin"]
+# E2E Test Specification: Dashboard Page Functionality
+name: "Dashboard Page Functionality Tests"
+description: "Comprehensive tests for dashboard page loading, welcome card, stats cards, navigation, and user interactions"
+tags: ["dashboard", "auth", "ui", "navigation", "responsive", "accessibility"]
+requires_auth: true
 
 # Test configuration
 config:
-  timeout: 30000
+  timeout: 30000  # 30 seconds for UI tests
   retries: 2
-  requires_auth: true  # This test requires authentication
 
-# Pre-conditions
-preconditions:
-  - "User must be authenticated"
-  - "Admin dashboard must be accessible"
-
-# Test steps
-steps:
-  - name: "Navigate to admin dashboard"
-    action: "goto"
-    url: "about:blank"
-    wait_for: "networkidle"
-
-  - name: "Verify authentication state"
-    action: "wait_for_function"
-    function: |
-      () => {
-        // Check for authenticated state indicators
-        try {
-          return document.querySelector('.navbar .avatar') ||
-                 document.querySelector('.navbar .dropdown') ||
-                 document.querySelector('nav') ||
-                 (typeof localStorage !== 'undefined' && localStorage.length > 0);
-        } catch (e) {
-          // localStorage not accessible (e.g., about:blank)
-          return document.querySelector('.navbar .avatar') ||
-                 document.querySelector('.navbar .dropdown') ||
-                 document.querySelector('nav') ||
-                 false;
-        }
-      }
-    timeout: 10000
-    description: "Ensure user is authenticated"
-    optional: true
-
-  - name: "Wait for dashboard to load"
-    action: "wait_for_function"
-    function: |
-      () => {
-        const loadingIndicators = document.querySelectorAll('.loading, .spinner, [data-loading="true"]');
-        return loadingIndicators.length === 0 ||
-               Array.from(loadingIndicators).every(el => !el.offsetParent);
-      }
-    timeout: 15000
-    description: "Wait for all loading states to complete"
-
-  - name: "Verify dashboard elements are visible"
-    action: "wait_for_selector"
-    selector: "main"
-    timeout: 10000
-    description: "Main dashboard container should be visible"
-    optional: true
-
-  - name: "Check for navigation menu"
-    action: "assert_visible"
-    selector: "nav[role='navigation']"
-    description: "Navigation menu should be present"
-    optional: true
-
-  - name: "Test navigation to different sections"
-    action: "click"
-    selector: ".navbar .avatar, .navbar .dropdown"
-    description: "Open user menu dropdown"
-    optional: true
-
-  - name: "Click on navigation item"
-    action: "click"
-    selector: ".dropdown-content a:not(:has-text('Logout')):first"
-    description: "Click first navigation item (not logout)"
-    optional: true
-
-  - name: "Verify data table loads"
-    action: "wait_for_selector"
-    selector: "table, .data-table, .grid, [data-testid='data-table']"
-    timeout: 10000
-    description: "Data table should load"
-    optional: true
-
-  - name: "Test search functionality"
-    action: "fill"
-    selector: "input[type='search'], .search-input, [placeholder*='search']"
-    value: "test"
-    description: "Test search input"
-    optional: true
-
-  - name: "Wait for search results"
-    action: "wait_for_timeout"
-    timeout: 2000
-    description: "Allow time for search to process"
-
-  - name: "Test create new item button"
-    action: "click"
-    selector: ".btn-create, .add-btn, button:has-text('Add'), button:has-text('Create'), [data-action='create']"
-    description: "Click create/add button"
-    optional: true
-
-  - name: "Check for modal or form"
-    action: "wait_for_selector"
-    selector: ".modal, .dialog, .form-container, .overlay"
-    timeout: 5000
-    description: "Create form or modal should appear"
-    optional: true
-
-  - name: "Close modal if opened"
-    action: "click"
-    selector: ".modal-close, .close-btn, [data-dismiss='modal'], .overlay"
-    description: "Close any opened modals"
-    optional: true
-
-  - name: "Test settings or profile access"
-    action: "click"
-    selector: ".user-menu, .profile-btn, .settings-btn, [data-testid='user-menu']"
-    description: "Access user menu or settings"
-    optional: true
-
-  - name: "Verify responsive design"
-    action: "set_viewport_size"
-    width: 768
-    height: 1024
-    description: "Test tablet viewport"
-
-  - name: "Check mobile navigation"
-    action: "assert_visible"
-    selector: ".mobile-menu, .hamburger, .menu-toggle"
-    description: "Mobile navigation should be visible on smaller screens"
-    optional: true
-
-  - name: "Reset viewport"
-    action: "set_viewport_size"
-    width: 1280
-    height: 720
-    description: "Reset to desktop viewport"
-
-# Error simulation tests
-error_scenarios:
-  - name: "Test network error handling"
+# Test scenarios - each corresponds to a test function in test_dashboard.py
+scenarios:
+  - name: "Dashboard Page Loads Correctly"
+    description: "Verify that the dashboard page loads with all expected elements"
     steps:
-      - action: "simulate_offline"
-        description: "Simulate network offline"
-      - action: "click"
-        selector: "button, a"
-        description: "Try to interact with elements"
-      - action: "assert_visible"
-        selector: ".error-message, .offline-indicator, [data-error='network']"
-        description: "Error handling should be visible"
-        optional: true
-      - action: "simulate_online"
-        description: "Restore network connection"
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
 
-# Performance checks
-performance:
-  - name: "Check page load time"
-    metric: "load_time"
-    threshold: 3000  # 3 seconds
-    description: "Dashboard should load within 3 seconds"
+      - name: "Wait for dashboard to be current page"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+        timeout: 10000
 
-  - name: "Check for console errors"
-    action: "assert_no_console_errors"
-    description: "No JavaScript errors should occur"
+      - name: "Verify dashboard container is visible"
+        action: "assert_visible"
+        selector: "[x-show*='dashboard']"
+        description: "Dashboard view should be displayed"
 
-# Cleanup steps
-cleanup:
-  - name: "Take screenshot of final state"
-    action: "screenshot"
-    path: "test-results/dashboard-final.png"
+      - name: "Verify main grid layout"
+        action: "assert_visible"
+        selector: ".grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3"
+        description: "Responsive grid layout should be present"
 
-  - name: "Clear any test data"
-    action: "evaluate"
-    function: |
-      () => {
-        // Clear any test data created during the test
-        if (window.clearTestData) {
-          window.clearTestData();
-        }
-      }
-    description: "Clean up test data"
+  - name: "Welcome Card Displays Correctly"
+    description: "Test that the welcome card displays with personalized greeting"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
 
-# Test data and variables
-variables:
-  dashboard_url: "/dev/admin"
-  search_term: "test"
-  mobile_width: 375
-  mobile_height: 667
-  tablet_width: 768
-  tablet_height: 1024
+      - name: "Wait for dashboard"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
 
-# Expected outcomes
-expectations:
-  - "Dashboard loads successfully for authenticated users"
-  - "Navigation between sections works correctly"
-  - "CRUD operations are accessible and functional"
-  - "Responsive design works on different screen sizes"
-  - "Error handling is graceful"
-  - "No console errors occur during normal operation"
+      - name: "Verify welcome card exists"
+        action: "assert_visible"
+        selector: ".card.bg-gradient-to-r.from-primary.to-secondary.col-span-full"
+        description: "Welcome card should be visible and span full width"
+
+      - name: "Verify welcome title contains greeting"
+        action: "assert_text"
+        selector: ".card.bg-gradient-to-r.from-primary.to-secondary .card-title"
+        value: "Welcome back"
+        description: "Welcome card title should contain personalized greeting"
+
+      - name: "Verify hand-heart icon"
+        action: "assert_visible"
+        selector: ".card.bg-gradient-to-r.from-primary.to-secondary i[data-lucide='hand-heart']"
+        description: "Hand heart icon should be present in welcome card"
+
+      - name: "Verify welcome message"
+        action: "assert_text"
+        selector: ".card.bg-gradient-to-r.from-primary.to-secondary p"
+        value: "development admin dashboard"
+        description: "Welcome message should be displayed"
+
+  - name: "Stats Cards Render Correctly"
+    description: "Test that stats cards render with proper structure and content"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Wait for dashboard"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+
+      - name: "Wait for stats to load"
+        action: "wait_for_timeout"
+        timeout: 1000
+
+      - name: "Verify stats cards exist"
+        action: "assert_visible"
+        selector: ".card.bg-base-100.shadow-xl:not(.bg-gradient-to-r)"
+        description: "At least one stats card should be present"
+
+      - name: "Verify first stats card structure"
+        action: "assert_visible"
+        selector: ".card.bg-base-100.shadow-xl:not(.bg-gradient-to-r) .card-body"
+        description: "Stats card should have proper body structure"
+
+  - name: "Stats Card Icons and Colors"
+    description: "Test that stats cards display appropriate icons and colors"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Wait for dashboard"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+
+      - name: "Wait for content"
+        action: "wait_for_timeout"
+        timeout: 1000
+
+      - name: "Verify stats card icon"
+        action: "assert_visible"
+        selector: ".card.bg-base-100.shadow-xl:not(.bg-gradient-to-r) i[data-lucide]"
+        description: "Stats cards should display appropriate icons"
+
+  - name: "Dashboard Navigation Menu"
+    description: "Test dashboard navigation menu functionality"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Wait for dashboard"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+
+      - name: "Verify navigation header"
+        action: "assert_visible"
+        selector: "nav.navbar"
+        description: "Navigation header should be present"
+
+      - name: "Verify Dev Admin title"
+        action: "assert_visible"
+        selector: "nav h1:contains('Dev Admin')"
+        description: "Dev Admin title should be visible"
+
+      - name: "Verify code icon in navigation"
+        action: "assert_visible"
+        selector: "nav i[data-lucide='code']"
+        description: "Code icon should be present in navigation"
+
+  - name: "Theme Toggle Functionality"
+    description: "Test theme toggle button functionality"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Wait for dashboard"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+
+      - name: "Verify theme toggle button"
+        action: "assert_visible"
+        selector: "button[title='Toggle theme']"
+        description: "Theme toggle button should be visible"
+
+      - name: "Verify theme toggle icons"
+        action: "assert_visible"
+        selector: "button[title='Toggle theme'] i[data-lucide='moon'], button[title='Toggle theme'] i[data-lucide='sun']"
+        description: "Theme toggle should show moon or sun icon"
+
+  - name: "User Menu Functionality"
+    description: "Test user menu dropdown functionality"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Wait for dashboard"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+
+      - name: "Verify user menu button"
+        action: "assert_visible"
+        selector: "button[aria-label='User menu']"
+        description: "User menu button should be accessible"
+
+      - name: "Verify user avatar placeholder"
+        action: "assert_visible"
+        selector: "button[aria-label='User menu'] .avatar .placeholder"
+        description: "User avatar placeholder should be visible"
+
+      - name: "Click user menu"
+        action: "click"
+        selector: "button[aria-label='User menu']"
+        timeout: 2000
+
+      - name: "Wait for dropdown"
+        action: "wait_for_timeout"
+        timeout: 500
+
+      - name: "Verify menu items appear"
+        action: "assert_visible"
+        selector: "ul.dropdown-content li"
+        description: "User menu dropdown should show menu items"
+
+  - name: "Dashboard Responsive Layout"
+    description: "Test dashboard responsive grid layout"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Wait for dashboard"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+
+      - name: "Verify responsive grid"
+        action: "assert_visible"
+        selector: ".grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3"
+        description: "Grid should have responsive column classes"
+
+      - name: "Verify welcome card spans full width"
+        action: "assert_visible"
+        selector: ".grid .col-span-full"
+        description: "Welcome card should span full grid width"
+
+      - name: "Verify grid gap spacing"
+        action: "assert_visible"
+        selector: ".grid.gap-6"
+        description: "Grid should have proper gap spacing"
+
+  - name: "Dashboard Accessibility Features"
+    description: "Test dashboard accessibility features"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Wait for dashboard"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+
+      - name: "Verify navigation role"
+        action: "assert_visible"
+        selector: "nav[role='navigation']"
+        description: "Navigation should have proper ARIA role"
+
+      - name: "Verify main content container"
+        action: "assert_visible"
+        selector: "main.container"
+        description: "Main content should be properly structured"
+
+      - name: "Verify screen reader text"
+        action: "assert_visible"
+        selector: ".sr-only"
+        description: "Screen reader text should be present for accessibility"
+
+  - name: "Dashboard Loading States"
+    description: "Test dashboard loading states and transitions"
+    steps:
+      - name: "Navigate to dashboard"
+        action: "goto"
+        url: "/dev/admin"
+        wait_for: "networkidle"
+
+      - name: "Verify initial view loads"
+        action: "assert_visible"
+        selector: "[x-show*='currentView']"
+        description: "Initial view should load (auth or loading)"
+
+      - name: "Wait for dashboard transition"
+        action: "wait_for_function"
+        function: "() => $store.app.currentPage === 'dashboard'"
+        timeout: 10000
+
+      - name: "Verify dashboard is active"
+        action: "assert_visible"
+        selector: "[x-show*='dashboard']"
+        description: "Dashboard view should be active"
+
+      - name: "Verify page transition effects"
+        action: "assert_visible"
+        selector: ".page-transition"
+        description: "Page transition effects should be applied"

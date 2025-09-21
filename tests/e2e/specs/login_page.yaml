@@ -5,9 +5,9 @@ tags: ["auth", "login", "ui", "validation", "accessibility"]
 
 # Test configuration
 config:
-  timeout: 30000  # 30 seconds for UI tests
+  timeout: 30000 # 30 seconds for UI tests
   retries: 2
-  skip_auth: true  # These are pre-authentication tests
+  skip_auth: true # These are pre-authentication tests
 
 # Test scenarios - each corresponds to a test function in test_login_page.py
 scenarios:
@@ -443,5 +443,4 @@ expectations:
   - "Authentication success transitions work properly"
   - "Error messages are displayed for validation failures"
   - "Accessibility features are implemented"
-  - "Page is responsive across different screen sizes"</content>
-</xai:function_call">Yaml
+  - "Page is responsive across different screen sizes"

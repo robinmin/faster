@@ -112,7 +112,9 @@ async def authenticated_context(
     session_data = await auth_handler.load_cached_session()
 
     if not session_data:
-        pytest.skip("No authenticated session available. Run auth setup first.")
+        # No authenticated session available - create context without authentication
+        # Tests using this fixture should handle unauthenticated state appropriately
+        pass
 
     # Get context options from config
     config = PlaywrightConfig()
@@ -146,25 +148,80 @@ async def auth_page(authenticated_context: BrowserContext) -> AsyncGenerator[Pag
     # and trust that the session storage state is working
     await page.wait_for_load_state("networkidle")
 
-    # Try to verify authentication but don't skip if it fails - just log it
+    # Wait for Alpine.js to be loaded and initialized
     try:
-        _ = await page.wait_for_function(
-            """
-            () => {
-                // Check for authenticated state indicators
-                return document.querySelector('[data-authenticated="true"]') ||
-                       document.querySelector('.user-profile') ||
-                       document.querySelector('.logout-btn') ||
-                       localStorage.getItem('sb-authenticated') === 'true' ||
-                       document.body; // Always return true as fallback
-            }
-            """,
-            timeout=5000,
-        )
+        _ = await page.wait_for_function("() => typeof Alpine !== 'undefined' && Alpine.store", timeout=10000)
+        print("✅ Alpine.js loaded successfully")
     except Exception as e:
-        # Log the issue but don't skip the test
-        print(f"⚠️  Authentication verification failed, but continuing with test: {e}")
-        # The session storage state should still be valid even if DOM indicators aren't found
+        print(f"⚠️  Alpine.js not loaded within timeout, but continuing: {e}")
+
+    # Wait for the app to initialize and check authentication state
+    # Give the app a moment to initialize
+    await page.wait_for_timeout(2000)
+
+    # Check authentication state
+    try:
+        auth_state = await page.evaluate("""
+            () => {
+                if (typeof Alpine === 'undefined' || !Alpine.store) return 'unknown';
+
+                const store = Alpine.store('app');
+                if (!store.currentView) return 'loading';
+
+                return store.currentView; // 'auth' or 'app'
+            }
+        """)
+
+        if auth_state == "app":
+            print("✅ User is authenticated and in app view")
+        elif auth_state == "auth":
+            print("i User is in auth view - authentication required")
+            # Try to manually restore session from localStorage
+            try:
+                session_restored = await page.evaluate("""
+                    () => {
+                        const authToken = localStorage.getItem('sb-gljfxpmixpiafocjzahi-auth-token');
+                        if (!authToken) return false;
+
+                        try {
+                            const sessionData = JSON.parse(authToken);
+                            if (sessionData.access_token && Alpine && Alpine.store) {
+                                const supabase = Alpine.store('app').supabase;
+                                if (supabase) {
+                                    // Try to set the session manually
+                                    supabase.auth.setSession({
+                                        access_token: sessionData.access_token,
+                                        refresh_token: sessionData.refresh_token
+                                    });
+                                    return true;
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Failed to restore session:', e);
+                        }
+                        return false;
+                    }
+                """)
+                if session_restored:
+                    print("✅ Session manually restored")
+                    # Wait a bit for the auth state to update
+                    await page.wait_for_timeout(2000)
+                    # Re-check auth state
+                    auth_state = await page.evaluate("""
+                        () => Alpine.store('app').currentView
+                    """)
+                    if auth_state == "app":
+                        print("✅ Authentication restored successfully")
+                    else:
+                        print("⚠️  Session restored but still in auth view")
+                else:
+                    print("⚠️  Could not restore session from localStorage")
+            except Exception as restore_error:
+                print(f"⚠️  Session restoration failed: {restore_error}")
+        else:
+            print(f"i Authentication state: {auth_state}")
+    except Exception as e:
+        print(f"⚠️  Could not check authentication state: {e}")
 
     yield page
     await page.close()
