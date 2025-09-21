@@ -2839,7 +2839,7 @@
 
           if (
             data &&
-            (method === "POST" || method === "PUT" || method === "PATCH")
+            (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")
           ) {
             config.body = JSON.stringify(data);
           }
@@ -5268,7 +5268,15 @@
             this.sysDictLoading = true;
             try {
               // Load all data without filters (filtering is done client-side)
-              const result = await apiService.call('/dev/sys_dict/show');
+              const result = await apiService.call('/dev/sys_dict/show', {
+                method: 'POST',
+                data: {
+                  category: null,
+                  key: null,
+                  value: null,
+                  in_used_only: false
+                }
+              });
 
               if (result.status === 'success') {
                 this.sysDictData = result.data.items || [];
@@ -5291,7 +5299,15 @@
             this.sysMapLoading = true;
             try {
               // Load all data without filters (filtering is done client-side)
-              const result = await apiService.call('/dev/sys_map/show');
+              const result = await apiService.call('/dev/sys_map/show', {
+                method: 'POST',
+                data: {
+                  category: null,
+                  left_value: null,
+                  right_value: null,
+                  in_used_only: false
+                }
+              });
 
               if (result.status === 'success') {
                 this.sysMapData = result.data.items || [];
@@ -5334,7 +5350,31 @@
 
           async deleteSysDictItem(item) {
             try {
-              // Create a request with the item marked as inactive
+              // Hard delete from database
+              const result = await apiService.call('/dev/sys_dict/delete', {
+                method: 'DELETE',
+                data: {
+                  category: item.category,
+                  key: item.key,
+                  value: item.value
+                }
+              });
+
+              if (result.status === 'success') {
+                toastService.show("Sys Dict entry permanently deleted", "success");
+                await this.loadSysDictData();
+              } else {
+                throw new Error(result.message || "Failed to delete sys dict entry");
+              }
+            } catch (error) {
+              console.error("Error deleting sys dict entry:", error);
+              toastService.show("Failed to delete sys dict entry", "error");
+            }
+          },
+
+          async softDeleteSysDictItem(item) {
+            try {
+              // Soft delete by setting in_used to false
               const requestData = {
                 category: item.category,
                 items: this.sysDictData
@@ -5351,21 +5391,46 @@
                 method: 'POST',
                 data: requestData
               });
+
               if (result.status === 'success') {
-                toastService.show("Sys Dict entry deleted successfully", "success");
+                toastService.show("Sys Dict entry deactivated", "success");
                 await this.loadSysDictData();
               } else {
-                throw new Error(result.message || "Failed to delete sys dict entry");
+                throw new Error(result.message || "Failed to deactivate sys dict entry");
               }
             } catch (error) {
-              console.error("Error deleting sys dict entry:", error);
-              toastService.show("Failed to delete sys dict entry", "error");
+              console.error("Error deactivating sys dict entry:", error);
+              toastService.show("Failed to deactivate sys dict entry", "error");
             }
           },
 
           async deleteSysMapItem(item) {
             try {
-              // Create a request with the item marked as inactive
+              // Hard delete from database
+              const result = await apiService.call('/dev/sys_map/delete', {
+                method: 'DELETE',
+                data: {
+                  category: item.category,
+                  left_value: item.left_value,
+                  right_value: item.right_value
+                }
+              });
+
+              if (result.status === 'success') {
+                toastService.show("Sys Map entry permanently deleted", "success");
+                await this.loadSysMapData();
+              } else {
+                throw new Error(result.message || "Failed to delete sys map entry");
+              }
+            } catch (error) {
+              console.error("Error deleting sys map entry:", error);
+              toastService.show("Failed to delete sys map entry", "error");
+            }
+          },
+
+          async softDeleteSysMapItem(item) {
+            try {
+              // Soft delete by setting in_used to false
               const requestData = {
                 category: item.category,
                 items: this.sysMapData
@@ -5384,15 +5449,16 @@
                 method: 'POST',
                 data: requestData
               });
+
               if (result.status === 'success') {
-                toastService.show("Sys Map entry deleted successfully", "success");
+                toastService.show("Sys Map entry deactivated", "success");
                 await this.loadSysMapData();
               } else {
-                throw new Error(result.message || "Failed to delete sys map entry");
+                throw new Error(result.message || "Failed to deactivate sys map entry");
               }
             } catch (error) {
-              console.error("Error deleting sys map entry:", error);
-              toastService.show("Failed to delete sys map entry", "error");
+              console.error("Error deactivating sys map entry:", error);
+              toastService.show("Failed to deactivate sys map entry", "error");
             }
           },
 
@@ -5548,7 +5614,7 @@ Category: ${item.category}
 Key: ${item.key}
 Value: ${item.value}
 
-This action will mark the entry as inactive and cannot be undone.`,
+⚠️ WARNING: This will PERMANENTLY DELETE the entry from the database and cannot be undone!`,
               'Delete',
               'btn-error'
             );
@@ -5566,7 +5632,7 @@ This action will mark the entry as inactive and cannot be undone.`,
 Category: ${item.category}
 Mapping: ${item.left_value} → ${item.right_value}
 
-This action will mark the entry as inactive and cannot be undone.`,
+⚠️ WARNING: This will PERMANENTLY DELETE the entry from the database and cannot be undone!`,
               'Delete',
               'btn-error'
             );
@@ -5765,5 +5831,6 @@ Status: ${this.sysMapForm.in_used ? 'Active' : 'Inactive'}`,
 
     <!-- Alpine.js -->
     <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <!-- Cache buster: Updated loadSysDictData and loadSysMapData to use POST method -->
   </body>
 </html>
