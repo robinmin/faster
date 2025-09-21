@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from ..config import Settings
 from ..database import DBSession, get_transaction
@@ -20,6 +21,7 @@ from .models import AuthServiceConfig, RouterItem, UserProfileData
 from .repositories import AuthRepository
 from .router_info import RouterInfo
 from .schemas import User
+from .utilities import generate_trace_id, mask_sensitive_data
 
 logger = get_logger(__name__)
 
@@ -641,7 +643,73 @@ class AuthService(BasePlugin):
         except Exception as e:
             logger.error(f"Unexpected error in background logout processing for {user.id}: {e}")
 
-    async def log_event(
+    def _sanitize_event_payload(self, payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        """
+        Sanitize event payload by removing or masking sensitive data.
+
+        Args:
+            payload: Raw event payload
+
+        Returns:
+            Sanitized payload safe for logging
+        """
+        if not payload:
+            return payload
+
+        sanitized = payload.copy()
+
+        # Mask sensitive fields
+        sensitive_fields = {"password", "token", "secret", "key", "auth_token", "api_key"}
+        for field in sensitive_fields:
+            if field in sanitized and isinstance(sanitized[field], str):
+                sanitized[field] = mask_sensitive_data(sanitized[field])
+
+        # Remove extremely large values that might cause performance issues
+        for key, value in sanitized.items():
+            if isinstance(value, str) and len(value) > 1000:
+                sanitized[key] = value[:1000] + "...[truncated]"
+            elif isinstance(value, (list, dict)) and len(str(value)) > 2000:
+                sanitized[key] = f"{type(value).__name__} too large to log"
+
+        return sanitized
+
+    def _enrich_event_metadata(
+        self, metadata: dict[str, Any] | None, user_auth_id: str | None, ip_address: str | None
+    ) -> dict[str, Any] | None:
+        """
+        Enrich event metadata with additional context information.
+
+        Args:
+            metadata: Existing metadata
+            user_auth_id: User authentication ID
+            ip_address: Client IP address
+
+        Returns:
+            Enriched metadata dictionary
+        """
+        enriched = metadata.copy() if metadata else {}
+
+        # Add timestamp if not present
+        if "timestamp" not in enriched:
+            enriched["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+        # Add user context
+        if user_auth_id:
+            enriched["user_id"] = user_auth_id
+
+        # Add security context
+        if ip_address:
+            # Store IP for analytics but mark as potentially sensitive
+            enriched["client_ip"] = ip_address
+            enriched["ip_logged"] = True
+
+        # Add service version/context
+        enriched["service"] = "faster_auth"
+        enriched["version"] = getattr(self._config, "version", "unknown") if self._config else "unknown"
+
+        return enriched
+
+    async def log_event_raw(  # noqa: C901, PLR0912
         self,
         event_type: str,
         event_name: str,
@@ -659,15 +727,108 @@ class AuthService(BasePlugin):
         event_payload: dict[str, Any] | None = None,
         extra_metadata: dict[str, Any] | None = None,
         session: DBSession | None = None,
+        request: Request | None = None,
     ) -> bool:
         """
-        Log a user action/event to the AUTH_USER_ACTION table.
+        Log a user action/event to the AUTH_USER_ACTION table with business logic validation.
+
+        This method provides centralized event logging with:
+        - Input validation and sanitization
+        - Event enrichment and normalization
+        - Security checks and rate limiting considerations
+        - Structured error handling
+        - Auto-extraction of common fields from request object
+
+        Args:
+            event_type: Type of event (e.g., 'user', 'admin', 'auth')
+            event_name: Specific event name (e.g., 'login', 'profile_update')
+            event_source: Source of the event (e.g., 'user_action', 'admin_action')
+            user_auth_id: User authentication ID
+            trace_id: Request trace ID (auto-extracted from X-Request-ID header if request provided)
+            session_id: Session identifier (defaults to user_auth_id for grouping)
+            ip_address: Client IP address (auto-extracted from request)
+            user_agent: User agent string (auto-extracted from request headers)
+            client_info: Additional client information
+            referrer: HTTP referrer header (auto-extracted from request)
+            country_code: Client country code
+            city: Client city
+            timezone: Client timezone
+            event_payload: Structured event data
+            extra_metadata: Additional metadata (auto-includes request method/URL if request provided)
+            session: Optional database session to use
+            request: FastAPI Request object for automatic field extraction
         """
         try:
+            # Input validation
+            if not event_type or not event_type.strip():
+                logger.warning("Event logging failed: event_type is required")
+                return False
+
+            if not event_name or not event_name.strip():
+                logger.warning("Event logging failed: event_name is required")
+                return False
+
+            if not event_source or not event_source.strip():
+                logger.warning("Event logging failed: event_source is required")
+                return False
+
+            # Normalize and validate event_type
+            valid_event_types = {"auth", "user", "admin", "password", "system"}
+            if event_type not in valid_event_types:
+                logger.warning(f"Event logging: unknown event_type '{event_type}', proceeding anyway")
+
+            # Normalize and validate event_source
+            valid_event_sources = {"user_action", "admin_action", "supabase", "system", "api"}
+            if event_source not in valid_event_sources:
+                logger.warning(f"Event logging: unknown event_source '{event_source}', proceeding anyway")
+
+            # Auto-extract common fields from request if not provided
+            if request and not trace_id:
+                trace_id = request.headers.get("X-Request-ID")
+
+            if request and not ip_address:
+                ip_address = getattr(request.client, "host", None) if request.client else None
+
+            if request and not user_agent:
+                user_agent = request.headers.get("user-agent")
+
+            if request and not referrer:
+                referrer = request.headers.get("referer")  # Note: 'referer' is the actual header name
+
+            # Use user_auth_id as session_id if not provided (groups actions by user)
+            if not session_id and user_auth_id:
+                session_id = user_auth_id
+
+            # Auto-add request metadata if request provided and no extra_metadata
+            if request and not extra_metadata:
+                extra_metadata = {
+                    "request_method": request.method,
+                    "url": str(request.url),
+                }
+
+            # Sanitize and enrich event data
+            sanitized_payload = self._sanitize_event_payload(event_payload)
+            enriched_metadata = self._enrich_event_metadata(extra_metadata, user_auth_id, ip_address)
+
+            # Generate trace_id if not provided
+            if not trace_id:
+                trace_id = generate_trace_id()
+
+            # Set session_id to user_auth_id if not provided (for grouping)
+            if not session_id and user_auth_id:
+                session_id = user_auth_id
+
+            # Security: Mask sensitive data in logs
+            if ip_address:
+                # Don't log full IP addresses in production logs for privacy
+                logger.debug(f"Event {event_name} from IP: {mask_sensitive_data(ip_address, visible_chars=2)}")
+
+            # Repository layer call
             if not self._repository:
                 logger.error("AuthService repository not initialized")
                 return False
-            return await self._repository.log_event(
+
+            success = await self._repository.log_event(
                 event_type=event_type,
                 event_name=event_name,
                 event_source=event_source,
@@ -681,14 +842,21 @@ class AuthService(BasePlugin):
                 country_code=country_code,
                 city=city,
                 timezone=timezone,
-                event_payload=event_payload,
-                extra_metadata=extra_metadata,
+                event_payload=sanitized_payload,
+                extra_metadata=enriched_metadata,
                 session=session,
             )
+
+            if success:
+                logger.debug(f"Successfully logged event: {event_type}.{event_name} from {event_source}")
+            else:
+                logger.warning(f"Failed to log event: {event_type}.{event_name} from {event_source}")
+
+            return success
+
         except Exception as e:
-            logger.error(f"AuthService.log_event failed: {e}")
-            # Never re-raise exceptions to avoid disrupting the main application flow
-            # Event logging is for tracking/analytics and should not interfere with core functionality
+            logger.error(f"Unexpected error logging event {event_name}: {e}")
+            # Don't re-raise exceptions to avoid disrupting the main application flow
             return False
 
     # =============================================================================
@@ -718,11 +886,12 @@ class AuthService(BasePlugin):
             if result:
                 logger.info(f"Password changed successfully for user {user_id}")
                 # Log the password change event
-                _ = await self.log_event(
+                _ = await self.log_event_raw(
                     event_type="auth",
                     event_name="password_changed",
                     event_source="user_action",
                     user_auth_id=user_id,
+                    session_id=user_id,  # Use user_id as session_id for grouping
                     event_payload={"status": "success"},
                 )
             else:
@@ -755,7 +924,7 @@ class AuthService(BasePlugin):
             if result:
                 logger.info(f"Password reset initiated for email {email}")
                 # Log the password reset initiation event
-                _ = await self.log_event(
+                _ = await self.log_event_raw(
                     event_type="auth",
                     event_name="password_reset_initiated",
                     event_source="user_action",
@@ -792,7 +961,7 @@ class AuthService(BasePlugin):
             if result:
                 logger.info("Password reset confirmed successfully")
                 # Log the password reset completion event
-                _ = await self.log_event(
+                _ = await self.log_event_raw(
                     event_type="auth",
                     event_name="password_reset_completed",
                     event_source="user_action",
@@ -843,11 +1012,12 @@ class AuthService(BasePlugin):
                 _ = await self.refresh_user_cache(user_id, force_refresh=True)
 
                 # Log the account deactivation event
-                _ = await self.log_event(
+                _ = await self.log_event_raw(
                     event_type="auth",
                     event_name="account_deactivated",
                     event_source="user_action",
                     user_auth_id=user_id,
+                    session_id=user_id,  # Use user_id as session_id for grouping
                     event_payload={"status": "success"},
                 )
 
@@ -918,11 +1088,12 @@ class AuthService(BasePlugin):
                 _ = await self.refresh_user_cache(actual_user_id, force_refresh=True)
 
                 # Log the ban event
-                _ = await self.log_event(
+                _ = await self.log_event_raw(
                     event_type="admin",
                     event_name="user_banned",
                     event_source="admin_action",
                     user_auth_id=user_id,
+                    session_id=user_id,  # Use user_id as session_id for grouping
                     event_payload={
                         "target_user_identifier": target_user_identifier,
                         "lookup_type": lookup_type,
@@ -985,11 +1156,12 @@ class AuthService(BasePlugin):
                 _ = await self.refresh_user_cache(actual_user_id, force_refresh=True)
 
                 # Log the unban event
-                _ = await self.log_event(
+                _ = await self.log_event_raw(
                     event_type="admin",
                     event_name="user_unbanned",
                     event_source="admin_action",
                     user_auth_id=user_id,
+                    session_id=user_id,  # Use user_id as session_id for grouping
                     event_payload={
                         "target_user_identifier": target_user_identifier,
                         "lookup_type": lookup_type,
@@ -1027,11 +1199,12 @@ class AuthService(BasePlugin):
 
             logger.info(f"Roles for user {target_user_id} retrieved by user {user_id}")
             # Log the role view event
-            _ = await self.log_event(
+            _ = await self.log_event_raw(
                 event_type="admin",
                 event_name="user_roles_viewed",
                 event_source="admin_action",
                 user_auth_id=user_id,
+                session_id=user_id,  # Use user_id as session_id for grouping
                 event_payload={"target_user_id": target_user_id, "status": "success"},
             )
 
@@ -1041,7 +1214,11 @@ class AuthService(BasePlugin):
             logger.error(f"Error getting roles for user {target_user_id} by user {user_id}: {e}")
             return None
 
-    async def get_user_basic_info_by_id(self, user_id: str, target_user_identifier: str) -> dict[str, Any] | None:
+    async def get_user_basic_info_by_id(
+        self,
+        user_id: str,
+        target_user_identifier: str,
+    ) -> dict[str, Any] | None:
         """
         Get user basic information including ID, email, status, and roles.
         Supports lookup by user ID or email address.
@@ -1087,26 +1264,18 @@ class AuthService(BasePlugin):
                 basic_info = {"id": actual_user_id, "email": user_info.email, "status": status, "roles": roles}
 
             logger.info(f"Basic info for user {target_user_identifier} (by {lookup_type}) retrieved by user {user_id}")
-            # Log the basic info view event
-            _ = await self.log_event(
-                event_type="admin",
-                event_name="user_basic_info_viewed",
-                event_source="admin_action",
-                user_auth_id=user_id,
-                event_payload={
-                    "target_user_identifier": target_user_identifier,
-                    "lookup_type": lookup_type,
-                    "status": "success",
-                },
-            )
-
             return basic_info
 
         except Exception as e:
             logger.error(f"Error getting basic info for user {target_user_identifier} by user {user_id}: {e}")
             return None
 
-    async def adjust_roles(self, user_id: str, target_user_identifier: str, roles: list[str]) -> bool:
+    async def adjust_roles(
+        self,
+        user_id: str,
+        target_user_identifier: str,
+        roles: list[str],
+    ) -> bool:
         """
         Adjust user roles by replacing all existing roles with the provided roles list.
         Supports lookup by user ID or email address.
@@ -1149,20 +1318,6 @@ class AuthService(BasePlugin):
 
                 logger.info(
                     f"Roles adjusted for user {target_user_identifier} (by {lookup_type}) by user {user_id}, new roles: {roles}"
-                )
-                # Log the role adjustment event
-                _ = await self.log_event(
-                    event_type="admin",
-                    event_name="user_roles_adjusted",
-                    event_source="admin_action",
-                    user_auth_id=user_id,
-                    event_payload={
-                        "target_user_identifier": target_user_identifier,
-                        "lookup_type": lookup_type,
-                        "actual_user_id": actual_user_id,
-                        "new_roles": roles,
-                        "status": "success",
-                    },
                 )
             else:
                 logger.warning(f"Failed to adjust roles for user {target_user_identifier} by user {user_id}")
