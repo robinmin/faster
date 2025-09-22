@@ -24,7 +24,12 @@
     ></script>
 
     <!-- Generated API Client -->
-    <script src="/dev/client_api_fetch.js" defer></script>
+    <script
+      src="/dev/client_api_fetch.js"
+      defer
+      onload="window.apiClientLoaded = true;"
+      onerror="window.apiClientLoadFailed = true; console.error('Failed to load API client script');"
+    ></script>
 
     <style>
       /* Core Styles */
@@ -2618,6 +2623,25 @@
       // GLOBAL STORE & STATE MANAGEMENT
       // ===================================================================
 
+      // Global error handlers to prevent unhandled promise rejections
+      window.addEventListener('unhandledrejection', (event) => {
+        console.warn('Unhandled promise rejection:', event.reason);
+        // Prevent the error from being logged to console as uncaught
+        event.preventDefault();
+      });
+
+      window.addEventListener('error', (event) => {
+        // Filter out extension-related errors that we can't control
+        if (event.message && event.message.includes('Extension context invalidated')) {
+          event.preventDefault();
+          return;
+        }
+        if (event.message && event.message.includes('message channel closed')) {
+          event.preventDefault();
+          return;
+        }
+      });
+
       document.addEventListener("alpine:init", () => {
         Alpine.store("app", {
           currentView: "loading",
@@ -2728,228 +2752,101 @@
         // Generated API client instance
         client: null,
 
-        // Initialize the API client
-        initClient() {
+        // Initialize the API client (non-async version with limited retries)
+        initClient(maxRetries = 50) {
+          // Check if script failed to load
+          if (window.apiClientLoadFailed) {
+            console.error("API client script failed to load");
+            return;
+          }
+
           if (window.ApiClient) {
-            this.client = new window.ApiClient();
-            // Set auth token if available
-            const supabase = Alpine.store("app").supabase;
-            if (supabase) {
-              supabase.auth.onAuthStateChange((event, session) => {
-                if (session?.access_token) {
-                  this.client.setAuth(session.access_token);
-                }
-              });
+            try {
+              this.client = new window.ApiClient();
+              // Set auth token if available
+              const supabase = Alpine.store("app").supabase;
+              if (supabase) {
+                supabase.auth.onAuthStateChange((event, session) => {
+                  if (session?.access_token) {
+                    this.client.setAuth(session.access_token);
+                  }
+                });
+              }
+              console.log("API client initialized");
+            } catch (error) {
+              console.error("Failed to initialize API client:", error);
             }
-            console.log("API client initialized");
-          } else {
+          } else if (maxRetries > 0) {
             console.warn("API client not loaded yet, will retry later");
-            // Retry after a short delay
-            setTimeout(() => this.initClient(), 100);
+            // Retry after a short delay with decreasing retry count
+            setTimeout(() => this.initClient(maxRetries - 1), 100);
+          } else {
+            console.error("API client failed to load after maximum retries");
           }
         },
 
         // Async version that waits for client to be available
         async initClientAsync() {
-          return new Promise((resolve) => {
+          return new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 100; // Max 5 seconds (100 * 50ms)
+            const checkInterval = 50;
+
             const checkClient = () => {
+              attempts++;
+
+              // Check if script failed to load
+              if (window.apiClientLoadFailed) {
+                const error = new Error("API client script failed to load");
+                console.error(error.message);
+                reject(error);
+                return;
+              }
+
               if (window.ApiClient) {
-                this.client = new window.ApiClient();
-                // Set auth token if available
-                const supabase = Alpine.store("app").supabase;
-                if (supabase) {
-                  supabase.auth.onAuthStateChange((event, session) => {
-                    if (session?.access_token) {
-                      this.client.setAuth(session.access_token);
-                    }
-                  });
+                try {
+                  this.client = new window.ApiClient();
+                  // Set auth token if available
+                  const supabase = Alpine.store("app").supabase;
+                  if (supabase) {
+                    supabase.auth.onAuthStateChange((event, session) => {
+                      if (session?.access_token) {
+                        this.client.setAuth(session.access_token);
+                      }
+                    });
+                  }
+                  console.log("API client initialized successfully");
+                  resolve();
+                } catch (error) {
+                  console.error("Failed to initialize API client:", error);
+                  reject(error);
                 }
-                console.log("API client initialized");
-                resolve();
+              } else if (attempts >= maxAttempts) {
+                const error = new Error("API client script failed to load within timeout");
+                console.error(error.message);
+                reject(error);
               } else {
-                setTimeout(checkClient, 50);
+                setTimeout(checkClient, checkInterval);
               }
             };
-            checkClient();
+
+            // Check immediately first
+            if (window.ApiClient) {
+              checkClient();
+            } else {
+              setTimeout(checkClient, checkInterval);
+            }
           });
         },
 
-        // New method that requires the auto-generated client
-        async call(endpoint, options = {}) {
-          // Require client to be initialized - no fallback
-          if (!this.client) {
-            throw new Error(`API client not initialized for endpoint: ${endpoint}`);
-          }
 
-          const { method = "GET", data = null } = options;
 
-          // Map endpoint to client method - throw error if not found
-          const result = await this._callClientMethod(endpoint, method, data);
-          return result;
-        },
 
-        // Map endpoints to generated client methods
-        async _callClientMethod(endpoint, method, data) {
-          // Auth endpoints
-          if (endpoint === "/auth/profile") {
-            return await this.client.getAuthProfile();
-          }
-           if (endpoint === "/auth/onboarding") {
-             return await this.client.getAuthOnboarding();
-           }
-           if (endpoint.startsWith("/auth/notification/")) {
-             const event = endpoint.split("/auth/notification/")[1];
-             return await this.client.postAuthNotification(event, data);
-           }
-           if (endpoint.startsWith("/auth/callback/")) {
-             const event = endpoint.split("/auth/callback/")[1];
-             return await this.client.postAuthCallback(event, data);
-           }
-          if (endpoint.match(/^\/auth\/users\/[^\/]+\/basic$/)) {
-            const userId = endpoint.split("/auth/users/")[1].split("/basic")[0];
-            return await this.client.getAuthUsersBasic(userId);
-          }
-          if (endpoint.match(/^\/auth\/users\/[^\/]+\/ban$/)) {
-            const userId = endpoint.split("/auth/users/")[1].split("/ban")[0];
-            return await this.client.postAuthUsersBan(userId, data);
-          }
-          if (endpoint.match(/^\/auth\/users\/[^\/]+\/unban$/)) {
-            const userId = endpoint.split("/auth/users/")[1].split("/unban")[0];
-            return await this.client.postAuthUsersUnban(userId, data);
-          }
-          if (endpoint.match(/^\/auth\/users\/[^\/]+\/roles\/adjust$/)) {
-            const userId = endpoint.split("/auth/users/")[1].split("/roles/adjust")[0];
-            return await this.client.postAuthUsersRolesAdjust(userId, data);
-          }
-          if (endpoint === "/auth/password/reset/initiate") {
-            return await this.client.postAuthPasswordResetInitiate(data);
-          }
-          if (endpoint === "/auth/deactivate") {
-            return await this.client.postAuthDeactivate(data);
-          }
 
-          // Dev endpoints
-          if (endpoint === "/dev/settings") {
-            return await this.client.getDevSettings();
-          }
-          if (endpoint === "/dev/app_state") {
-            return await this.client.getDevAppState();
-          }
-          if (endpoint === "/dev/request_state") {
-            return await this.client.getDevRequestState();
-          }
-          if (endpoint === "/dev/rbac") {
-            return await this.client.getDevRbac();
-          }
-          if (endpoint === "/dev/sys_dict/show") {
-            return await this.client.postDevSysDictShow(data);
-          }
-          if (endpoint === "/dev/sys_dict/adjust") {
-            return await this.client.postDevSysDictAdjust(data);
-          }
-          if (endpoint === "/dev/sys_dict/delete") {
-            return await this.client.deleteDevSysDictDelete(data);
-          }
-          if (endpoint === "/dev/sys_map/show") {
-            return await this.client.postDevSysMapShow(data);
-          }
-          if (endpoint === "/dev/sys_map/adjust") {
-            return await this.client.postDevSysMapAdjust(data);
-          }
-          if (endpoint === "/dev/sys_map/delete") {
-            return await this.client.deleteDevSysMapDelete(data);
-          }
 
-          // Health endpoint
-          if (endpoint === "/health") {
-            return await this.client.getHealth();
-          }
-
-          // Throw error for unmapped endpoints to identify missing mappings
-          throw new Error(`No client method mapped for endpoint: ${endpoint} (${method})`);
-        },
-
-        // Legacy fallback method (original implementation)
-        async _legacyCall(endpoint, options = {}) {
-          const { method = "GET", data = null, requireAuth } = options;
-
-          // Whitelist of endpoints that don't require authentication
-          const AUTH_WHITELIST = [
-            /^\/auth\/notification\/[^\/]+$/,
-            /^\/\.well-known\/appspecific\/com\.chrome\.devtools\.json$/,
-            /^\/dev\/admin$/,
-            /^\/dev\/settings$/,
-            /^\/custom$/
-          ];
-
-          const isWhitelisted = AUTH_WHITELIST.some(pattern => pattern.test(endpoint));
-
-          const headers = {
-            "Content-Type": "application/json",
-            Accept: "application/json"
-          };
-
-          const needsAuth =
-            requireAuth !== undefined
-              ? requireAuth
-              : !isWhitelisted;
-          if (needsAuth) {
-            const supabase = Alpine.store("app").supabase;
-
-            if (
-              endpoint.includes("/auth/callback/SIGNED_OUT") &&
-              window.pendingSignOutToken
-            ) {
-              headers["Authorization"] = `Bearer ${window.pendingSignOutToken}`;
-              delete window.pendingSignOutToken;
-            } else if (supabase) {
-              try {
-                const {
-                  data: { session }
-                } = await supabase.auth.getSession();
-                if (session?.access_token) {
-                  headers["Authorization"] = `Bearer ${session.access_token}`;
-                } else {
-                  throw new Error(
-                    "Authentication required but no valid session found"
-                  );
-                }
-              } catch (error) {
-                console.error("Could not get auth token for API call:", error);
-                throw new Error(
-                  `Authentication failed for ${endpoint}: ${error.message}`
-                );
-              }
-            } else {
-              throw new Error(
-                `Authentication required for ${endpoint} but Supabase not initialized`
-              );
-            }
-          }
-
-          const config = {
-            method,
-            headers
-          };
-
-          if (
-            data &&
-            (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE")
-          ) {
-            config.body = JSON.stringify(data);
-          }
-
-          const response = await utils.withTimeout(fetch(endpoint, config));
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-
-          return await response.json();
-        },
 
         async getConfig() {
-          const data = await this.call(APP_CONFIG.ENDPOINTS.CONFIG);
+          const data = await this.client.getDevSettings();
 
           if (!data?.data) {
             throw new Error("Invalid configuration response format");
@@ -2967,7 +2864,7 @@
           // Handle profile page with backend data
           if (pageId === "profile") {
             try {
-              const profileData = await this.call("/auth/profile");
+              const profileData = await this.client.getAuthProfile();
               return {
                 status: "success",
                 message: "Profile Page",
@@ -2994,19 +2891,25 @@
 
           try {
             if (pageId === "app-state") {
-              return await this.call("/dev/app_state");
+              return await this.client.getDevAppState();
             }
             if (pageId === "request-state") {
-              return await this.call("/dev/request_state");
+              return await this.client.getDevRequestState();
             }
             if (pageId === "sys-health") {
-              return await this.call("/health");
+              return await this.client.getHealth();
             }
             if (pageId === "rbac") {
-              return await this.call("/dev/rbac");
+              return await this.client.getDevRbac();
             }
 
-            return await this.call(`/auth/${pageId}`);
+            if (pageId === "profile") {
+              return await this.client.getAuthProfile();
+            } else if (pageId === "onboarding") {
+              return await this.client.getAuthOnboarding();
+            } else {
+              throw new Error(`Unsupported auth page: ${pageId}`);
+            }
           } catch (error) {
             console.warn(`Failed to load server data for ${pageId}:`, error.message);
             return {
@@ -3034,10 +2937,11 @@
             ...eventData
           };
 
-          return await this.call(endpoint, {
-            method: "POST",
-            data: data
-          });
+          if (isPublicEvent) {
+            return await this.client.postAuthNotification(event, data);
+          } else {
+            return await this.client.postAuthCallback(event, data);
+          }
         }
       };
 
@@ -3085,7 +2989,7 @@
           // For authenticated users, check onboarding status from backend
           if (user) {
             try {
-              const response = await apiService.call("/auth/onboarding");
+              const response = await apiService.client.getAuthOnboarding();
               if (response.status === "success") {
                 // User has completed onboarding, redirect to sys-health (default for existing users)
                 const lastPage = this.getLastVisitedPage();
@@ -3491,63 +3395,71 @@
             }
           },
 
-           initSentryAsync(config) {
-             if (!config.sentryDsn) return;
+            async initSentryAsync(config) {
+              if (!config.sentryDsn) return;
 
-             // Event-driven Sentry initialization - no polling or timeouts needed
-             const initializeSentry = () => {
-               if (typeof Sentry === 'undefined') {
-                 // Sentry object not available despite script load event
-                 return;
-               }
+              const initializeSentry = () => {
+                if (typeof Sentry === 'undefined') {
+                  console.warn("Sentry object not available");
+                  return;
+                }
 
-               try {
-                 Sentry.init({
-                   dsn: config.sentryDsn,
-                   environment: config.sentryEnvironment,
-                   tracesSampleRate:
-                     config.sentryEnvironment === "production" ? 0.1 : 1.0,
-                   beforeSend(event) {
-                     // Filter out network errors and other noise
-                     if (event.exception?.values?.[0]?.type === 'NetworkError') {
-                       return null;
-                     }
-                     return event;
-                   }
-                 });
-                 console.log("Sentry initialized successfully via event listener");
-               } catch (error) {
-                 console.error("Sentry initialization failed:", error);
-               }
-             };
+                try {
+                  Sentry.init({
+                    dsn: config.sentryDsn,
+                    environment: config.sentryEnvironment,
+                    tracesSampleRate:
+                      config.sentryEnvironment === "production" ? 0.1 : 1.0,
+                    beforeSend(event) {
+                      // Filter out network errors and other noise
+                      if (event.exception?.values?.[0]?.type === 'NetworkError') {
+                        return null;
+                      }
+                      return event;
+                    }
+                  });
+                  console.log("Sentry initialized successfully");
+                } catch (error) {
+                  console.error("Sentry initialization failed:", error);
+                }
+              };
 
-             // Check if Sentry is already available (script loaded before this runs)
-             if (window.sentryLoaded && typeof Sentry !== 'undefined') {
-               initializeSentry();
-               return;
-             }
+              // Check if Sentry is already available
+              if (typeof Sentry !== 'undefined') {
+                initializeSentry();
+                return;
+              }
 
-             // Check if script failed to load
-             if (window.sentryLoadFailed) {
-               // Sentry script failed to load
-               return;
-             }
+              // Check if script failed to load
+              if (window.sentryLoadFailed) {
+                console.warn("Sentry script failed to load");
+                return;
+              }
 
-             // Listen for the script load event
-             window.addEventListener('sentryReady', initializeSentry, { once: true });
+              // Wait for Sentry to load with timeout
+              return new Promise((resolve) => {
+                const checkSentry = () => {
+                  if (typeof Sentry !== 'undefined') {
+                    initializeSentry();
+                    resolve();
+                  } else if (window.sentryLoadFailed) {
+                    console.warn("Sentry script failed to load");
+                    resolve();
+                  } else {
+                    // Continue checking
+                    setTimeout(checkSentry, 100);
+                  }
+                };
 
-             // Fallback: if script is still loading after DOM ready, wait for it
-             if (document.readyState === 'loading') {
-               document.addEventListener('DOMContentLoaded', () => {
-                 // Give it a moment for deferred scripts to execute
-                 setTimeout(() => {
-                   if (!window.sentryLoaded && !window.sentryLoadFailed) {
-                     // Sentry script load status unknown after DOM ready
-                   }
-                 }, 100);
-               });
-             }
-           }
+                // Set a timeout to avoid infinite waiting
+                setTimeout(() => {
+                  console.warn("Sentry initialization timed out");
+                  resolve();
+                }, 5000);
+
+                checkSentry();
+              });
+            }
         };
       }
 
@@ -4127,14 +4039,11 @@
 
              this.passwordChangeLoading = true;
 
-             try {
-               await apiService.call("/auth/password/change", {
-                 method: "POST",
-                 data: {
-                   current_password: this.passwordForm.current,
-                   new_password: this.passwordForm.new
-                 }
-               });
+              try {
+                await apiService.client.postAuthPasswordChange({
+                  current_password: this.passwordForm.current,
+                  new_password: this.passwordForm.new
+                });
 
                toastService.show("Password changed successfully", "success");
                this.showPasswordChangeModal = false;
@@ -4156,11 +4065,10 @@
 
              this.passwordResetLoading = true;
 
-             try {
-               await apiService.call("/auth/password/reset/initiate", {
-                 method: "POST",
-                 data: { email: Alpine.store("app").user?.email }
-               });
+              try {
+                await apiService.client.postAuthPasswordResetInitiate({
+                  email: Alpine.store("app").user?.email
+                });
 
                toastService.show("Password reset email sent successfully", "success");
              } catch (error) {
@@ -4177,10 +4085,8 @@
 
              this.deactivateLoading = true;
 
-             try {
-               await apiService.call("/auth/deactivate", {
-                 method: "POST"
-               });
+              try {
+                await apiService.client.postAuthDeactivate();
 
                toastService.show("Account deactivated successfully", "success");
                this.showDeactivateModal = false;
@@ -4272,11 +4178,10 @@
              this.banLoading = true;
              this.userIdError = "";
 
-             try {
-               await apiService.call(`/auth/users/${this.targetUserId}/ban`, {
-                 method: "POST",
-                 data: { reason: "Banned via admin interface" }
-               });
+              try {
+                await apiService.client.postAuthUsersBan(this.targetUserId, {
+                  reason: "Banned via admin interface"
+                });
 
                toastService.show(`User ${this.targetUserId} has been banned`, "success");
                await this.viewUserBasicInfo(); // Refresh user info
@@ -4303,10 +4208,8 @@
              this.unbanLoading = true;
              this.userIdError = "";
 
-             try {
-               await apiService.call(`/auth/users/${this.targetUserId}/unban`, {
-                 method: "POST"
-               });
+              try {
+                await apiService.client.postAuthUsersUnban(this.targetUserId);
 
                toastService.show(`User ${this.targetUserId} has been unbanned`, "success");
                await this.viewUserBasicInfo(); // Refresh user info
@@ -4337,11 +4240,10 @@
 
              this.adjustRolesLoading = true;
 
-             try {
-               await apiService.call(`/auth/users/${this.targetUserId}/roles/adjust`, {
-                 method: "POST",
-                 data: { roles: this.selectedRoles }
-               });
+              try {
+                await apiService.client.postAuthUsersRolesAdjust(this.targetUserId, {
+                  roles: this.selectedRoles
+                });
 
                toastService.show(`User roles updated successfully`, "success");
                this.showAdjustRolesModal = false;
@@ -4368,8 +4270,8 @@
              this.viewBasicInfoLoading = true;
              this.userIdError = "";
 
-             try {
-               const data = await apiService.call(`/auth/users/${this.targetUserId}/basic`);
+              try {
+                const data = await apiService.client.getAuthUsersBasic(this.targetUserId);
 
                this.userInfo = {
                  id: data.data?.id || this.targetUserId,
@@ -4488,7 +4390,7 @@
             this.error = "";
 
             try {
-              const data = await apiService.call("/dev/app_state");
+              const data = await apiService.client.getDevAppState();
 
               // Update the store
               Alpine.store("app").pageData = {
@@ -4697,7 +4599,7 @@
             this.error = "";
 
             try {
-              const data = await apiService.call("/dev/request_state");
+              const data = await apiService.client.getDevRequestState();
 
               // Update the store
               Alpine.store("app").pageData = {
@@ -5185,7 +5087,7 @@
             this.error = null;
 
             try {
-              const response = await apiService.call("/dev/rbac");
+              const response = await apiService.client.getDevRbac();
 
               if (response.status === "success") {
                 this.rbacData = response.data;
@@ -5443,14 +5345,11 @@
             this.sysDictLoading = true;
             try {
               // Load all data without filters (filtering is done client-side)
-              const result = await apiService.call('/dev/sys_dict/show', {
-                method: 'POST',
-                data: {
-                  category: null,
-                  key: null,
-                  value: null,
-                  in_used_only: false
-                }
+              const result = await apiService.client.postDevSysDictShow({
+                category: null,
+                key: null,
+                value: null,
+                in_used_only: false
               });
 
               if (result.status === 'success') {
@@ -5474,14 +5373,11 @@
             this.sysMapLoading = true;
             try {
               // Load all data without filters (filtering is done client-side)
-              const result = await apiService.call('/dev/sys_map/show', {
-                method: 'POST',
-                data: {
-                  category: null,
-                  left_value: null,
-                  right_value: null,
-                  in_used_only: false
-                }
+              const result = await apiService.client.postDevSysMapShow({
+                category: null,
+                left_value: null,
+                right_value: null,
+                in_used_only: false
               });
 
               if (result.status === 'success') {
@@ -5526,13 +5422,10 @@
           async deleteSysDictItem(item) {
             try {
               // Hard delete from database
-              const result = await apiService.call('/dev/sys_dict/delete', {
-                method: 'DELETE',
-                data: {
-                  category: item.category,
-                  key: item.key,
-                  value: item.value
-                }
+              const result = await apiService.client.deleteDevSysDict({
+                category: item.category,
+                key: item.key,
+                value: item.value
               });
 
               if (result.status === 'success') {
@@ -5560,15 +5453,12 @@
                     value: i.value,
                     in_used: i.category === item.category && i.key === item.key ? false : i.in_used
                   }))
-              };
+               };
 
-              const result = await apiService.call('/dev/sys_dict/adjust', {
-                method: 'POST',
-                data: requestData
-              });
+               const result = await apiService.client.postDevSysDictAdjust(requestData);
 
-              if (result.status === 'success') {
-                toastService.show("Sys Dict entry deactivated", "success");
+               if (result.status === 'success') {
+                 toastService.show("Sys Dict entry deactivated", "success");
                 await this.loadSysDictData();
               } else {
                 throw new Error(result.message || "Failed to deactivate sys dict entry");
@@ -5582,13 +5472,10 @@
           async deleteSysMapItem(item) {
             try {
               // Hard delete from database
-              const result = await apiService.call('/dev/sys_map/delete', {
-                method: 'DELETE',
-                data: {
-                  category: item.category,
-                  left_value: item.left_value,
-                  right_value: item.right_value
-                }
+              const result = await apiService.client.deleteDevSysMap({
+                category: item.category,
+                left_value: item.left_value,
+                right_value: item.right_value
               });
 
               if (result.status === 'success') {
@@ -5618,15 +5505,12 @@
                              i.left_value === item.left_value &&
                              i.right_value === item.right_value ? false : i.in_used
                   }))
-              };
+               };
 
-              const result = await apiService.call('/dev/sys_map/adjust', {
-                method: 'POST',
-                data: requestData
-              });
+               const result = await apiService.client.postDevSysMapAdjust(requestData);
 
-              if (result.status === 'success') {
-                toastService.show("Sys Map entry deactivated", "success");
+               if (result.status === 'success') {
+                 toastService.show("Sys Map entry deactivated", "success");
                 await this.loadSysMapData();
               } else {
                 throw new Error(result.message || "Failed to deactivate sys map entry");
@@ -5677,10 +5561,7 @@
                 items: items
               };
 
-              const result = await apiService.call('/dev/sys_dict/adjust', {
-                method: 'POST',
-                data: requestData
-              });
+              const result = await apiService.client.postDevSysDictAdjust(requestData);
               if (result.status === 'success') {
                 toastService.show(this.editingSysDictItem ? "Sys Dict entry updated successfully" : "Sys Dict entry added successfully", "success");
                 this.showAddSysDictModal = false;
@@ -5740,10 +5621,7 @@
                 items: items
               };
 
-              const result = await apiService.call('/dev/sys_map/adjust', {
-                method: 'POST',
-                data: requestData
-              });
+              const result = await apiService.client.postDevSysMapAdjust(requestData);
               if (result.status === 'success') {
                 toastService.show(this.editingSysMapItem ? "Sys Map entry updated successfully" : "Sys Map entry added successfully", "success");
                 this.showAddSysMapModal = false;
