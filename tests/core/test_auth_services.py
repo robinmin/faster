@@ -87,7 +87,7 @@ class TestAuthServiceInitialization:
             assert result is True
             # Test behavior instead of accessing private attributes
             health = await service.check_health()
-            assert health["status"] != "not_setup"
+            assert health["is_ready"] is True
             mock_auth_proxy.assert_called_once()
 
     @pytest.mark.asyncio
@@ -125,7 +125,7 @@ class TestAuthServiceInitialization:
             assert result is False
             # Test behavior instead of accessing private attributes
             health = await service.check_health()
-            assert health["status"] == "not_setup"
+            assert health["is_ready"] is False
 
     @pytest.mark.asyncio
     async def test_teardown_success(self, auth_service: AuthService) -> None:
@@ -135,7 +135,7 @@ class TestAuthServiceInitialization:
         assert result is True
         # Test behavior instead of accessing private attributes
         health = await auth_service.check_health()
-        assert health["status"] == "not_setup"
+        assert health["is_ready"] is False
 
 
 class TestAuthServiceHealthCheck:
@@ -148,7 +148,7 @@ class TestAuthServiceHealthCheck:
 
         result = await service.check_health()
 
-        assert result["status"] == "not_setup"
+        assert result["is_ready"] is False
         assert result["auth_enabled"] is False
 
     @pytest.mark.asyncio
@@ -179,7 +179,7 @@ class TestAuthServiceHealthCheck:
             service._router_info._tag_role_cache = {"admin": ["admin"], "user": ["user"]}  # type: ignore[reportPrivateUsage, unused-ignore]
 
             result = await service.check_health()
-            assert result["status"] == "healthy"
+            assert result["is_ready"] is True
             assert result["auth_enabled"] is True
             assert result["tag_role_cache_size"] == 2
             assert result["jwks_cache"] == {"size": 10}
@@ -209,8 +209,8 @@ class TestAuthServiceHealthCheck:
         ):
             result = await service.check_health()
 
-            # Health check should still be healthy since tag-role mapping errors are handled internally
-            assert result["status"] == "healthy"
+            # Health check should still be ready since tag-role mapping errors are handled internally
+            assert result["is_ready"] is True
 
 
 class TestAuthServiceRouteManagement:
