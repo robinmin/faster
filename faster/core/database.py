@@ -24,6 +24,7 @@ logger = get_logger(__name__)
 ModelType = TypeVar("ModelType", bound=SQLModel)
 DBSession = AsyncSession
 
+
 class EngineKwargs(TypedDict, total=False):
     echo: bool
     future: bool
@@ -44,7 +45,6 @@ class DatabaseManager(BasePlugin):
         self.master_session: async_sessionmaker[DBSession] | None = None
         self.replica_session: async_sessionmaker[DBSession] | None = None
         self.is_ready: bool = False
-
 
     def _make_engine(self, url: str, pool_size: int, max_overflow: int, echo: bool) -> AsyncEngine:
         engine_kwargs: EngineKwargs = {"echo": echo, "future": True}
@@ -77,7 +77,7 @@ class DatabaseManager(BasePlugin):
         """
         async with self.get_session(readonly=readonly) as session:
             # Use execute() for raw SQL text as exec() doesn't support TextClause
-            result = await session.execute(text(query), params or {}) # pyright: ignore[reportDeprecated]
+            result = await session.execute(text(query), params or {})  # pyright: ignore[reportDeprecated]
             return result
 
     # -----------------------------
@@ -196,32 +196,60 @@ class DatabaseManager(BasePlugin):
             return False
 
     async def check_health(self) -> dict[str, Any]:
-        """Check database connectivity by running 'SELECT 1' on master and replica (if available)."""
+        """Check database connectivity and return detailed health information."""
         if not self.is_ready:
-            return {"master": False, "replica": False, "reason": "Plugin not ready"}
+            return {
+                "master_schema": None,
+                "replica_schema": None,
+                "master_response": False,
+                "replica_response": False,
+                "is_ready": False,
+                "reason": "Plugin not ready",
+            }
 
-        results: dict[str, Any] = {}
-        try:
-            if self.master_engine:
+        results: dict[str, Any] = {"is_ready": self.is_ready}
+
+        # Extract schema info from master URL
+        if self.master_engine:
+            master_url = str(self.master_engine.url)
+            # Extract dialect+driver (before '://')
+            if "://" in master_url:
+                results["master_schema"] = master_url.split("://")[0]
+            else:
+                results["master_schema"] = "unknown"
+
+            # Test master connection
+            try:
                 async with self.master_engine.connect() as conn:
                     row = await conn.execute(text("SELECT 1 as result"))
-                    results["master"] = bool(row.scalar_one())
-            else:
-                results["master"] = False
-        except Exception as exp:
-            logger.exception(f"Health check failed for master DB: {exp}")
-            results["master"] = False
+                    results["master_response"] = bool(row.scalar_one())
+            except Exception as exp:
+                logger.exception(f"Health check failed for master DB: {exp}")
+                results["master_response"] = False
+        else:
+            results["master_schema"] = None
+            results["master_response"] = False
 
-        try:
-            if self.replica_engine:
+        # Extract schema info from replica URL
+        if self.replica_engine:
+            replica_url = str(self.replica_engine.url)
+            # Extract dialect+driver (before '://')
+            if "://" in replica_url:
+                results["replica_schema"] = replica_url.split("://")[0]
+            else:
+                results["replica_schema"] = "unknown"
+
+            # Test replica connection
+            try:
                 async with self.replica_engine.connect() as conn:
                     row = await conn.execute(text("SELECT 1 as result"))
-                    results["replica"] = bool(row.scalar_one())
-            else:
-                results["replica"] = False
-        except Exception as exp:
-            logger.exception(f"Health check failed for replica DB: {exp}")
-            results["replica"] = False
+                    results["replica_response"] = bool(row.scalar_one())
+            except Exception as exp:
+                logger.exception(f"Health check failed for replica DB: {exp}")
+                results["replica_response"] = False
+        else:
+            results["replica_schema"] = None
+            results["replica_response"] = False
 
         return results
 
@@ -361,7 +389,9 @@ class BaseRepository(ABC):
             logger.error(f"Error deleting entity: {e}")
             return False
 
-    async def soft_delete(self, table_name: str, where_conditions: dict[str, Any], session: DBSession | None = None) -> int:
+    async def soft_delete(
+        self, table_name: str, where_conditions: dict[str, Any], session: DBSession | None = None
+    ) -> int:
         """
         Perform soft delete on records by setting N_IN_USED=0 and D_UPDATED_AT=now().
 
@@ -402,7 +432,7 @@ class BaseRepository(ABC):
         try:
             if session:
                 # Use provided session (within existing transaction)
-                result = await session.execute(text(query), params) # pyright: ignore[reportDeprecated]
+                result = await session.execute(text(query), params)  # pyright: ignore[reportDeprecated]
             else:
                 # Use execute_raw_query (creates its own transaction)
                 result = await self.db_manager.execute_raw_query(query, params, readonly=False)
@@ -468,6 +498,6 @@ class BaseRepository(ABC):
             >>> table_name = repo.table_name(SysMap)
             >>> print(table_name)  # "SYS_MAP"
         """
-        if not hasattr(model_class, '__tablename__'):
+        if not hasattr(model_class, "__tablename__"):
             raise ValueError(f"Model {model_class.__name__} does not have a __tablename__ attribute")
         return cast(str, model_class.__tablename__)
