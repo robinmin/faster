@@ -371,7 +371,7 @@ class TestAuthServiceUserManagement:
         self, auth_service: AuthService, mock_user_profile: UserProfileData
     ) -> None:
         """Test getting user by ID from cache."""
-        with patch("faster.core.auth.services.get_user_profile", return_value=mock_user_profile.model_dump_json()):
+        with patch("faster.core.auth.services.get_user_profile", return_value=mock_user_profile):
             result = await auth_service.get_user_by_id(TEST_USER_ID, from_cache=True)
 
             assert result == mock_user_profile
