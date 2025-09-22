@@ -555,7 +555,7 @@ class TestHealthAndDependency:
         health = await manager.check_health()
         assert health == {
             "provider": "fake",
-            "connected": True,
+            "is_ready": True,
             "ping": True,
             "error": None,
         }
@@ -575,7 +575,7 @@ class TestHealthAndDependency:
             health = await manager.check_health()
         assert health == {
             "provider": "fake",
-            "connected": False,
+            "is_ready": False,
             "ping": False,
             "error": "Ping failed",
         }
