@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -8,6 +8,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .auth.routers import get_auth_service
 from .auth.services import AuthService
+from .client_generator import ClientConfig, ClientGenerator
 from .logger import get_logger
 from .models import (
     AppResponseDict,
@@ -161,10 +162,7 @@ async def show_sys_dict(request: SysDictShowRequest) -> AppResponseDict:
     try:
         sys_service = SysService()
         data = await sys_service.get_sys_dict_with_status(
-            category=request.category,
-            key=request.key,
-            value=request.value,
-            in_used_only=request.in_used_only
+            category=request.category, key=request.key, value=request.value, in_used_only=request.in_used_only
         )
 
         # Convert to list format for frontend table display
@@ -246,7 +244,7 @@ async def show_sys_map(request: SysMapShowRequest) -> AppResponseDict:
             category=request.category,
             left=request.left_value,
             right=request.right_value,
-            in_used_only=request.in_used_only
+            in_used_only=request.in_used_only,
         )
 
         # Convert to list format for frontend table display
@@ -368,7 +366,11 @@ async def hard_delete_sys_map_entry(request: SysMapDeleteRequest) -> AppResponse
             return AppResponseDict(
                 status="success",
                 message=f"Successfully deleted sys_map entry: category='{request.category}', left='{request.left_value}', right='{request.right_value}'",
-                data={"category": request.category, "left_value": request.left_value, "right_value": request.right_value},
+                data={
+                    "category": request.category,
+                    "left_value": request.left_value,
+                    "right_value": request.right_value,
+                },
             )
         return AppResponseDict(
             status="error",
@@ -381,6 +383,73 @@ async def hard_delete_sys_map_entry(request: SysMapDeleteRequest) -> AppResponse
             status="error",
             message=f"Failed to hard delete sys_map entry: {e!s}",
             data={"category": request.category, "left_value": request.left_value, "right_value": request.right_value},
+        )
+
+
+@dev_router.get("/client_api_{lib}.{extname}", response_model=None, tags=["public"])
+async def generate_client_api(
+    lib: Literal["fetch", "axios"],
+    extname: Literal["js", "ts"],
+    request: Request,
+) -> AppResponseDict | Response:
+    """
+    Generate client API code for the specified library and file extension.
+
+    Args:
+        lib: HTTP client library ('fetch' or 'axios')
+        extname: File extension ('js' for JavaScript, 'ts' for TypeScript)
+        request: FastAPI request object
+
+    Returns:
+        Response with generated client code as downloadable file, or AppResponseDict on error
+    """
+    try:
+        # Map extension to language
+        language_map: dict[Literal["js", "ts"], Literal["javascript", "typescript"]] = {
+            "js": "javascript",
+            "ts": "typescript",
+        }
+        language = language_map[extname]
+
+        # Create client generator
+        generator = ClientGenerator()
+
+        # Create configuration with the current request's base URL to avoid CORS issues
+        current_base_url = f"{request.url.scheme}://{request.url.netloc}"
+        config = ClientConfig(
+            language=language,
+            http_client=lib,
+            class_name="ApiClient",
+            base_url=current_base_url,
+        )
+
+        # Generate client code from ALL routes (including those excluded from OpenAPI schema)
+        client_code = generator.generate_from_app_all_routes(request.app, config)
+
+        # Determine content type - use text/javascript for executable JS files
+        content_type = "text/javascript" if extname == "js" else "application/typescript"
+
+        # Headers for tracking, but no Content-Disposition to allow inline execution
+        return Response(
+            content=client_code,
+            media_type=content_type,
+            headers={
+                "X-Generated-Language": language,
+                "X-Generated-Library": lib,
+                "Cache-Control": "public, max-age=300",  # 5 minutes cache
+            },
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating client API: {e}")
+        return AppResponseDict(
+            status="error",
+            message=f"Failed to generate client API: {e!s}",
+            data={
+                "lib": lib,
+                "extname": extname,
+                "code": None,
+            },
         )
 
 
