@@ -372,7 +372,13 @@ class TestDatabaseManagerModelsAndHealth:
         db_manager.master_engine.connect.return_value.__aenter__.return_value.execute.return_value = mock_result  # type: ignore[union-attr]
 
         result = await db_manager.check_health()
-        assert result == {"master": True, "replica": False}
+        assert result == {
+            "is_ready": True,
+            "master_schema": "unknown",
+            "master_response": True,
+            "replica_schema": None,
+            "replica_response": False,
+        }
 
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
@@ -387,7 +393,13 @@ class TestDatabaseManagerModelsAndHealth:
 
         result = await db_manager.check_health()
 
-        assert result == {"master": False, "replica": False}
+        assert result == {
+            "is_ready": True,
+            "master_schema": "unknown",
+            "master_response": False,
+            "replica_schema": None,
+            "replica_response": False,
+        }
         mock_logger.exception.assert_called_once_with(f"Health check failed for master DB: {error}")
 
     @pytest.mark.asyncio
@@ -399,4 +411,11 @@ class TestDatabaseManagerModelsAndHealth:
         """
         db_manager = DatabaseManager()
         result = await db_manager.check_health()
-        assert result == {"master": False, "replica": False, "reason": "Plugin not ready"}
+        assert result == {
+            "is_ready": False,
+            "master_schema": None,
+            "master_response": False,
+            "replica_schema": None,
+            "replica_response": False,
+            "reason": "Plugin not ready",
+        }
