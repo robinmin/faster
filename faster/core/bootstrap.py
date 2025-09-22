@@ -176,7 +176,7 @@ async def refresh_status(app: FastAPI, settings: Settings, verbose: bool = False
     sentry_health = latest_status_info.get("sentry", {})
     auth_health = latest_status_info.get("auth", {})
 
-    if db_health.get("master", False):
+    if db_health.get("master_response", False):
         logger.debug(f"\tDB\t: {db_health}")
     else:
         logger.error(f"\tDB\t: {db_health}")
