@@ -241,7 +241,7 @@ class TestExtractBearerTokenFromRequest:
         mock_request.headers = Headers({"Authorization": "Bearer invalid.jwt"})
 
         result = extract_bearer_token_from_request(mock_request)
-        assert result == "invalid.jwt"  # JWT validation is skipped for backward compatibility
+        assert result is None  # Invalid JWT structure is now properly validated
 
     def test_extract_bearer_token_from_request_empty_token(self) -> None:
         """Test extracting empty token."""
@@ -258,11 +258,18 @@ class TestExtractBearerTokenFromRequest:
 
     def test_extract_bearer_token_from_request_case_insensitive(self) -> None:
         """Test extracting token with case insensitive header."""
+        # Create a valid JWT-like token for testing
+        header = {"alg": "RS256", "typ": "JWT"}
+        payload = {"sub": "user123"}
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        token = f"{header_b64}.{payload_b64}.signature"
+
         mock_request = MagicMock(spec=Request)
-        mock_request.headers = Headers({"authorization": "Bearer token123"})
+        mock_request.headers = Headers({"authorization": f"Bearer {token}"})
 
         result = extract_bearer_token_from_request(mock_request)
-        assert result == "token123"
+        assert result == token
 
 
 class TestExtractTokenFromMultipleSources:
@@ -270,13 +277,20 @@ class TestExtractTokenFromMultipleSources:
 
     def test_extract_token_from_multiple_sources_authorization_header(self) -> None:
         """Test extracting token from Authorization header first."""
+        # Create a valid JWT-like token
+        header = {"alg": "RS256", "typ": "JWT"}
+        payload = {"sub": "user123"}
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        token = f"{header_b64}.{payload_b64}.signature"
+
         mock_request = MagicMock()
-        mock_request.headers = {"Authorization": "Bearer token123"}
+        mock_request.headers = {"Authorization": f"Bearer {token}"}
         mock_request.cookies = {}
         mock_request.query_params = {}
 
         result = extract_token_from_multiple_sources(mock_request)
-        assert result == "token123"
+        assert result == token
 
     def test_extract_token_from_multiple_sources_x_access_token(self) -> None:
         """Test extracting token from X-Access-Token header."""
@@ -317,13 +331,20 @@ class TestExtractTokenFromMultipleSources:
 
     def test_extract_token_from_multiple_sources_priority_order(self) -> None:
         """Test that Authorization header takes priority over others."""
+        # Create a valid JWT-like token for Authorization header
+        header = {"alg": "RS256", "typ": "JWT"}
+        payload = {"sub": "user123"}
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        auth_token = f"{header_b64}.{payload_b64}.signature"
+
         mock_request = MagicMock()
-        mock_request.headers = {"Authorization": "Bearer auth_token", "X-Access-Token": "x_token"}
+        mock_request.headers = {"Authorization": f"Bearer {auth_token}", "X-Access-Token": "x_token"}
         mock_request.cookies = {"access_token": "cookie_token"}
         mock_request.query_params = {"token": "query_token"}
 
         result = extract_token_from_multiple_sources(mock_request)
-        assert result == "auth_token"
+        assert result == auth_token
 
     def test_extract_token_from_multiple_sources_invalid_jwt_format(self) -> None:
         """Test that invalid JWT format tokens are rejected."""
@@ -409,11 +430,18 @@ class TestIntegrationScenarios:
 
     def test_case_variations_in_bearer_scheme(self) -> None:
         """Test case variations in Bearer scheme."""
+        # Create a valid JWT-like token
+        header = {"alg": "RS256", "typ": "JWT"}
+        payload = {"sub": "user123"}
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        token = f"{header_b64}.{payload_b64}.signature"
+
         mock_request = MagicMock(spec=Request)
-        mock_request.headers = Headers({"Authorization": "BEARER token123"})
+        mock_request.headers = Headers({"Authorization": f"BEARER {token}"})
 
         result = extract_bearer_token_from_request(mock_request)
-        assert result == "token123"  # Should be case insensitive
+        assert result == token  # Should be case insensitive
 
     def test_malformed_authorization_headers(self) -> None:
         """Test handling of malformed Authorization headers."""
@@ -439,12 +467,19 @@ class TestLoggingAndDebugging:
 
     def test_logging_in_token_extraction(self) -> None:
         """Test that appropriate logging occurs during token extraction."""
+        # Create a valid JWT-like token
+        header = {"alg": "RS256", "typ": "JWT"}
+        payload = {"sub": "user123"}
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        token = f"{header_b64}.{payload_b64}.signature"
+
         mock_request = MagicMock(spec=Request)
-        mock_request.headers = Headers({"Authorization": "Bearer token123"})
+        mock_request.headers = Headers({"Authorization": f"Bearer {token}"})
 
         with patch("faster.core.auth.utilities.logger"):
             result = extract_bearer_token_from_request(mock_request)
-            assert result == "token123"
+            assert result == token
             # Should not log for successful extractions (commented out debug log)
 
     def test_logging_for_invalid_schemes(self) -> None:
