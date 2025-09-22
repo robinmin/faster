@@ -682,7 +682,6 @@ class RedisManager(BasePlugin):
         self._provider: RedisProvider | None = None
         self.is_ready: bool = False
 
-
     async def _setup_internal(  # noqa: C901
         self,
         provider: str | RedisProvider = RedisProvider.LOCAL,
@@ -902,7 +901,7 @@ class RedisManager(BasePlugin):
         if not self.is_ready:
             return {
                 "provider": None,
-                "connected": False,
+                "is_ready": False,
                 "ping": False,
                 "reason": "Plugin not ready",
             }
@@ -910,7 +909,7 @@ class RedisManager(BasePlugin):
         if not self._client:
             return {
                 "provider": None,
-                "connected": False,
+                "is_ready": False,
                 "ping": False,
                 "error": "Redis client not initialized",
             }
@@ -919,7 +918,7 @@ class RedisManager(BasePlugin):
             ping_result = await self._client.ping()
             return {
                 "provider": self._provider.value if self._provider else None,
-                "connected": True,
+                "is_ready": self.is_ready,
                 "ping": ping_result,
                 "error": None,
             }
@@ -927,7 +926,7 @@ class RedisManager(BasePlugin):
             logger.error(f"Redis health check failed: {e}")
             return {
                 "provider": self._provider.value if self._provider else None,
-                "connected": False,
+                "is_ready": False,
                 "ping": False,
                 "error": str(e),
             }
