@@ -1,4 +1,4 @@
-.PHONY: help run redis-start test test-e2e test-e2e-manual test-e2e-setup test-e2e-clean lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean
+.PHONY: help run redis-start test test-e2e test-e2e-manual test-e2e-setup test-e2e-clean lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean apis
 
 SRC_TARGETS = faster/ tests/ main.py migrations/env.py $(wildcard migrations/versions/*.py)
 
@@ -100,6 +100,22 @@ db-version: ## Show the current database revision
 
 # supabase-stop: ## Stop Supabase local development services
 # 	supabase stop
+
+apis: ## Download all client API files to build/ folder (requires server running)
+	@echo "📦 Downloading client API files..."
+	@mkdir -p build
+
+	@echo "⬇️  Fetching JavaScript + fetch client..."
+	@curl -s http://127.0.0.1:8000/dev/client_api_fetch.js -o build/client_api_fetch.js || (echo "❌ Failed to fetch client_api_fetch.js (is server running?)" && exit 1)
+	@echo "⬇️  Fetching TypeScript + fetch client..."
+	@curl -s http://127.0.0.1:8000/dev/client_api_fetch.ts -o build/client_api_fetch.ts || (echo "❌ Failed to fetch client_api_fetch.ts" && exit 1)
+	@echo "⬇️  Fetching JavaScript + axios client..."
+	@curl -s http://127.0.0.1:8000/dev/client_api_axios.js -o build/client_api_axios.js || (echo "❌ Failed to fetch client_api_axios.js" && exit 1)
+	@echo "⬇️  Fetching TypeScript + axios client..."
+	@curl -s http://127.0.0.1:8000/dev/client_api_axios.ts -o build/client_api_axios.ts || (echo "❌ Failed to fetch client_api_axios.ts" && exit 1)
+	@echo "✅ All client API files downloaded to build/ folder:"
+
+	@ls -la build/client_api_*
 
 clean: ## Clean up build artifacts and cached files
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
