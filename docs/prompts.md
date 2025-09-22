@@ -1028,3 +1028,23 @@ Currently, we convert UserProfileData into JSON string explicitly and then call 
 - Change the function signature of `get_user_profile` to `async def get_user_profile(user_id: str) -> UserProfileData | None` in file @faster/core/redisex.py; Internally, we also convert JSON string into UserProfileData explicitly and then return the user profile from redis as we did it right now.
 
 - Enhance the downstream code and unit tests to ensure both `make lint` and `make test` all pass.
+
+
+### Adjust Database panel's content in page 'Sys Health'
+#### Background
+Currently,  Database panel shows Master/Replica with 'Yes' or 'No' value. It's a little bit confusing for the user sometime.
+
+#### Goal
+Adjust to show the following items:
+- master_schema: The database URL of master's dialect+driver (before the substring of '://' in the databse URL of master)
+- replica_schema: The database URL of Replication's dialect+driver (before the substring of '://' in the databse URL of Replication)
+- master_response: current value (whether response `SELECT 1` properly) from master database
+- replica_response: current value (whether response `SELECT 1` properly) from Replication database
+- is_ready: DatabaseManager.is_ready
+
+- For bool rtesult(master_response, replica_response and is_ready) in frontend, no need to convert into 'Yes' or 'No'. Shown them as ✅ or ❌ will be better.
+
+- You can find the source code of frontend in file @faster/resources/dev-admin.html. And the core of the logic in backend in @faster/core/database.py.
+- You can use MCP playwright to access it via http://127.0.0.1:8000/dev/admin. Fix all potential issues and errors in web console if any.
+
+- ensure both `make lint` and `make test` all pass.
