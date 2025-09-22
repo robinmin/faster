@@ -321,10 +321,10 @@ class AuthService(BasePlugin):
         # Step 1: Try to load from Redis cache
         if from_cache:
             try:
-                cached_profile_json = await get_user_profile(user_id)
-                if cached_profile_json:
+                cached_profile = await get_user_profile(user_id)
+                if cached_profile:
                     logger.debug(f"User profile retrieved from Redis cache for user ID: {user_id}")
-                    return UserProfileData.model_validate_json(cached_profile_json)
+                    return cached_profile
             except Exception as e:
                 logger.warning(f"Failed to retrieve user profile from Redis cache: {e}")
 
@@ -514,8 +514,7 @@ class AuthService(BasePlugin):
             return True  # Nothing to cache, consider success
 
         try:
-            profile_json = profile_to_cache.model_dump_json()
-            cache_success = await set_user_profile(user_id, profile_json, ttl)
+            cache_success = await set_user_profile(user_id, profile_to_cache, ttl)
             if cache_success:
                 logger.debug(f"Refreshed user profile cache for user ID: {user_id}")
             else:
