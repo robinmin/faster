@@ -1,9 +1,11 @@
+from datetime import datetime
 import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from faster.core.auth.models import UserProfileData
 from faster.core.redisex import (
     MapCategory,
     blacklist_add,
@@ -315,23 +317,25 @@ class TestAuthModuleFunctions:
             mock_get_redis.return_value = mock_redis
             mock_redis.set.return_value = True
 
-            # Create a mock user profile JSON string
-            profile_data: dict[str, Any] = {
-                "id": "user-123",
-                "email": "test@example.com",
-                "email_confirmed_at": None,
-                "phone": None,
-                "created_at": "2023-01-01T00:00:00Z",
-                "updated_at": "2023-01-01T00:00:00Z",
-                "last_sign_in_at": None,
-                "app_metadata": {},
-                "user_metadata": {},
-                "aud": "test",
-                "role": "authenticated",
-            }
-            profile_json = json.dumps(profile_data)
+            # Create a mock user profile object
 
-            result = await set_user_profile("user-123", profile_json, 3600)
+            profile = UserProfileData(
+                id="user-123",
+                email="test@example.com",
+                email_confirmed_at=None,
+                phone=None,
+                created_at=datetime.fromisoformat("2023-01-01T00:00:00"),
+                updated_at=datetime.fromisoformat("2023-01-01T00:00:00"),
+                last_sign_in_at=None,
+                app_metadata={},
+                user_metadata={},
+                aud="test",
+                role="authenticated",
+                is_anonymous=False,
+                confirmed_at=None,
+            )
+
+            result = await set_user_profile("user-123", profile, 3600)
 
             assert result is True
             mock_redis.set.assert_called_once()
@@ -355,24 +359,24 @@ class TestAuthModuleFunctions:
                 "email": "test@example.com",
                 "email_confirmed_at": None,
                 "phone": None,
-                "created_at": "2023-01-01T00:00:00Z",
-                "updated_at": "2023-01-01T00:00:00Z",
+                "created_at": "2023-01-01T00:00:00",
+                "updated_at": "2023-01-01T00:00:00",
                 "last_sign_in_at": None,
                 "app_metadata": {},
                 "user_metadata": {},
                 "aud": "test",
                 "role": "authenticated",
+                "is_anonymous": False,
+                "confirmed_at": None,
             }
             mock_redis.get.return_value = json.dumps(profile_data)
 
             result = await get_user_profile("user-123")
 
             assert result is not None
-            assert isinstance(result, str)
-            # Parse the JSON to verify the content
-            parsed_result = json.loads(result)
-            assert parsed_result["id"] == "user-123"
-            assert parsed_result["email"] == "test@example.com"
+            assert isinstance(result, UserProfileData)
+            assert result.id == "user-123"
+            assert result.email == "test@example.com"
             mock_redis.get.assert_called_once_with("user:profile:user-123")
 
     @pytest.mark.asyncio
