@@ -1,7 +1,8 @@
 from enum import Enum
 import json
-from typing import Any, cast
+from typing import Any
 
+from .auth.models import UserProfileData
 from .logger import get_logger
 from .redis import get_redis
 
@@ -238,23 +239,23 @@ async def sysmap_set(category: str, mapping: dict[str, list[str]]) -> bool:
 # =============================================================================
 # Utility Functions  for Auth Module
 # =============================================================================
-async def set_user_profile(user_id: str, profile_json: str, ttl: int = 3600) -> bool:
-    """Cache user profile data as JSON string."""
-    # TODO: store user profile data in JSON format is not a good way to do it, use a more efficient data structure
+async def set_user_profile(user_id: str, profile: UserProfileData, ttl: int = 3600) -> bool:
+    """Cache user profile data."""
     try:
+        profile_json = profile.model_dump_json()
         return bool(await get_redis().set(KeyPrefix.USER_PROFILE.get_key(user_id), profile_json, ttl))
     except Exception as e:
         logger.error(f"Error when set user profile to [{user_id}] : {e}")
     return False
 
 
-async def get_user_profile(user_id: str) -> str | None:
-    """Retrieve cached user profile data as JSON string."""
-    # TODO: store user profile data in JSON format is not a good way to do it, use a more efficient data structure
-
+async def get_user_profile(user_id: str) -> UserProfileData | None:
+    """Retrieve cached user profile data."""
     try:
         result = await get_redis().get(KeyPrefix.USER_PROFILE.get_key(user_id))
-        return cast(str | None, result)
+        if result and isinstance(result, str):
+            return UserProfileData.model_validate_json(result)
+        return None
     except Exception as e:
         logger.error(f"Error when get user profile from [{user_id}] : {e}")
     return None
