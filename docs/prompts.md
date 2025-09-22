@@ -1017,3 +1017,14 @@ According to the values of table `AUTH_USER_ACTION`, we can see the following is
 - `profile_accessed`
 
 Help to find the root cause and fix them all.
+
+
+## Hide the process to cache user profile into redis
+#### Background
+Currently, we convert UserProfileData into JSON string explicitly and then call set_user_profile to store the user profile into redis. We need to hide the process to cache user profile into redis for better maintainability and readability.
+
+#### Implementation Goal
+- Change the function signature of `set_user_profile` to `async def set_user_profile(user_id: str, profile: UserProfileData, ttl: int = 3600) -> bool` in file @faster/core/redisex.py; Internally, we also convert UserProfileData into JSON string explicitly and then store the user profile into redis as we did it right now.
+- Change the function signature of `get_user_profile` to `async def get_user_profile(user_id: str) -> UserProfileData | None` in file @faster/core/redisex.py; Internally, we also convert JSON string into UserProfileData explicitly and then return the user profile from redis as we did it right now.
+
+- Enhance the downstream code and unit tests to ensure both `make lint` and `make test` all pass.
