@@ -23,6 +23,9 @@
       onerror="window.sentryLoadFailed = true;"
     ></script>
 
+    <!-- Generated API Client -->
+    <script src="/dev/client_api_fetch.js" defer></script>
+
     <style>
       /* Core Styles */
       [x-cloak] {
@@ -2722,27 +2725,164 @@
       // ===================================================================
 
       const apiService = {
-        // Whitelist of endpoints that don't require authentication
-        AUTH_WHITELIST: [
-          /^\/auth\/notification\/[^\/]+$/,
-          /^\/\.well-known\/appspecific\/com\.chrome\.devtools\.json$/,
-          /^\/dev\/admin$/,
-          /^\/dev\/settings$/,
-          /^\/custom$/
-        ],
+        // Generated API client instance
+        client: null,
 
-        isWhitelisted(endpoint) {
-          return this.AUTH_WHITELIST.some(pattern => pattern.test(endpoint));
+        // Initialize the API client
+        initClient() {
+          if (window.ApiClient) {
+            this.client = new window.ApiClient();
+            // Set auth token if available
+            const supabase = Alpine.store("app").supabase;
+            if (supabase) {
+              supabase.auth.onAuthStateChange((event, session) => {
+                if (session?.access_token) {
+                  this.client.setAuth(session.access_token);
+                }
+              });
+            }
+            console.log("API client initialized");
+          } else {
+            console.warn("API client not loaded yet, will retry later");
+            // Retry after a short delay
+            setTimeout(() => this.initClient(), 100);
+          }
         },
 
-        /**
-         * Makes an authenticated HTTP request to the API
-         * @param {string} endpoint - API endpoint path
-         * @param {Object} options - Request options
-         * @returns {Promise<Object>} API response data
-         */
+        // Async version that waits for client to be available
+        async initClientAsync() {
+          return new Promise((resolve) => {
+            const checkClient = () => {
+              if (window.ApiClient) {
+                this.client = new window.ApiClient();
+                // Set auth token if available
+                const supabase = Alpine.store("app").supabase;
+                if (supabase) {
+                  supabase.auth.onAuthStateChange((event, session) => {
+                    if (session?.access_token) {
+                      this.client.setAuth(session.access_token);
+                    }
+                  });
+                }
+                console.log("API client initialized");
+                resolve();
+              } else {
+                setTimeout(checkClient, 50);
+              }
+            };
+            checkClient();
+          });
+        },
+
+        // New method that requires the auto-generated client
         async call(endpoint, options = {}) {
+          // Require client to be initialized - no fallback
+          if (!this.client) {
+            throw new Error(`API client not initialized for endpoint: ${endpoint}`);
+          }
+
+          const { method = "GET", data = null } = options;
+
+          // Map endpoint to client method - throw error if not found
+          const result = await this._callClientMethod(endpoint, method, data);
+          return result;
+        },
+
+        // Map endpoints to generated client methods
+        async _callClientMethod(endpoint, method, data) {
+          // Auth endpoints
+          if (endpoint === "/auth/profile") {
+            return await this.client.getAuthProfile();
+          }
+           if (endpoint === "/auth/onboarding") {
+             return await this.client.getAuthOnboarding();
+           }
+           if (endpoint.startsWith("/auth/notification/")) {
+             const event = endpoint.split("/auth/notification/")[1];
+             return await this.client.postAuthNotification(event, data);
+           }
+           if (endpoint.startsWith("/auth/callback/")) {
+             const event = endpoint.split("/auth/callback/")[1];
+             return await this.client.postAuthCallback(event, data);
+           }
+          if (endpoint.match(/^\/auth\/users\/[^\/]+\/basic$/)) {
+            const userId = endpoint.split("/auth/users/")[1].split("/basic")[0];
+            return await this.client.getAuthUsersBasic(userId);
+          }
+          if (endpoint.match(/^\/auth\/users\/[^\/]+\/ban$/)) {
+            const userId = endpoint.split("/auth/users/")[1].split("/ban")[0];
+            return await this.client.postAuthUsersBan(userId, data);
+          }
+          if (endpoint.match(/^\/auth\/users\/[^\/]+\/unban$/)) {
+            const userId = endpoint.split("/auth/users/")[1].split("/unban")[0];
+            return await this.client.postAuthUsersUnban(userId, data);
+          }
+          if (endpoint.match(/^\/auth\/users\/[^\/]+\/roles\/adjust$/)) {
+            const userId = endpoint.split("/auth/users/")[1].split("/roles/adjust")[0];
+            return await this.client.postAuthUsersRolesAdjust(userId, data);
+          }
+          if (endpoint === "/auth/password/reset/initiate") {
+            return await this.client.postAuthPasswordResetInitiate(data);
+          }
+          if (endpoint === "/auth/deactivate") {
+            return await this.client.postAuthDeactivate(data);
+          }
+
+          // Dev endpoints
+          if (endpoint === "/dev/settings") {
+            return await this.client.getDevSettings();
+          }
+          if (endpoint === "/dev/app_state") {
+            return await this.client.getDevAppState();
+          }
+          if (endpoint === "/dev/request_state") {
+            return await this.client.getDevRequestState();
+          }
+          if (endpoint === "/dev/rbac") {
+            return await this.client.getDevRbac();
+          }
+          if (endpoint === "/dev/sys_dict/show") {
+            return await this.client.postDevSysDictShow(data);
+          }
+          if (endpoint === "/dev/sys_dict/adjust") {
+            return await this.client.postDevSysDictAdjust(data);
+          }
+          if (endpoint === "/dev/sys_dict/delete") {
+            return await this.client.deleteDevSysDictDelete(data);
+          }
+          if (endpoint === "/dev/sys_map/show") {
+            return await this.client.postDevSysMapShow(data);
+          }
+          if (endpoint === "/dev/sys_map/adjust") {
+            return await this.client.postDevSysMapAdjust(data);
+          }
+          if (endpoint === "/dev/sys_map/delete") {
+            return await this.client.deleteDevSysMapDelete(data);
+          }
+
+          // Health endpoint
+          if (endpoint === "/health") {
+            return await this.client.getHealth();
+          }
+
+          // Throw error for unmapped endpoints to identify missing mappings
+          throw new Error(`No client method mapped for endpoint: ${endpoint} (${method})`);
+        },
+
+        // Legacy fallback method (original implementation)
+        async _legacyCall(endpoint, options = {}) {
           const { method = "GET", data = null, requireAuth } = options;
+
+          // Whitelist of endpoints that don't require authentication
+          const AUTH_WHITELIST = [
+            /^\/auth\/notification\/[^\/]+$/,
+            /^\/\.well-known\/appspecific\/com\.chrome\.devtools\.json$/,
+            /^\/dev\/admin$/,
+            /^\/dev\/settings$/,
+            /^\/custom$/
+          ];
+
+          const isWhitelisted = AUTH_WHITELIST.some(pattern => pattern.test(endpoint));
 
           const headers = {
             "Content-Type": "application/json",
@@ -2752,7 +2892,7 @@
           const needsAuth =
             requireAuth !== undefined
               ? requireAuth
-              : !this.isWhitelisted(endpoint);
+              : !isWhitelisted;
           if (needsAuth) {
             const supabase = Alpine.store("app").supabase;
 
@@ -3052,6 +3192,11 @@
           store.user = session.user;
           store.currentView = "app";
 
+          // Update API client with auth token
+          if (apiService.client && session.access_token) {
+            apiService.client.setAuth(session.access_token);
+          }
+
           // Determine if this is a first-time login or returning user
           const isFirstTime = store.isFirstTimeLogin;
 
@@ -3100,6 +3245,11 @@
             // Continue with local sign out even if backend notification fails
           }
 
+          // Clear API client auth token
+          if (apiService.client) {
+            apiService.client.setAuth(null);
+          }
+
           // Clear saved page when user explicitly signs out
           pageNavigationService.clearLastVisitedPage();
 
@@ -3116,6 +3266,11 @@
         async _handleTokenRefreshed(session, store) {
           // console.log("Token refreshed");
           store.user = session.user;
+
+          // Update API client with new token
+          if (apiService.client && session.access_token) {
+            apiService.client.setAuth(session.access_token);
+          }
 
           // Notify backend
           await apiService.notifyAuthEvent("TOKEN_REFRESHED", {
@@ -3239,6 +3394,8 @@
             this.initialized = true;
 
             try {
+              // Initialize API client first and wait for it
+              await apiService.initClientAsync();
               await this.loadConfiguration();
               await this.initializeServices();
               await this.checkAuthentication();
