@@ -119,12 +119,12 @@ class AuthService(BasePlugin):
     async def check_health(self) -> dict[str, Any]:
         """Check AuthService health and refresh cached data."""
         if not self._is_setup:
-            return {"status": "not_setup", "auth_enabled": False}
+            return {"is_ready": False, "auth_enabled": False}
 
         # Get current cache sizes from router info
         cache_info = self._router_info.get_cache_info()
         health_status = {
-            "status": "healthy",
+            "is_ready": self._is_setup,
             "auth_enabled": self._config["auth_enabled"] if self._config else False,
             "tag_role_cache_size": cache_info["tag_role_cache_size"],
             "route_cache_size": cache_info["route_cache_size"],
@@ -134,12 +134,12 @@ class AuthService(BasePlugin):
             # Get JWKS cache info if auth client exists
             if self._auth_client:
                 jwks_info = self._auth_client.get_jwks_cache_info()
-                health_status["jwks_cache"] = jwks_info
+                health_status["jwks_cache"] = jwks_info  # type: ignore[assignment]
 
         except Exception as e:
             logger.error(f"Error during AuthService health check: {e}")
-            health_status["status"] = "error"
-            health_status["error"] = str(e)
+            health_status["is_ready"] = False
+            health_status["error"] = str(e)  # type: ignore[assignment]
 
         return health_status
 
