@@ -4805,13 +4805,47 @@
 
             const formatted = [];
 
-            // Add common fields first
-            if (plugin.status) {
+  // Special handling for database plugin
+  if (plugin.master_schema !== undefined || plugin.replica_schema !== undefined) {
+    // Database plugin - use new format, put "Is Ready" first
+    if (plugin.is_ready !== undefined) {
+      formatted.push({ key: "Is Ready", value: plugin.is_ready ? "✅" : "❌" });
+    }
+    if (plugin.master_schema !== undefined) {
+      formatted.push({ key: "Master Schema", value: plugin.master_schema || "N/A" });
+    }
+    if (plugin.replica_schema !== undefined) {
+      formatted.push({ key: "Replica Schema", value: plugin.replica_schema || "N/A" });
+    }
+    if (plugin.master_response !== undefined) {
+      formatted.push({ key: "Master Response", value: plugin.master_response ? "✅" : "❌" });
+    }
+    if (plugin.replica_response !== undefined) {
+      formatted.push({ key: "Replica Response", value: plugin.replica_response ? "✅" : "❌" });
+    }
+    return formatted;
+  }
+
+            // Special handling for Sentry plugin - display status as "Is Ready"
+            if (plugin.status !== undefined && plugin.initialized !== undefined) {
+              formatted.push({ key: "Is Ready", value: plugin.status ? "✅" : "❌" });
+            }
+            // Special handling for Auth plugin - display is_ready as "Is Ready"
+            else if (plugin.is_ready !== undefined && plugin.auth_enabled !== undefined) {
+              formatted.push({ key: "Is Ready", value: plugin.is_ready ? "✅" : "❌" });
+            }
+            // Add common status field for other plugins
+            else if (plugin.status) {
               formatted.push({ key: "Status", value: plugin.status });
             }
 
-            if (plugin.connected !== undefined) {
-              formatted.push({ key: "Connected", value: plugin.connected ? "Yes" : "No" });
+            // Handle is_ready for other plugins (like Redis)
+            if (plugin.is_ready !== undefined && plugin.auth_enabled === undefined) {
+              formatted.push({ key: "Is Ready", value: plugin.is_ready ? "✅" : "❌" });
+            }
+
+            if (plugin.ping !== undefined) {
+              formatted.push({ key: "Ping", value: plugin.ping ? "✅" : "❌" });
             }
 
             // Special handling for auth plugin - highlight JWKS cached keys count
@@ -4822,28 +4856,54 @@
               });
             }
 
-            // Add all other fields, excluding some internal ones
-            Object.entries(plugin).forEach(([key, value]) => {
-              if (!["status", "connected", "healthy", "jwks_cache"].includes(key)) {
-                let displayValue = value;
+  // Special handling for Sentry and Auth plugin boolean fields
+  if (plugin.initialized !== undefined || plugin.auth_enabled !== undefined) {
+    // This is Sentry or Auth plugin, convert boolean fields to emojis
+    Object.entries(plugin).forEach(([key, value]) => {
+      if (!["status", "is_ready", "ping", "healthy", "jwks_cache"].includes(key)) {
+        let displayValue = value;
 
-                // Format different types of values
-                if (typeof value === "boolean") {
-                  displayValue = value ? "Yes" : "No";
-                } else if (typeof value === "number") {
-                  displayValue = value.toLocaleString();
-                } else if (value && typeof value === "object") {
-                  displayValue = JSON.stringify(value, null, 2);
-                } else if (value === null || value === undefined) {
-                  displayValue = "N/A";
-                }
+        // Format different types of values
+        if (typeof value === "boolean") {
+          displayValue = value ? "✅" : "❌";
+        } else if (typeof value === "number") {
+          displayValue = value.toLocaleString();
+        } else if (value && typeof value === "object") {
+          displayValue = JSON.stringify(value, null, 2);
+        } else if (value === null || value === undefined) {
+          displayValue = "N/A";
+        }
 
-                formatted.push({
-                  key: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
-                  value: displayValue
-                });
-              }
-            });
+        formatted.push({
+          key: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+          value: displayValue
+        });
+      }
+    });
+  } else {
+    // Standard processing for other plugins
+    Object.entries(plugin).forEach(([key, value]) => {
+      if (!["status", "is_ready", "ping", "healthy", "jwks_cache"].includes(key)) {
+        let displayValue = value;
+
+        // Format different types of values
+        if (typeof value === "boolean") {
+          displayValue = value ? "Yes" : "No";
+        } else if (typeof value === "number") {
+          displayValue = value.toLocaleString();
+        } else if (value && typeof value === "object") {
+          displayValue = JSON.stringify(value, null, 2);
+        } else if (value === null || value === undefined) {
+          displayValue = "N/A";
+        }
+
+        formatted.push({
+          key: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+          value: displayValue
+        });
+      }
+    });
+  }
 
             return formatted.length > 0 ? formatted : [{ key: "Status", value: "Available" }];
           },
