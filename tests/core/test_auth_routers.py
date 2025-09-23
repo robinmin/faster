@@ -62,7 +62,9 @@ class TestAuthRouters:
             mock_get_user.return_value = mock_user
 
             # Mock the auth service singleton instance method
-            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
+            with patch.object(
+                AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock
+            ) as mock_check_onboarding:
                 mock_check_onboarding.return_value = True
 
                 # Make a request to the endpoint
@@ -100,7 +102,9 @@ class TestAuthRouters:
             mock_get_user.return_value = mock_user
 
             # Mock the auth service singleton instance method
-            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
+            with patch.object(
+                AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock
+            ) as mock_check_onboarding:
                 mock_check_onboarding.return_value = False
 
                 # Make a request to the endpoint
@@ -169,7 +173,9 @@ class TestAuthRouters:
             mock_get_user.return_value = mock_user
 
             # Mock the auth service singleton instance method
-            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
+            with patch.object(
+                AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock
+            ) as mock_check_onboarding:
                 mock_check_onboarding.return_value = True
 
                 # Make a request to the endpoint
@@ -207,7 +213,9 @@ class TestAuthRouters:
             mock_get_user.return_value = mock_user
 
             # Mock the auth service singleton instance method
-            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
+            with patch.object(
+                AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock
+            ) as mock_check_onboarding:
                 mock_check_onboarding.return_value = False
 
                 # Make a request to the endpoint
@@ -268,7 +276,9 @@ class TestAuthRouters:
             mock_get_user.return_value = mock_user
 
             # Mock the auth service singleton instance method
-            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
+            with patch.object(
+                AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock
+            ) as mock_check_onboarding:
                 mock_check_onboarding.return_value = True
 
                 # Make a request to the endpoint
@@ -336,7 +346,9 @@ class TestAuthRouters:
             mock_get_user.return_value = mock_user
 
             # Mock the auth service singleton instance method
-            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
+            with patch.object(
+                AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock
+            ) as mock_check_onboarding:
                 mock_check_onboarding.return_value = False
 
                 # Make a request to the endpoint
@@ -402,7 +414,7 @@ class TestAuthRouters:
                 patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
                 patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
                 patch(
-    "faster.core.auth.services.AuthService.should_update_user_in_db", new_callable=AsyncMock
+                    "faster.core.auth.services.AuthService.should_update_user_in_db", new_callable=AsyncMock
                 ) as mock_should_update,
             ):
                 mock_blacklist_delete.return_value = None
@@ -447,9 +459,7 @@ class TestAuthRouters:
                 patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
                 patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
                 patch("faster.core.auth.routers.has_role", new_callable=AsyncMock) as mock_has_role,
-                patch.object(
-                    AuthService, "should_update_user_in_db", new_callable=AsyncMock
-                ) as mock_should_update,
+                patch.object(AuthService, "should_update_user_in_db", new_callable=AsyncMock) as mock_should_update,
                 patch("faster.core.auth.services.AppRepository") as mock_app_repository_class,
             ):
                 mock_blacklist_delete.return_value = None
@@ -512,9 +522,7 @@ class TestAuthRouters:
                 patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
                 patch("faster.core.auth.routers.blacklist_delete", new_callable=AsyncMock) as mock_blacklist_delete,
                 patch("faster.core.auth.routers.has_role", new_callable=AsyncMock) as mock_has_role,
-                patch.object(
-                    AuthService, "should_update_user_in_db", new_callable=AsyncMock
-                ) as mock_should_update,
+                patch.object(AuthService, "should_update_user_in_db", new_callable=AsyncMock) as mock_should_update,
                 patch("faster.core.auth.services.AppRepository") as mock_app_repository_class,
             ):
                 mock_blacklist_delete.return_value = None
@@ -571,7 +579,7 @@ class TestAuthRouters:
             with (
                 patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
                 patch(
-    "faster.core.auth.services.AuthService.background_process_logout", new_callable=AsyncMock
+                    "faster.core.auth.services.AuthService.background_process_logout", new_callable=AsyncMock
                 ) as mock_bg_logout,
             ):
                 mock_bg_logout.return_value = None
@@ -655,7 +663,7 @@ class TestAuthRouters:
             with (
                 patch("faster.core.auth.routers.extract_bearer_token_from_request", return_value="mock_token"),
                 patch(
-    "faster.core.auth.services.AuthService.background_update_user_info", new_callable=AsyncMock
+                    "faster.core.auth.services.AuthService.background_update_user_info", new_callable=AsyncMock
                 ) as mock_bg_update,
             ):
                 mock_bg_update.return_value = None
@@ -681,8 +689,31 @@ class TestAuthRouters:
                 assert data["data"]["user_id"] == "user-123"
 
     @pytest.mark.asyncio
+    async def test_notification_endpoint_user_updated_event(self, client: TestClient) -> None:
+        """Test notification endpoint for USER_UPDATED event (password reset scenario)."""
+        # Test USER_UPDATED event on public notification endpoint
+        response = client.post("/auth/notification/USER_UPDATED")
+
+        # Check that it's a JSON response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "application/json"
+
+        # Parse the JSON response
+        data = response.json()
+
+        # Check the response structure
+        assert "status" in data
+        assert data["status"] == "success"
+        assert "message" in data
+        assert "Password update processed" in data["message"]
+        assert "data" in data
+        assert isinstance(data["data"], dict)
+        assert data["data"]["event"] == "USER_UPDATED"
+        assert data["data"]["context"] == "password_reset"
+
+    @pytest.mark.asyncio
     async def test_callback_endpoint_password_recovery_event(self, client: TestClient) -> None:
-        """Test callback endpoint for PASSWORD_RECOVERY event with authenticated user."""
+        """Test callback endpoint rejects PASSWORD_RECOVERY event (now handled by public notification endpoint)."""
         # Mock the get_current_user dependency to return a user
         mock_user = self.create_mock_user()
 
@@ -695,7 +726,7 @@ class TestAuthRouters:
         with patch("faster.core.auth.routers.get_current_user", new_callable=AsyncMock) as mock_get_user:
             mock_get_user.return_value = mock_user
 
-            # Test PASSWORD_RECOVERY event
+            # Test PASSWORD_RECOVERY event (should be rejected on authenticated endpoint)
             response = client.post("/auth/callback/PASSWORD_RECOVERY")
 
             # Check that it's a JSON response
@@ -705,14 +736,15 @@ class TestAuthRouters:
             # Parse the JSON response
             data = response.json()
 
-            # Check the response structure
+            # Check the response structure - should fail since PASSWORD_RECOVERY is not valid for authenticated endpoint
             assert "status" in data
-            assert data["status"] == "success"
+            assert data["status"] == "failed"
             assert "message" in data
-            assert "Password recovery processed" in data["message"]
+            assert "Invalid event type: PASSWORD_RECOVERY" in data["message"]
             assert "data" in data
             assert isinstance(data["data"], dict)
-            assert data["data"]["event"] == "PASSWORD_RECOVERY"
+            assert "valid_events" in data["data"]
+            assert "PASSWORD_RECOVERY" not in data["data"]["valid_events"]
 
     @pytest.mark.asyncio
     async def test_callback_endpoint_invalid_event(self, client: TestClient) -> None:
@@ -844,6 +876,28 @@ class TestAuthRouters:
         assert data["data"]["user_id"] is None  # Public endpoint doesn't have user
 
     @pytest.mark.asyncio
+    async def test_public_notification_endpoint_password_recovery_event(self, client: TestClient) -> None:
+        """Test public notification endpoint for PASSWORD_RECOVERY event."""
+        # Test PASSWORD_RECOVERY event on public endpoint
+        response = client.post("/auth/notification/PASSWORD_RECOVERY")
+
+        # Check that it's a JSON response
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["content-type"] == "application/json"
+
+        # Parse the JSON response
+        data = response.json()
+
+        # Check the response structure
+        assert "status" in data
+        assert data["status"] == "success"
+        assert "message" in data
+        assert "Password recovery processed" in data["message"]
+        assert "data" in data
+        assert isinstance(data["data"], dict)
+        assert data["data"]["event"] == "PASSWORD_RECOVERY"
+
+    @pytest.mark.asyncio
     async def test_public_notification_endpoint_invalid_event(self, client: TestClient) -> None:
         """Test public notification endpoint for invalid event."""
         # Test SIGNED_IN event (not allowed on public endpoint)
@@ -948,7 +1002,9 @@ class TestAuthRouters:
             mock_get_user.return_value = mock_user
 
             # Mock the auth service singleton instance method
-            with patch.object(AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock) as mock_check_onboarding:
+            with patch.object(
+                AuthService.get_instance(), "check_user_onboarding_complete", new_callable=AsyncMock
+            ) as mock_check_onboarding:
                 mock_check_onboarding.return_value = False
 
                 # Make a request to the endpoint
