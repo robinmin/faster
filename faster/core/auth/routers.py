@@ -123,10 +123,12 @@ async def on_callback(
     - SIGNED_IN: Emitted each time a user session is confirmed or re-established
     - SIGNED_OUT: Emitted when the user signs out
     - TOKEN_REFRESHED: Emitted each time a new access and refresh token are fetched
-    - USER_UPDATED: Emitted each time the supabase.auth.updateUser() method finishes successfully
-    - PASSWORD_RECOVERY: Emitted instead of the SIGNED_IN event when the user lands on a page that includes a password recovery link
+    - USER_UPDATED: Emitted each time the supabase.auth.updateUser() method finishes successfully during an active session
 
-    This endpoint requires authentication and handles events that occur during an active session.
+    This endpoint requires authentication for all events and handles events that occur during an active session.
+
+    Note: For USER_UPDATED events that occur without an active session (e.g., password reset),
+    use the public /auth/notification/USER_UPDATED endpoint instead.
     """
 
     if not user:
@@ -135,7 +137,7 @@ async def on_callback(
             status="failed", message="Authentication required for callback endpoint", data={"event": event}
         )
 
-    logger.info(f"Received auth callback event: {event}, user: {user.id}")
+    logger.info(f"Received auth callback event: {event}, user: {user.id if user else 'unauthenticated'}")
 
     # Log the event to database for tracking and analytics (never throws exceptions)
     _ = await log_event(
@@ -143,7 +145,7 @@ async def on_callback(
         event_type="auth",
         event_name=event,
         event_source="supabase",
-        user_auth_id=user.id,
+        user_auth_id=user.id if user else None,
         event_payload={"status": "success", "endpoint": "callback"},
     )
 
@@ -157,18 +159,13 @@ async def on_callback(
             result = await _handle_token_refreshed(request, user)
         elif event == "USER_UPDATED":
             result = await _handle_user_updated(request, background_tasks, user, auth_service)
-        elif event == "PASSWORD_RECOVERY":
-            result = await _handle_password_recovery()
         else:
             logger.warning(f"Invalid auth event received: {event}")
             result = AppResponseDict(
                 status="failed",
                 message=f"Invalid event type: {event}",
-                data={
-                    "valid_events": ["SIGNED_IN", "SIGNED_OUT", "TOKEN_REFRESHED", "USER_UPDATED", "PASSWORD_RECOVERY"]
-                },
+                data={"valid_events": ["SIGNED_IN", "SIGNED_OUT", "TOKEN_REFRESHED", "USER_UPDATED"]},
             )
-        # Future events can be added here with additional elif clauses
     except Exception as e:
         logger.error(f"Error processing event {event}: {e}")
         result = AppResponseDict(status="failed", message=f"Error processing event {event}", data={"error": str(e)})
@@ -188,9 +185,11 @@ async def on_notification(
 
     Handles the following events:
     - INITIAL_SESSION: Emitted right after the Supabase client is constructed
+    - PASSWORD_RECOVERY: Emitted instead of the SIGNED_IN event when the user lands on a page that includes a password recovery link
+    - USER_UPDATED: Emitted when the supabase.auth.updateUser() method finishes successfully without an active session (e.g., password reset)
 
     This endpoint is public and doesn't require authentication, making it suitable for events
-    that occur before a user session is established.
+    that occur before a user session is established or during password reset flows.
     """
 
     logger.info(f"Received public auth notification event: {event}")
@@ -209,12 +208,16 @@ async def on_notification(
     try:
         if event == "INITIAL_SESSION":
             result = await _handle_initial_session()
+        elif event == "PASSWORD_RECOVERY":
+            result = await _handle_password_recovery()
+        elif event == "USER_UPDATED":
+            result = await _handle_user_updated_public(request)
         else:
             logger.warning(f"Invalid or unauthorized event received: {event}")
             result = AppResponseDict(
                 status="failed",
                 message=f"Event {event} not allowed on public endpoint",
-                data={"valid_events": ["INITIAL_SESSION"]},
+                data={"valid_events": ["INITIAL_SESSION", "PASSWORD_RECOVERY", "USER_UPDATED"]},
             )
         # Future events can be added here with additional elif clauses
     except Exception as e:
@@ -318,6 +321,16 @@ async def _handle_password_recovery() -> AppResponseDict:
     """Handle password recovery."""
     logger.info("Password recovery event received")
     return AppResponseDict(status="success", message="Password recovery processed", data={"event": "PASSWORD_RECOVERY"})
+
+
+async def _handle_user_updated_public(request: Request) -> AppResponseDict:
+    """Handle user updated event for public endpoint (password reset scenario)."""
+    logger.info("User password updated (public endpoint - password reset)")
+    return AppResponseDict(
+        status="success",
+        message="Password update processed",
+        data={"event": "USER_UPDATED", "context": "password_reset"},
+    )
 
 
 @router.get("/profile", include_in_schema=False, response_model=None)
