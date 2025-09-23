@@ -3691,25 +3691,47 @@
             }
           },
 
-          validateForm() {
-            if (!this.formData.email) {
-              this.formErrors.email = "Email is required";
-              return false;
-            }
+           validateForm() {
+             // Clear previous errors
+             this.clearErrors();
 
-            if (!this.formData.password) {
-              this.formErrors.password = "Password is required";
-              return false;
-            }
+             if (!this.formData.email) {
+               this.formErrors.email = "Email is required";
+               return false;
+             }
 
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(this.formData.email)) {
-              this.formErrors.email = "Invalid email format";
-              return false;
-            }
+             if (!this.formData.password) {
+               this.formErrors.password = "Password is required";
+               return false;
+             }
 
-            return true;
-          },
+             // More robust email validation
+             const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+             if (!emailRegex.test(this.formData.email)) {
+               this.formErrors.email = "Please enter a valid email address";
+               return false;
+             }
+
+             // Password strength validation for sign up
+             if (this.isSignUp) {
+               if (this.formData.password.length < 8) {
+                 this.formErrors.password = "Password must be at least 8 characters long";
+                 return false;
+               }
+
+               // Check for at least one uppercase, one lowercase, and one number
+               const hasUpperCase = /[A-Z]/.test(this.formData.password);
+               const hasLowerCase = /[a-z]/.test(this.formData.password);
+               const hasNumbers = /\d/.test(this.formData.password);
+
+               if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+                 this.formErrors.password = "Password must contain at least one uppercase letter, one lowercase letter, and one number";
+                 return false;
+               }
+             }
+
+             return true;
+           },
 
           toggleSignUp() {
             this.isSignUp = !this.isSignUp;
