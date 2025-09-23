@@ -572,19 +572,6 @@
                 </h3>
                 <form @submit.prevent="changePassword" class="py-4">
                   <div class="form-control">
-                    <label class="label" for="current-password">
-                      <span class="label-text">Current Password</span>
-                    </label>
-                    <input
-                      id="current-password"
-                      x-model="passwordForm.current"
-                      type="password"
-                      placeholder="Enter current password"
-                      class="input input-bordered"
-                      required
-                    />
-                  </div>
-                  <div class="form-control">
                     <label class="label" for="new-password">
                       <span class="label-text">New Password</span>
                     </label>
@@ -610,6 +597,10 @@
                       required
                     />
                   </div>
+                  <div class="alert alert-info mt-4">
+                    <i data-lucide="info" class="w-4 h-4"></i>
+                    <span class="text-sm">Your password will be updated immediately. Make sure to remember your new password.</span>
+                  </div>
                 </form>
                 <div class="modal-action">
                   <button
@@ -625,6 +616,66 @@
                     :disabled="passwordChangeLoading"
                   >
                     Change Password
+                  </button>
+                </div>
+              </div>
+            </div>
+            </template>
+
+            <!-- Password Recovery Modal -->
+            <template x-if="$store.app.showPasswordRecoveryModal">
+            <div class="modal modal-open" x-cloak>
+              <div class="modal-box">
+                <h3 class="font-bold text-lg">
+                  <i data-lucide="key-round" class="w-5 h-5 inline mr-2"></i>
+                  Reset Your Password
+                </h3>
+                <form @submit.prevent="completePasswordRecovery" class="py-4">
+                  <div class="form-control">
+                    <label class="label" for="recovery-password">
+                      <span class="label-text">New Password</span>
+                    </label>
+                    <input
+                      id="recovery-password"
+                      x-model="recoveryForm.password"
+                      type="password"
+                      placeholder="Enter new password"
+                      class="input input-bordered"
+                      required
+                    />
+                  </div>
+                  <div class="form-control">
+                    <label class="label" for="recovery-confirm">
+                      <span class="label-text">Confirm New Password</span>
+                    </label>
+                    <input
+                      id="recovery-confirm"
+                      x-model="recoveryForm.confirm"
+                      type="password"
+                      placeholder="Confirm new password"
+                      class="input input-bordered"
+                      required
+                    />
+                  </div>
+                  <div class="alert alert-info mt-4">
+                    <i data-lucide="info" class="w-4 h-4"></i>
+                    <span class="text-sm">Enter your new password to complete the reset process.</span>
+                  </div>
+                </form>
+                <div class="modal-action">
+                  <button
+                    @click="$store.app.showPasswordRecoveryModal = false; resetRecoveryForm()"
+                    class="btn"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    @click="completePasswordRecovery()"
+                    class="btn btn-primary"
+                    :class="{ 'loading': passwordRecoveryLoading }"
+                    :disabled="passwordRecoveryLoading"
+                  >
+                    Reset Password
                   </button>
                 </div>
               </div>
@@ -2652,7 +2703,8 @@
           supabase: null,
           pageData: {},
           availableRoles: [],
-          isFirstTimeLogin: false  // Track if this is a genuine first-time login
+          isFirstTimeLogin: false,  // Track if this is a genuine first-time login
+          showPasswordRecoveryModal: false
         });
 
         Alpine.store("auth", {
@@ -3189,18 +3241,48 @@
           // console.log("User updated");
           store.user = session.user;
 
-          // Notify backend
-          await apiService.notifyAuthEvent("USER_UPDATED", {
-            session: {
-              user: session.user,
-              access_token: session.access_token
-            }
-          });
+          // Determine if this is a password recovery scenario
+          // During password recovery, the password recovery modal is shown
+          const isPasswordRecovery = store.app.showPasswordRecoveryModal;
+
+          // For password recovery, use notification endpoint (no auth required)
+          // For regular profile updates, use callback endpoint (auth required)
+          if (isPasswordRecovery) {
+            // Close the password recovery modal after successful update
+            store.app.showPasswordRecoveryModal = false;
+
+            // Use notification endpoint for password recovery
+            await apiService.client.postAuthNotification("USER_UPDATED", {
+              event: "USER_UPDATED",
+              timestamp: new Date().toISOString(),
+              session: {
+                user: session.user,
+                access_token: session.access_token
+              }
+            });
+
+            toastService.show("Password updated successfully", "success");
+          } else {
+            // Use callback endpoint for regular profile updates
+            await apiService.notifyAuthEvent("USER_UPDATED", {
+              session: {
+                user: session.user,
+                access_token: session.access_token
+              }
+            });
+          }
         },
 
         async _handlePasswordRecovery() {
-          // console.log("Password recovery event");
-          await apiService.notifyAuthEvent("PASSWORD_RECOVERY");
+          // console.log("Password recovery event - user can now reset password");
+          // During password recovery, user has a recovery session from Supabase
+          // They can update their password directly with the recovery token
+
+          // Show password reset modal for recovery
+          Alpine.store("app").showPasswordRecoveryModal = true;
+
+          // Show info message
+          toastService.show("Please set your new password", "info");
         },
 
         async _handleInitialSession() {
@@ -3253,6 +3335,8 @@
       };
 
       const toastService = {
+        _iconRefreshTimeout: null,
+
         show(message, type = "info") {
           const config = TOAST_TYPES[type] || TOAST_TYPES.info;
           const store = Alpine.store("toast");
@@ -3272,11 +3356,32 @@
         },
 
         refreshIcons() {
-          requestAnimationFrame(() => {
-            if (typeof lucide !== "undefined" && lucide.createIcons) {
-              lucide.createIcons();
-            }
-          });
+          // Debounce icon refresh to prevent multiple rapid calls
+          if (this._iconRefreshTimeout) {
+            clearTimeout(this._iconRefreshTimeout);
+          }
+
+          this._iconRefreshTimeout = setTimeout(() => {
+            requestAnimationFrame(() => {
+              try {
+                if (typeof lucide !== "undefined" && lucide.createIcons) {
+                  lucide.createIcons();
+                }
+              } catch (error) {
+                // Silently handle Lucide icon refresh errors to prevent crashes
+                // This can happen when DOM elements are removed during transitions
+                console.debug("Lucide icon refresh skipped due to DOM state:", error.message);
+              }
+            });
+          }, 50); // Increased delay to allow DOM stabilization
+        },
+
+        cleanup() {
+          // Clear any pending icon refresh timeout
+          if (this._iconRefreshTimeout) {
+            clearTimeout(this._iconRefreshTimeout);
+            this._iconRefreshTimeout = null;
+          }
         }
       };
 
@@ -3901,7 +4006,9 @@
 
            // Password management
            showPasswordChangeModal: false,
-           passwordForm: { current: "", new: "", confirm: "" },
+           passwordForm: { new: "", confirm: "" },
+           recoveryForm: { password: "", confirm: "" },
+           passwordRecoveryLoading: false,
            passwordChangeLoading: false,
 
            // Password reset
@@ -4018,66 +4125,175 @@
            },
 
            // Password Management Functions
-           async changePassword() {
-             if (this.passwordChangeLoading) return;
+            async changePassword() {
+              if (this.passwordChangeLoading) return;
 
-             // Validate form
-             if (!this.passwordForm.current || !this.passwordForm.new || !this.passwordForm.confirm) {
-               toastService.show("All password fields are required", "error");
-               return;
-             }
+              // Validate form
+              if (!this.passwordForm.new || !this.passwordForm.confirm) {
+                toastService.show("New password fields are required", "error");
+                return;
+              }
 
-             if (this.passwordForm.new !== this.passwordForm.confirm) {
-               toastService.show("New passwords do not match", "error");
-               return;
-             }
+              if (this.passwordForm.new !== this.passwordForm.confirm) {
+                toastService.show("New passwords do not match", "error");
+                return;
+              }
 
-             if (this.passwordForm.new.length < 8) {
-               toastService.show("New password must be at least 8 characters", "error");
-               return;
-             }
+              if (this.passwordForm.new.length < 8) {
+                toastService.show("New password must be at least 8 characters", "error");
+                return;
+              }
 
-             this.passwordChangeLoading = true;
+              this.passwordChangeLoading = true;
+
+               try {
+                 // Use Supabase client-side password update
+                 const supabase = Alpine.store("app").supabase;
+                 if (!supabase) {
+                   throw new Error("Supabase client not available");
+                 }
+
+                 const { data, error } = await supabase.auth.updateUser({
+                   password: this.passwordForm.new
+                 });
+
+                 if (error) {
+                   throw error;
+                 }
+
+                 toastService.show("Password changed successfully", "success");
+
+                // Add a small delay before closing modal to allow DOM to stabilize
+                setTimeout(() => {
+                  this.showPasswordChangeModal = false;
+                  this.resetPasswordForm();
+                }, 100);
+              } catch (error) {
+                console.error("Password change failed:", error);
+
+                // Handle specific error cases with user-friendly messages
+                let errorMessage = error.message;
+                if (error.message.includes("New password should be different from the old password")) {
+                  errorMessage = "New password must be different from your current password";
+                }
+
+                toastService.show(`Password change failed: ${errorMessage}`, "error");
+              } finally {
+                this.passwordChangeLoading = false;
+              }
+            },
+
+            resetPasswordForm() {
+              this.passwordForm = { new: "", confirm: "" };
+            },
+
+            resetRecoveryForm() {
+              this.recoveryForm = { password: "", confirm: "" };
+            },
+
+            async completePasswordRecovery() {
+              if (this.passwordRecoveryLoading) return;
+
+              // Validate form
+              if (!this.recoveryForm.password || !this.recoveryForm.confirm) {
+                toastService.show("Both password fields are required", "error");
+                return;
+              }
+
+              if (this.recoveryForm.password !== this.recoveryForm.confirm) {
+                toastService.show("Passwords do not match", "error");
+                return;
+              }
+
+              if (this.recoveryForm.password.length < 8) {
+                toastService.show("Password must be at least 8 characters", "error");
+                return;
+              }
+
+              this.passwordRecoveryLoading = true;
 
               try {
-                await apiService.client.postAuthPasswordChange({
-                  current_password: this.passwordForm.current,
-                  new_password: this.passwordForm.new
+                // Use Supabase to update password during recovery
+                const supabase = Alpine.store("app").supabase;
+                if (!supabase) {
+                  throw new Error("Supabase client not available");
+                }
+
+                const { data, error } = await supabase.auth.updateUser({
+                  password: this.recoveryForm.password
                 });
 
-               toastService.show("Password changed successfully", "success");
-               this.showPasswordChangeModal = false;
-               this.resetPasswordForm();
-             } catch (error) {
-               console.error("Password change failed:", error);
-               toastService.show(`Password change failed: ${error.message}`, "error");
-             } finally {
-               this.passwordChangeLoading = false;
-             }
-           },
+                if (error) {
+                  throw error;
+                }
 
-           resetPasswordForm() {
-             this.passwordForm = { current: "", new: "", confirm: "" };
-           },
+                toastService.show("Password reset successfully! You are now logged in.", "success");
 
-           async initiatePasswordReset() {
-             if (this.passwordResetLoading) return;
+                // Close modal and reset form
+                Alpine.store("app").showPasswordRecoveryModal = false;
+                this.resetRecoveryForm();
 
-             this.passwordResetLoading = true;
+                // The user should now be fully authenticated
+                // The app should automatically transition to the main view
 
-              try {
-                await apiService.client.postAuthPasswordResetInitiate({
-                  email: Alpine.store("app").user?.email
-                });
+              } catch (error) {
+                // console.error("Password recovery failed:", error);
+                toastService.show(`Password reset failed: ${error.message}`, "error");
+              } finally {
+                this.passwordRecoveryLoading = false;
+              }
+            },
 
-               toastService.show("Password reset email sent successfully", "success");
-             } catch (error) {
-               console.error("Password reset failed:", error);
-               toastService.show(`Password reset failed: ${error.message}`, "error");
-             } finally {
-               this.passwordResetLoading = false;
-             }
-           },
+            async initiatePasswordReset() {
+              if (this.passwordResetLoading) return;
+
+              const userEmail = Alpine.store("app").user?.email;
+              if (!userEmail) {
+                toastService.show("Unable to determine user email address", "error");
+                return;
+              }
+
+              this.passwordResetLoading = true;
+
+               try {
+                 // Use Supabase client-side password reset
+                 const supabase = Alpine.store("app").supabase;
+                 if (!supabase) {
+                   throw new Error("Supabase client not available");
+                 }
+
+                 const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+                   redirectTo: `${window.location.origin}/dev/admin`
+                 });
+
+                 if (error) {
+                   throw error;
+                 }
+
+                toastService.show("Password reset email sent successfully. Please check your email.", "success");
+              } catch (error) {
+                console.error("Password reset failed:", error);
+
+                // Handle specific error cases with user-friendly messages
+                let errorMessage = error.message;
+                if (error.message.includes("rate limit") || error.message.includes("email rate limit exceeded")) {
+                  errorMessage = "Too many reset requests. Please wait 15 minutes before trying again.";
+                } else if (error.message.includes("invalid email")) {
+                  errorMessage = "Invalid email address.";
+                } else if (error.message.includes("429")) {
+                  errorMessage = "Too many reset requests. Please wait before trying again.";
+                }
+
+                toastService.show(`Password reset failed: ${errorMessage}`, "error");
+
+                // Log additional context for rate limit errors
+                if (error.message.includes("rate limit") || error.message.includes("429")) {
+                  console.info("Password reset rate limited. This is normal Supabase behavior to prevent abuse.");
+                }
+              } finally {
+                this.passwordResetLoading = false;
+              }
+            },
 
            // Account Operations Functions
            async deactivateAccount() {
