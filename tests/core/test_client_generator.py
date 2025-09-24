@@ -44,6 +44,15 @@ class TestClientConfig:
         assert config.http_client == "axios"
         assert config.class_name == "MyApiClient"
         assert config.base_url == "https://api.example.com"
+        assert config.enable_auto_auth is True  # Default value
+
+    def test_auto_auth_config(self) -> None:
+        """Test auto authentication configuration"""
+        config = ClientConfig(enable_auto_auth=False)
+        assert config.enable_auto_auth is False
+
+        config = ClientConfig(enable_auto_auth=True)
+        assert config.enable_auto_auth is True
 
     def test_config_immutability(self) -> None:
         """Test that config can be safely copied and modified"""
@@ -79,6 +88,55 @@ class TestClientGenerator:
             "openapi": "3.0.0",
             "info": {"title": "Test API", "version": "1.0.0"},
             "paths": {},
+        }
+
+    @pytest.fixture
+    def auth_schema(self) -> dict[str, Any]:
+        """Schema with public endpoints for authentication testing"""
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Auth Test API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "x-public-endpoints": [
+                "/auth/onboarding",
+                "/dev/admin",
+                "/dev/settings",
+                "/health",
+                "/.well-known/appspecific/com.chrome.devtools.json",
+            ],
+            "paths": {
+                "/auth/profile": {
+                    "get": {
+                        "operationId": "get_auth_profile",
+                        "summary": "Get user profile",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/auth/onboarding": {
+                    "get": {
+                        "operationId": "get_auth_onboarding",
+                        "summary": "Public onboarding endpoint",
+                        "tags": ["public"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/dev/admin": {
+                    "get": {
+                        "operationId": "get_dev_admin",
+                        "summary": "Public admin endpoint",
+                        "tags": ["public"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/health": {
+                    "get": {
+                        "operationId": "get_health",
+                        "summary": "Public health endpoint",
+                        "tags": ["public"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
         }
 
     @pytest.fixture
@@ -865,3 +923,295 @@ class TestClientGenerator:
         assert "async getUsers(" in code
         assert ": Promise<" in code  # Return type annotations
         assert "export default AxiosClient" in code
+
+
+class TestAuthenticationFeatures:
+    """Test suite for automatic bearer token authentication features"""
+
+    @pytest.fixture
+    def generator(self) -> ClientGenerator:
+        """Create a ClientGenerator instance"""
+        return ClientGenerator()
+
+    @pytest.fixture
+    def auth_schema(self) -> dict[str, Any]:
+        """Schema with public endpoints for authentication testing"""
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Auth Test API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "x-public-endpoints": [
+                "/auth/onboarding",
+                "/dev/admin",
+                "/dev/settings",
+                "/health",
+                "/.well-known/appspecific/com.chrome.devtools.json",
+            ],
+            "paths": {
+                "/auth/profile": {
+                    "get": {
+                        "operationId": "get_auth_profile",
+                        "summary": "Get user profile",
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/auth/onboarding": {
+                    "get": {
+                        "operationId": "get_auth_onboarding",
+                        "summary": "Public onboarding endpoint",
+                        "tags": ["public"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/dev/admin": {
+                    "get": {
+                        "operationId": "get_dev_admin",
+                        "summary": "Public admin endpoint",
+                        "tags": ["public"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+                "/health": {
+                    "get": {
+                        "operationId": "get_health",
+                        "summary": "Public health endpoint",
+                        "tags": ["public"],
+                        "responses": {"200": {"description": "Success"}},
+                    }
+                },
+            },
+        }
+
+    def test_public_endpoints_use_public_request_method(
+        self, generator: ClientGenerator, auth_schema: dict[str, Any]
+    ) -> None:
+        """Test that public endpoints use _makePublicRequest method"""
+        config = ClientConfig(enable_auto_auth=True)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Public endpoints should use _makePublicRequest
+        assert "_makePublicRequest" in code
+        assert "this._makePublicRequest(url, requestOptions)" in code
+
+        # Non-public endpoints should use _makeRequest
+        assert "this._makeRequest(url, requestOptions)" in code
+
+    def test_public_endpoints_logic_disabled(
+        self, generator: ClientGenerator, auth_schema: dict[str, Any]
+    ) -> None:
+        """Test that public endpoint logic is not included when auto-auth is disabled"""
+        config = ClientConfig(enable_auto_auth=False)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Should not include public request method when auto-auth is disabled
+        assert "_makePublicRequest" not in code
+        # All endpoints should use _makeRequest
+        assert "this._makeRequest(url, requestOptions)" in code
+
+    def test_token_provider_in_javascript_fetch(self, generator: ClientGenerator, auth_schema: dict[str, Any]) -> None:
+        """Test token provider configuration in JavaScript fetch client"""
+        config = ClientConfig(language="javascript", http_client="fetch", enable_auto_auth=True)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Check constructor accepts getToken function
+        assert "this.getToken = defaultOptions.getToken || null;" in code
+
+        # Check setTokenProvider method exists
+        assert "setTokenProvider(getTokenFn) {" in code
+        assert "this.getToken = getTokenFn;" in code
+
+        # Check auto-auth logic in _makeRequest
+        assert "if (this.getToken && !requestOptions.headers?.Authorization)" in code
+        assert "const token = await this.getToken();" in code
+        assert "requestOptions.headers.Authorization = `Bearer ${token}`;" in code
+
+    def test_token_provider_in_javascript_axios(self, generator: ClientGenerator, auth_schema: dict[str, Any]) -> None:
+        """Test token provider configuration in JavaScript axios client"""
+        config = ClientConfig(language="javascript", http_client="axios", enable_auto_auth=True)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Check constructor accepts getToken function
+        assert "this.getToken = config.getToken || null;" in code
+
+        # Check setTokenProvider method exists
+        assert "setTokenProvider(getTokenFn) {" in code
+
+        # Check request interceptor for auth
+        assert "this.axios.interceptors.request.use(" in code
+        assert "if (this.getToken && !config.headers?.Authorization)" in code
+
+    def test_token_provider_in_typescript_fetch(self, generator: ClientGenerator, auth_schema: dict[str, Any]) -> None:
+        """Test token provider configuration in TypeScript fetch client"""
+        config = ClientConfig(language="typescript", http_client="fetch", enable_auto_auth=True)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Check interface includes getToken function
+        assert "getToken?: () => string | null;" in code
+
+        # Check class properties
+        assert "private getToken: (() => string | null) | null;" in code
+
+        # Check constructor sets getToken
+        assert "this.getToken = defaultOptions.getToken || null;" in code
+
+        # Check setTokenProvider method with types
+        assert "public setTokenProvider(getTokenFn: () => string | null): void {" in code
+
+    def test_token_provider_in_typescript_axios(self, generator: ClientGenerator, auth_schema: dict[str, Any]) -> None:
+        """Test token provider configuration in TypeScript axios client"""
+        config = ClientConfig(language="typescript", http_client="axios", enable_auto_auth=True)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Check extended interface
+        assert "interface RequestConfig extends AxiosRequestConfig {" in code
+        assert "getToken?: () => string | null;" in code
+
+        # Check class properties with types
+        assert "private getToken: (() => string | null) | null;" in code
+
+        # Check setTokenProvider method
+        assert "public setTokenProvider(getTokenFn: () => string | null): void {" in code
+
+    def test_axios_has_separate_public_instance(self, generator: ClientGenerator, auth_schema: dict[str, Any]) -> None:
+        """Test that axios creates separate instance for public requests"""
+        config = ClientConfig(language="javascript", http_client="axios", enable_auto_auth=True)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Check that separate public axios instance is created
+        assert "this.publicAxios = axios.create(" in code
+        # Check that public endpoints use publicAxios
+        assert "this.publicAxios.request(axiosConfig)" in code
+
+    def test_auto_auth_disabled_no_logic(self, generator: ClientGenerator, auth_schema: dict[str, Any]) -> None:
+        """Test that auto-auth logic is not included when disabled"""
+        config = ClientConfig(enable_auto_auth=False)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Should not include auth logic
+        assert "this.getToken" not in code
+        assert "setTokenProvider" not in code
+        assert "_makePublicRequest" not in code
+        assert "publicAxios" not in code
+
+    def test_public_endpoints_from_fastapi_routes(self, generator: ClientGenerator) -> None:
+        """Test public endpoint detection from FastAPI routes"""
+        # Mock FastAPI app structure
+        mock_route1 = Mock()
+        mock_route1.path = "/health"
+        mock_route1.methods = ["GET"]
+        mock_route1.tags = ["public"]
+
+        mock_route2 = Mock()
+        mock_route2.path = "/auth/profile"
+        mock_route2.methods = ["GET"]
+        mock_route2.tags = ["auth"]
+
+        mock_route3 = Mock()
+        mock_route3.path = "/dev/admin"
+        mock_route3.methods = ["GET"]
+        mock_route3.tags = ["public"]
+
+        mock_app = Mock()
+        mock_app.routes = [mock_route1, mock_route2, mock_route3]
+        mock_app.openapi.return_value = {"info": {"title": "Test", "version": "1.0.0"}, "components": {"schemas": {}}}
+
+        # Mock isinstance to return True for our mock routes
+        with (
+            patch("faster.core.client_generator.isinstance") as mock_isinstance,
+            patch.object(generator, "_create_operation_spec") as mock_create_op,
+        ):
+            mock_isinstance.return_value = True
+            mock_create_op.return_value = {"tags": ["public"], "responses": {"200": {"description": "Success"}}}
+            schema = generator._extract_all_routes_schema(mock_app)  # type: ignore[reportPrivateUsage, unused-ignore]
+
+        config = ClientConfig(enable_auto_auth=True)
+        code = generator.generate_from_schema(schema, config)
+
+        # Check that public endpoints use _makePublicRequest
+        assert "_makePublicRequest" in code
+        # Check that both public and private request methods are available
+        assert "_makeRequest" in code
+
+    def test_auth_methods_preserve_existing_auth_headers(
+        self, generator: ClientGenerator, auth_schema: dict[str, Any]
+    ) -> None:
+        """Test that existing Authorization headers are not overwritten"""
+        config = ClientConfig(language="javascript", http_client="fetch", enable_auto_auth=True)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Should check for existing Authorization header before adding
+        assert "!requestOptions.headers?.Authorization" in code
+
+    def test_generate_from_app_extracts_public_endpoints(self, generator: ClientGenerator) -> None:
+        """Test that generate_from_app method extracts public endpoints"""
+        # Mock FastAPI app
+        mock_route = Mock()
+        mock_route.path = "/public-endpoint"
+        mock_route.tags = ["public"]
+
+        mock_app = Mock()
+        mock_app.routes = [mock_route]
+        mock_app.openapi.return_value = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {},
+            "components": {"schemas": {}},
+        }
+
+        config = ClientConfig(enable_auto_auth=True)
+        code = generator.generate_from_app(mock_app, config)
+
+        # Should include auth logic in generated code
+        assert "this.getToken" in code
+
+    def test_complex_endpoint_patterns(self, generator: ClientGenerator) -> None:
+        """Test handling of complex endpoint patterns with tags-based detection"""
+        schema = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/auth/users/123/profile": {
+                    "get": {"tags": ["public"], "responses": {"200": {"description": "Success"}}}
+                },
+                "/dev/client_api_js.js": {
+                    "get": {"tags": ["public"], "responses": {"200": {"description": "Success"}}}
+                },
+                "/.well-known/appspecific/com.chrome.devtools.json": {
+                    "get": {"tags": ["public"], "responses": {"200": {"description": "Success"}}}
+                },
+                "/private/endpoint": {
+                    "get": {"tags": ["auth"], "responses": {"200": {"description": "Success"}}}
+                },
+            },
+        }
+
+        config = ClientConfig(enable_auto_auth=True)
+        code = generator.generate_from_schema(schema, config)
+
+        # Check that public endpoints use _makePublicRequest
+        assert "_makePublicRequest" in code
+        # Check that private endpoints use _makeRequest
+        assert "_makeRequest" in code
+
+    def test_default_config_values(self, generator: ClientGenerator, auth_schema: dict[str, Any]) -> None:
+        """Test that default configuration values work correctly"""
+        # Test with default config (should enable auto-auth by default)
+        config = ClientConfig()
+        code = generator.generate_from_schema(auth_schema, config)
+
+        assert config.enable_auto_auth is True
+        assert "this.getToken" in code
+
+    def test_backward_compatibility_existing_methods(
+        self, generator: ClientGenerator, auth_schema: dict[str, Any]
+    ) -> None:
+        """Test that existing setAuth and setHeaders methods still work"""
+        config = ClientConfig(enable_auto_auth=True)
+        code = generator.generate_from_schema(auth_schema, config)
+
+        # Existing methods should still be present
+        assert "setAuth(token, type = 'Bearer')" in code
+        assert "setHeaders(headers)" in code
+
+        # New method should also be present
+        assert "setTokenProvider(" in code
