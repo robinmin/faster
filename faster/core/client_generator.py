@@ -7,6 +7,7 @@ from FastAPI OpenAPI schema.
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import importlib.metadata
 import re
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -30,6 +31,7 @@ class ClientConfig:
     http_client: Literal["fetch", "axios"] = "fetch"
     class_name: str = "ApiClient"
     base_url: str | None = None
+    enable_auto_auth: bool = True  # Enable automatic bearer token handling
 
 
 class ClientGenerator:
@@ -63,6 +65,18 @@ class ClientGenerator:
 
         # Get OpenAPI schema from FastAPI app
         schema = app.openapi()
+
+        # Extract public endpoints if auto-auth is enabled
+        if config.enable_auto_auth:
+            public_endpoints: list[str] = []
+            for route in app.routes:
+                if isinstance(route, APIRoute) and hasattr(route, "tags") and route.tags and "public" in route.tags:
+                    path = route.path[1:] if route.path.startswith("/") else route.path
+                    endpoint_pattern = f"/{path}"
+                    if endpoint_pattern not in public_endpoints:
+                        public_endpoints.append(endpoint_pattern)
+            schema["x-public-endpoints"] = public_endpoints
+
         return self.generate_from_schema(schema, config)
 
     def generate_from_app_all_routes(self, app: FastAPI, config: ClientConfig | None = None) -> str:
@@ -79,6 +93,7 @@ class ClientGenerator:
         paths: dict[str, Any] = {}
         base_schema = app.openapi()
         components = base_schema.get("components", {"schemas": {}})
+        public_endpoints: list[str] = []
 
         for route in app.routes:
             if isinstance(route, APIRoute):
@@ -90,6 +105,14 @@ class ClientGenerator:
                         continue
 
                     operation = self._create_operation_spec(route, method, path)
+
+                    # Check if route has 'public' tag
+                    if hasattr(route, "tags") and route.tags and "public" in route.tags:
+                        endpoint_pattern = f"/{path}"
+                        if endpoint_pattern not in public_endpoints:
+                            public_endpoints.append(endpoint_pattern)
+                        operation["tags"] = route.tags
+
                     if path not in paths:
                         paths[path] = {}
                     paths[path][method] = operation
@@ -99,6 +122,7 @@ class ClientGenerator:
             "info": base_schema.get("info", {"title": "API", "version": "1.0.0"}),
             "paths": paths,
             "components": components,
+            "x-public-endpoints": public_endpoints,  # Store public endpoints in schema
         }
 
     def _create_operation_spec(self, route: APIRoute, method: str, path: str) -> dict[str, Any]:
@@ -217,7 +241,10 @@ export default {self.config.class_name};
     def _generate_header_comment(self) -> str:
         """Generate header comment with generation info"""
         timestamp = datetime.now(timezone.utc).isoformat()
-        version = "0.1.0"  # TODO: Import from package metadata
+        try:
+            version = importlib.metadata.version("faster")
+        except importlib.metadata.PackageNotFoundError:
+            version = "0.1.0"  # Fallback version
 
         return f"""/*
  * This file is auto-generated. DO NOT EDIT MANUALLY!
@@ -248,6 +275,40 @@ export default {self.config.class_name};
         return "\n".join(comment_lines)
 
     def _js_fetch_base(self, base_url: str) -> str:
+        auth_logic = ""
+        if self.config.enable_auto_auth:
+            auth_logic = """
+    // Auto-add Bearer token if not already present and getToken is available
+    if (this.getToken && !requestOptions.headers?.Authorization) {
+      const token = await this.getToken();
+      if (token) {
+        requestOptions.headers.Authorization = `Bearer ${token}`;
+      }
+    }"""
+
+        public_request_method = ""
+        if self.config.enable_auto_auth:
+            public_request_method = """
+  async _makePublicRequest(url, options) {
+    const fullUrl = this.baseURL + (url.startsWith('/') ? url : '/' + url);
+    const requestOptions = {
+      ...this.defaultOptions,
+      ...options,
+      headers: { ...this.defaultOptions.headers, ...options.headers },
+    };
+
+    const response = await fetch(fullUrl, requestOptions);
+
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status}: ${response.statusText}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    const contentType = response.headers.get('content-type');
+    return contentType?.includes('application/json') ? response.json() : response.text();
+  }"""
+
         return rf"""class {self.config.class_name} {{
   constructor(baseURL = '{base_url}', defaultOptions = {{}}) {{
     this.baseURL = baseURL.replace(/\/$/, '');
@@ -255,6 +316,13 @@ export default {self.config.class_name};
       headers: {{ 'Content-Type': 'application/json' }},
       ...defaultOptions
     }};
+{
+            '''
+    // Token retrieval function (can be set by user)
+    this.getToken = defaultOptions.getToken || null;'''
+            if self.config.enable_auto_auth
+            else ""
+        }
   }}
 
   async _makeRequest(url, options) {{
@@ -263,7 +331,7 @@ export default {self.config.class_name};
       ...this.defaultOptions,
       ...options,
       headers: {{ ...this.defaultOptions.headers, ...options.headers }},
-    }};
+    }};{auth_logic}
 
     const response = await fetch(fullUrl, requestOptions);
 
@@ -275,7 +343,7 @@ export default {self.config.class_name};
 
     const contentType = response.headers.get('content-type');
     return contentType?.includes('application/json') ? response.json() : response.text();
-  }}
+  }}{public_request_method}
 
   setAuth(token, type = 'Bearer') {{
     this.defaultOptions.headers = {{
@@ -287,17 +355,71 @@ export default {self.config.class_name};
   setHeaders(headers) {{
     this.defaultOptions.headers = {{ ...this.defaultOptions.headers, ...headers }};
   }}
+{
+            '''
+  setTokenProvider(getTokenFn) {
+    this.getToken = getTokenFn;
+  }'''
+            if self.config.enable_auto_auth
+            else ""
+        }
 """
 
     def _js_axios_base(self, base_url: str) -> str:
+        auth_interceptor = ""
+        if self.config.enable_auto_auth:
+            auth_interceptor = """
+    // Add request interceptor for automatic authentication
+    this.axios.interceptors.request.use(
+      async config => {
+        // Auto-add Bearer token if not already present and getToken is available
+        if (this.getToken && !config.headers?.Authorization) {
+          const token = await this.getToken();
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
+        }
+        return config;
+      },
+      error => Promise.reject(error)
+    );"""
+
+        public_axios_creation = ""
+        if self.config.enable_auto_auth:
+            public_axios_creation = r"""
+    // Create separate axios instance for public requests (without auth interceptor)
+    this.publicAxios = axios.create({
+      baseURL: baseURL.replace(/\/$/, ''),
+      timeout: 10000,
+      headers: { 'Content-Type': 'application/json' },
+      ...config,
+    });
+
+    this.publicAxios.interceptors.response.use(
+      response => response,
+      error => {
+        const apiError = new Error(error.message);
+        apiError.status = error.response?.status || 0;
+        throw apiError;
+      }
+    );"""
+
         return rf"""class {self.config.class_name} {{
   constructor(baseURL = '{base_url}', config = {{}}) {{
+{
+            '''
+    // Token retrieval function (can be set by user)
+    this.getToken = config.getToken || null;'''
+            if self.config.enable_auto_auth
+            else ""
+        }
+
     this.axios = axios.create({{
       baseURL: baseURL.replace(/\/$/, ''),
       timeout: 10000,
       headers: {{ 'Content-Type': 'application/json' }},
       ...config,
-    }});
+    }});{auth_interceptor}
 
     this.axios.interceptors.response.use(
       response => response,
@@ -306,7 +428,7 @@ export default {self.config.class_name};
         apiError.status = error.response?.status || 0;
         throw apiError;
       }}
-    );
+    );{public_axios_creation}
   }}
 
   setAuth(token, type = 'Bearer') {{
@@ -316,17 +438,61 @@ export default {self.config.class_name};
   setHeaders(headers) {{
     Object.assign(this.axios.defaults.headers.common, headers);
   }}
+{
+            '''
+  setTokenProvider(getTokenFn) {
+    this.getToken = getTokenFn;
+  }'''
+            if self.config.enable_auto_auth
+            else ""
+        }
 """
 
     def _ts_fetch_base(self, base_url: str) -> str:
+        auth_logic = ""
+        if self.config.enable_auto_auth:
+            auth_logic = """
+    // Auto-add Bearer token if not already present and getToken is available
+    if (this.getToken && !requestOptions.headers?.Authorization) {
+      const token = await this.getToken();
+      if (token) {
+        requestOptions.headers.Authorization = `Bearer ${token}`;
+      }
+    }"""
+
+        public_request_method = ""
+        if self.config.enable_auto_auth:
+            public_request_method = """
+  private async _makePublicRequest<T = any>(url: string, options: RequestInit): Promise<T> {
+    const fullUrl = this.baseURL + (url.startsWith('/') ? url : '/' + url);
+    const requestOptions: RequestInit = {
+      ...this.defaultOptions,
+      ...options,
+      headers: { ...this.defaultOptions.headers, ...options.headers },
+    };
+
+    const response = await fetch(fullUrl, requestOptions);
+
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status}: ${response.statusText}`) as any;
+      error.status = response.status;
+      throw error;
+    }
+
+    const contentType = response.headers.get('content-type');
+    return contentType?.includes('application/json') ? response.json() : response.text();
+  }"""
+
         return rf"""interface RequestOptions {{
   headers?: Record<string, string>;
+{"  getToken?: () => string | null;" if self.config.enable_auto_auth else ""}
   [key: string]: any;
 }}
 
 export class {self.config.class_name} {{
   private baseURL: string;
   private defaultOptions: RequestOptions;
+{"  private getToken: (() => string | null) | null;" if self.config.enable_auto_auth else ""}
 
   constructor(baseURL: string = '{base_url}', defaultOptions: RequestOptions = {{}}) {{
     this.baseURL = baseURL.replace(/\/$/, '');
@@ -334,6 +500,13 @@ export class {self.config.class_name} {{
       headers: {{ 'Content-Type': 'application/json' }},
       ...defaultOptions
     }};
+{
+            '''
+    // Token retrieval function (can be set by user)
+    this.getToken = defaultOptions.getToken || null;'''
+            if self.config.enable_auto_auth
+            else ""
+        }
   }}
 
   private async _makeRequest<T = any>(url: string, options: RequestInit): Promise<T> {{
@@ -342,7 +515,7 @@ export class {self.config.class_name} {{
       ...this.defaultOptions,
       ...options,
       headers: {{ ...this.defaultOptions.headers, ...options.headers }},
-    }};
+    }};{auth_logic}
 
     const response = await fetch(fullUrl, requestOptions);
 
@@ -354,7 +527,7 @@ export class {self.config.class_name} {{
 
     const contentType = response.headers.get('content-type');
     return contentType?.includes('application/json') ? response.json() : response.text();
-  }}
+  }}{public_request_method}
 
   public setAuth(token: string, type: string = 'Bearer'): void {{
     this.defaultOptions.headers = {{
@@ -366,24 +539,79 @@ export class {self.config.class_name} {{
   public setHeaders(headers: Record<string, string>): void {{
     this.defaultOptions.headers = {{ ...this.defaultOptions.headers, ...headers }};
   }}
+{
+            '''
+  public setTokenProvider(getTokenFn: () => string | null): void {
+    this.getToken = getTokenFn;
+  }'''
+            if self.config.enable_auto_auth
+            else ""
+        }
 """
 
     def _ts_axios_base(self, base_url: str) -> str:
-        return rf"""interface RequestOptions {{
-  headers?: Record<string, string>;
-  [key: string]: any;
+        auth_interceptor = ""
+        if self.config.enable_auto_auth:
+            auth_interceptor = """
+    // Add request interceptor for automatic authentication
+    this.axios.interceptors.request.use(
+      async config => {
+        // Auto-add Bearer token if not already present and getToken is available
+        if (this.getToken && !config.headers?.Authorization) {
+          const token = await this.getToken();
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
+        }
+        return config;
+      },
+      error => Promise.reject(error)
+    );"""
+
+        public_axios_creation = ""
+        if self.config.enable_auto_auth:
+            public_axios_creation = r"""
+    // Create separate axios instance for public requests (without auth interceptor)
+    this.publicAxios = axios.create({
+      baseURL: baseURL.replace(/\/$/, ''),
+      timeout: 10000,
+      headers: { 'Content-Type': 'application/json' },
+      ...config,
+    });
+
+    this.publicAxios.interceptors.response.use(
+      response => response,
+      error => {
+        const apiError = new Error(error.message) as any;
+        apiError.status = error.response?.status || 0;
+        throw apiError;
+      }
+    );"""
+
+        return rf"""interface RequestConfig extends AxiosRequestConfig {{
+{"  getToken?: () => string | null;" if self.config.enable_auto_auth else ""}
 }}
 
 export class {self.config.class_name} {{
   private axios: AxiosInstance;
+{"  private publicAxios: AxiosInstance;" if self.config.enable_auto_auth else ""}
+{"  private getToken: (() => string | null) | null;" if self.config.enable_auto_auth else ""}
 
-  constructor(baseURL: string = '{base_url}', config: AxiosRequestConfig = {{}}) {{
+  constructor(baseURL: string = '{base_url}', config: RequestConfig = {{}}) {{
+{
+            '''
+    // Token retrieval function (can be set by user)
+    this.getToken = config.getToken || null;'''
+            if self.config.enable_auto_auth
+            else ""
+        }
+
     this.axios = axios.create({{
       baseURL: baseURL.replace(/\/$/, ''),
       timeout: 10000,
       headers: {{ 'Content-Type': 'application/json' }},
       ...config,
-    }});
+    }});{auth_interceptor}
 
     this.axios.interceptors.response.use(
       response => response,
@@ -392,7 +620,7 @@ export class {self.config.class_name} {{
         apiError.status = error.response?.status || 0;
         throw apiError;
       }}
-    );
+    );{public_axios_creation}
   }}
 
   public setAuth(token: string, type: string = 'Bearer'): void {{
@@ -402,7 +630,20 @@ export class {self.config.class_name} {{
   public setHeaders(headers: Record<string, string>): void {{
     Object.assign(this.axios.defaults.headers.common, headers);
   }}
+{
+            '''
+  public setTokenProvider(getTokenFn: () => string | null): void {
+    this.getToken = getTokenFn;
+  }'''
+            if self.config.enable_auto_auth
+            else ""
+        }
 """
+
+    def _is_public_operation(self, operation: dict[str, Any]) -> bool:
+        """Check if operation is public based on tags"""
+        tags = operation.get("tags", [])
+        return "public" in tags
 
     def _generate_fetch_methods(self, typescript: bool = False) -> str:
         """Generate methods using fetch API"""
@@ -483,11 +724,15 @@ export class {self.config.class_name} {{
 
         body_setup += "\n    };"
 
+        # Determine which request method to use
+        is_public = self._is_public_operation(operation)
+        request_method = "_makePublicRequest" if is_public and self.config.enable_auto_auth else "_makeRequest"
+
         return f"""
 {method_comment}
   async {method_name}({param_str}){return_type} {{
     {url_construction}{query_construction}{body_setup}
-    return this._makeRequest(url, requestOptions);
+    return this.{request_method}(url, requestOptions);
   }}
 """
 
@@ -539,11 +784,15 @@ export class {self.config.class_name} {{
 
         axios_config += "\n    };"
 
+        # Determine which axios instance to use
+        is_public = self._is_public_operation(operation)
+        axios_instance = "publicAxios" if is_public and self.config.enable_auto_auth else "axios"
+
         return f"""
 {method_comment}
    async {method_name}({param_str}){return_type} {{
      {url_construction}{axios_config}
-     const response = await this.axios.request(axiosConfig);
+     const response = await this.{axios_instance}.request(axiosConfig);
      return response.data;
    }}
  """
