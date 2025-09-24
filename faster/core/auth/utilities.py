@@ -90,7 +90,6 @@ def extract_bearer_token_from_request(request: Request) -> str | None:
         if not token:
             return None
 
-        # TODO: Skip JWT structure validation for now to maintain backward compatibility
         if not _validate_jwt_structure(token):
             return None
 
