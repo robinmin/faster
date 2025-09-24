@@ -78,7 +78,11 @@
     </style>
   </head>
 
-  <body class="bg-base-100 min-h-screen" x-data="app.devAdminApp()" x-init="init()">
+  <body
+    class="bg-base-100 min-h-screen"
+    x-data="app.devAdminApp()"
+    x-init="init()"
+  >
     <!-- Global Components -->
     <div
       x-data="app.toastManager()"
@@ -2832,6 +2836,10 @@
           API_TIMEOUT: 10000,
           RETRY_ATTEMPTS: 3,
           THEME_STORAGE_KEY: "dev-admin-theme",
+          // Global debug configuration
+          // Set DEBUG to true to enable verbose logging for all components including AuthService
+          // Errors and warnings will always be shown regardless of this setting
+          DEBUG: false,
           ENDPOINTS: {
             CONFIG: "/dev/settings",
             HEALTH: "/"
@@ -2918,6 +2926,29 @@
                 user.email
               )}`
             );
+          },
+
+          /**
+           * Global debug logging utility
+           * @param {string} component - Component name (e.g., "AuthService", "APIClient")
+           * @param {...any} args - Arguments to log
+           */
+          debugLog(component, ...args) {
+            if (APP_CONFIG.DEBUG) {
+              console.log(`🔍 ${component}:`, ...args);
+            }
+          },
+
+          /**
+           * Global important logging utility (always shows regardless of debug mode)
+           * @param {string} level - Log level ('log', 'warn', 'error')
+           * @param {string} component - Component name
+           * @param {...any} args - Arguments to log
+           */
+          importantLog(level, component, ...args) {
+            const prefix =
+              level === "error" ? "❌" : level === "warn" ? "⚠️" : "🔍";
+            console[level](`${prefix} ${component}:`, ...args);
           }
         };
 
@@ -2930,7 +2961,11 @@
           initClient(maxRetries = 50) {
             // Check if script failed to load
             if (window.apiClientLoadFailed) {
-              console.error("API client script failed to load");
+              utils.importantLog(
+                "error",
+                "API",
+                "API client script failed to load"
+              );
               return;
             }
 
@@ -2940,20 +2975,31 @@
 
                 // 🔐 SECURE TOKEN PROVIDER: Defer setup until AuthService is available
                 // This will be configured later in the initialization process
-                console.log("API client created, token provider will be set later");
-
-                console.log(
+                utils.debugLog(
+                  "API",
                   "API client initialized with secure token provider"
                 );
               } catch (error) {
-                console.error("Failed to initialize API client:", error);
+                utils.importantLog(
+                  "error",
+                  "API",
+                  "Failed to initialize API client:",
+                  error
+                );
               }
             } else if (maxRetries > 0) {
-              console.warn("API client not loaded yet, will retry later");
+              utils.debugLog(
+                "API",
+                "API client not loaded yet, will retry later"
+              );
               // Retry after a short delay with decreasing retry count
               setTimeout(() => this.initClient(maxRetries - 1), 100);
             } else {
-              console.error("API client failed to load after maximum retries");
+              utils.importantLog(
+                "error",
+                "API",
+                "API client failed to load after maximum retries"
+              );
             }
           },
 
@@ -2970,7 +3016,7 @@
                 // Check if script failed to load
                 if (window.apiClientLoadFailed) {
                   const error = new Error("API client script failed to load");
-                  console.error(error.message);
+                  utils.importantLog("error", "API", error.message);
                   reject(error);
                   return;
                 }
@@ -2981,21 +3027,24 @@
 
                     // 🔐 SECURE TOKEN PROVIDER: Defer setup until AuthService is available
                     // This will be configured later in the initialization process
-                    console.log("API client created (async), token provider will be set later");
-
-                    console.log(
+                    utils.debugLog(
                       "API client initialized successfully with secure token provider"
                     );
                     resolve();
                   } catch (error) {
-                    console.error("Failed to initialize API client:", error);
+                    utils.importantLog(
+                      "error",
+                      "API",
+                      "Failed to initialize API client:",
+                      error
+                    );
                     reject(error);
                   }
                 } else if (attempts >= maxAttempts) {
                   const error = new Error(
                     "API client script failed to load within timeout"
                   );
-                  console.error(error.message);
+                  utils.importantLog("error", "API", error.message);
                   reject(error);
                 } else {
                   setTimeout(checkClient, checkInterval);
@@ -3037,7 +3086,12 @@
                   data: profileData
                 };
               } catch (error) {
-                console.error("Error loading profile data:", error);
+                utils.importantLog(
+                  "error",
+                  "Profile",
+                  "Error loading profile data:",
+                  error
+                );
                 return {
                   status: "error",
                   message: "Profile Page",
@@ -3097,7 +3151,7 @@
           },
 
           async notifyAuthEvent(event, eventData = {}) {
-            console.log(`Notifying backend about auth event: ${event}`);
+            utils.debugLog(`Notifying backend about auth event: ${event}`);
 
             const publicEvents = ["INITIAL_SESSION"];
             const isPublicEvent = publicEvents.includes(event);
@@ -3208,10 +3262,17 @@
 
           // Utility methods for programmatic navigation
           navigateToPage(pageId) {
-            console.log(`🧭 Programmatic navigation to: ${pageId}`);
+            utils.debugLog(
+              "Navigation",
+              `🧭 Programmatic navigation to: ${pageId}`
+            );
 
             if (!this.isValidPage(pageId)) {
-              console.warn(`Invalid page ID: ${pageId}. Navigation cancelled.`);
+              utils.importantLog(
+                "warn",
+                "Navigation",
+                `Invalid page ID: ${pageId}. Navigation cancelled.`
+              );
               return false;
             }
 
@@ -3379,8 +3440,9 @@
                 ...config.redirectUrls
               },
 
-              // Debug mode
-              debug: config.debug || false
+              // Debug mode - use global debug flag if not explicitly provided
+              debug:
+                config.debug !== undefined ? config.debug : APP_CONFIG.DEBUG
             };
 
             // Internal state
@@ -3418,7 +3480,7 @@
               // Use provided Supabase client or create a new one
               if (supabaseClient) {
                 this._supabaseClient = supabaseClient;
-                this._log("✅ Using existing Supabase client - NO DUPLICATE INSTANCE");
+                this._log("✅ Using existing Supabase client");
               } else {
                 // Fallback: create new client if none provided
                 if (!this.config.supabaseUrl || !this.config.supabaseKey) {
@@ -3430,7 +3492,10 @@
                   this.config.supabaseUrl,
                   this.config.supabaseKey
                 );
-                this._log("⚠️ Created new Supabase client - DUPLICATE INSTANCE");
+                this._logImportant(
+                  "warn",
+                  "⚠️ Created new Supabase client - DUPLICATE INSTANCE"
+                );
               }
 
               // Set up auth state listener
@@ -3443,23 +3508,43 @@
               // So we implement the secure pattern inline during initialization
               try {
                 // Step 1: Verify user with .auth.getUser() first for security
-                const { data: userData, error: userError } = await this._supabaseClient.auth.getUser();
+                const {
+                  data: userData,
+                  error: userError
+                } = await this._supabaseClient.auth.getUser();
 
                 if (userError) {
-                  this._log("User verification during init failed:", userError.message);
+                  this._log(
+                    "error",
+                    "User verification during init failed:",
+                    userError.message
+                  );
                   // Clean up localStorage on verification failure
                   try {
-                    localStorage.removeItem('supabase.auth.token');
-                    this._log("Cleaned up localStorage due to init verification failure");
+                    localStorage.removeItem("supabase.auth.token");
+                    this._log(
+                      "Cleaned up localStorage due to init verification failure"
+                    );
                   } catch (cleanupError) {
-                    this._log("Failed to clean localStorage during init:", cleanupError);
+                    this._logImportant(
+                      "error",
+                      "Failed to clean localStorage during init:",
+                      cleanupError
+                    );
                   }
                 } else if (userData.user) {
                   // Step 2: If user verification successful, get session for complete info
-                  const { data: sessionData, error: sessionError } = await this._supabaseClient.auth.getSession();
+                  const {
+                    data: sessionData,
+                    error: sessionError
+                  } = await this._supabaseClient.auth.getSession();
 
                   if (sessionError) {
-                    this._log("Session retrieval during init failed:", sessionError.message);
+                    this._logImportant(
+                      "error",
+                      "Session retrieval during init failed:",
+                      sessionError.message
+                    );
                     // Still set user even if session fails
                     this._currentUser = userData.user;
                     this._currentSession = null;
@@ -3473,7 +3558,11 @@
                   }
                 }
               } catch (error) {
-                this._log("Error during secure session check:", error);
+                this._logImportant(
+                  "error",
+                  "Error during secure session check:",
+                  error
+                );
               }
 
               this._isInitialized = true;
@@ -3486,7 +3575,11 @@
 
               return true;
             } catch (error) {
-              this._log("AuthService initialization failed:", error);
+              this._logImportant(
+                "error",
+                "AuthService initialization failed:",
+                error
+              );
               this.config.onError(
                 `Initialization failed: ${error.message}`,
                 "INIT_ERROR",
@@ -4005,29 +4098,38 @@
               this._ensureInitialized();
 
               // If we have a cached session and not forcing verification, use it
-              if (!forceVerification && this._currentSession && this._currentUser) {
-                this._log("Using cached session for getUserInfo");
+              if (
+                !forceVerification &&
+                this._currentSession &&
+                this._currentUser
+              ) {
+                // this._log("Using cached session for getUserInfo");
                 return {
                   success: true,
                   user: this._currentUser,
                   session: this._currentSession,
                   verified: false, // Indicates this was from cache, not verified
-                  source: 'cache'
+                  source: "cache"
                 };
               }
 
               this._log("Verifying user info with Supabase Auth");
 
               // Step 1: Always verify with .auth.getUser() first for security
-              const { data: userData, error: userError } = await this._supabaseClient.auth.getUser();
+              const {
+                data: userData,
+                error: userError
+              } = await this._supabaseClient.auth.getUser();
 
               if (userError) {
                 this._log("User verification failed:", userError.message);
 
                 // Clean up localStorage on verification failure
                 try {
-                  localStorage.removeItem('supabase.auth.token');
-                  this._log("Cleaned up localStorage due to verification failure");
+                  localStorage.removeItem("supabase.auth.token");
+                  this._log(
+                    "Cleaned up localStorage due to verification failure"
+                  );
                 } catch (cleanupError) {
                   this._log("Failed to clean localStorage:", cleanupError);
                 }
@@ -4040,7 +4142,7 @@
                   success: false,
                   error: userError.message,
                   verified: false,
-                  source: 'verification_failed'
+                  source: "verification_failed"
                 };
               }
 
@@ -4055,15 +4157,21 @@
                   success: false,
                   error: "No authenticated user found",
                   verified: true,
-                  source: 'no_user'
+                  source: "no_user"
                 };
               }
 
               // Step 2: If user verification successful, get session for complete info
-              const { data: sessionData, error: sessionError } = await this._supabaseClient.auth.getSession();
+              const {
+                data: sessionData,
+                error: sessionError
+              } = await this._supabaseClient.auth.getSession();
 
               if (sessionError) {
-                this._log("Session retrieval failed after user verification:", sessionError.message);
+                this._log(
+                  "Session retrieval failed after user verification:",
+                  sessionError.message
+                );
 
                 // Even if session fails, we have verified user, so return user info
                 this._currentUser = userData.user;
@@ -4074,7 +4182,7 @@
                   user: userData.user,
                   session: null,
                   verified: true,
-                  source: 'user_only',
+                  source: "user_only",
                   warning: "Session unavailable but user verified"
                 };
               }
@@ -4090,15 +4198,14 @@
                 user: userData.user,
                 session: sessionData.session,
                 verified: true,
-                source: 'verified'
+                source: "verified"
               };
-
             } catch (error) {
               this._log("getUserInfo failed with exception:", error);
 
               // Clean up on any unexpected error
               try {
-                localStorage.removeItem('supabase.auth.token');
+                localStorage.removeItem("supabase.auth.token");
                 this._log("Cleaned up localStorage due to exception");
               } catch (cleanupError) {
                 this._log("Failed to clean localStorage:", cleanupError);
@@ -4110,9 +4217,10 @@
 
               return {
                 success: false,
-                error: error.message || "Unknown error during user info retrieval",
+                error:
+                  error.message || "Unknown error during user info retrieval",
                 verified: false,
-                source: 'exception'
+                source: "exception"
               };
             }
           }
@@ -4160,7 +4268,9 @@
            */
           async checkAuthenticationStatus() {
             try {
-              this._log("Checking authentication status with secure verification");
+              this._log(
+                "Checking authentication status with secure verification"
+              );
 
               // Use getUserInfo for secure authentication check
               const userInfo = await this.getUserInfo(true); // Force verification
@@ -4198,9 +4308,11 @@
                 verified: userInfo.verified,
                 reason: "authenticated"
               };
-
             } catch (error) {
-              this._log("Authentication status check failed with exception:", error);
+              this._log(
+                "Authentication status check failed with exception:",
+                error
+              );
               return {
                 isAuthenticated: false,
                 shouldShowView: "auth", // Show login page on error
@@ -4416,7 +4528,10 @@
            * @private
            */
           async _handleInitialSession(session) {
-            this._log("Initial session detected:", session?.user?.email || "none");
+            this._log(
+              "Initial session detected:",
+              session?.user?.email || "none"
+            );
 
             if (this.config.onInitialSession) {
               await this.config.onInitialSession(session);
@@ -4546,13 +4661,23 @@
           }
 
           /**
-           * Log debug messages
+           * Log debug messages (only shown when debug mode is enabled)
            * @private
            */
           _log(...args) {
             if (this.config.debug) {
               console.log("🔐 AuthService:", ...args);
             }
+          }
+
+          /**
+           * Log errors and warnings (always shown regardless of debug mode)
+           * @private
+           */
+          _logImportant(level, ...args) {
+            const prefix =
+              level === "error" ? "❌" : level === "warn" ? "⚠️" : "🔐";
+            console[level](`${prefix} AuthService:`, ...args);
           }
         }
 
@@ -4586,18 +4711,20 @@
             async init() {
               // Check global state first to prevent duplicate initialization across component instances
               if (globalAppInitialized) {
-                console.log("🚀 Application already initialized globally, skipping...");
+                utils.debugLog(
+                  "🚀 Application already initialized globally, skipping..."
+                );
                 return true;
               }
 
               if (globalAppInitializing) {
-                console.log(
+                utils.debugLog(
                   "🚀 Application initialization already in progress globally..."
                 );
                 return false;
               }
 
-              console.log("🚀 Initializing Dev Admin Dashboard...");
+              utils.debugLog("🚀 Initializing Dev Admin Dashboard...");
               globalAppInitializing = true;
               this.initializing = true;
 
@@ -4630,7 +4757,7 @@
                 await this._initializeComponents();
                 this.steps.components = true;
 
-                console.log(
+                utils.debugLog(
                   "✅ Dev Admin Dashboard initialization completed successfully"
                 );
 
@@ -4639,10 +4766,13 @@
                 globalAppInitialized = true;
 
                 // Post-initialization tasks
-                console.log('✅ Application fully initialized and ready');
+                utils.debugLog(
+                  "App",
+                  "✅ Application fully initialized and ready"
+                );
 
                 // 🛡️ Initialize user interaction tracking for OAuth security
-                if (typeof initUserInteractionTracking === 'function') {
+                if (typeof initUserInteractionTracking === "function") {
                   initUserInteractionTracking();
                 }
 
@@ -4650,7 +4780,7 @@
                 try {
                   app.toastService.refreshIcons();
                 } catch (iconError) {
-                  console.warn('⚠️ Icon refresh failed:', iconError);
+                  console.warn("⚠️ Icon refresh failed:", iconError);
                 }
 
                 return true;
@@ -4675,7 +4805,7 @@
              * Wait for all script dependencies to load
              */
             async _initializeScripts() {
-              console.log("📦 Waiting for script dependencies...");
+              utils.debugLog("App", "📦 Waiting for script dependencies...");
 
               const requiredScripts = [
                 { name: "API Client", check: () => window.apiClientLoaded },
@@ -4700,14 +4830,18 @@
                 );
 
                 if (stillLoading.length === 0) {
-                  console.log("📦 All script dependencies loaded successfully");
+                  utils.debugLog(
+                    "App",
+                    "📦 All script dependencies loaded successfully"
+                  );
                   return;
                 }
 
                 // Log progress
                 if (Date.now() - startTime > 2000) {
                   // Log after 2 seconds
-                  console.log(
+                  utils.debugLog(
+                    "App",
                     `📦 Waiting for: ${stillLoading
                       .map(s => s.name)
                       .join(", ")}`
@@ -4726,14 +4860,14 @@
              * Wait for Alpine.js to be ready
              */
             async _initializeAlpine() {
-              console.log("🏔️ Waiting for Alpine.js...");
+              utils.debugLog("App", "🏔️ Waiting for Alpine.js...");
 
               const maxWaitTime = 5000; // 5 seconds
               const startTime = Date.now();
 
               while (Date.now() - startTime < maxWaitTime) {
                 if (typeof Alpine !== "undefined" && Alpine.store) {
-                  console.log("🏔️ Alpine.js ready");
+                  utils.debugLog("App", "🏔️ Alpine.js ready");
                   return;
                 }
                 await new Promise(resolve => setTimeout(resolve, 50));
@@ -4746,33 +4880,33 @@
              * Initialize Alpine store
              */
             async _initializeStore() {
-              console.log("🏪 Initializing Alpine store...");
+              utils.debugLog("App", "🏪 Initializing Alpine store...");
 
               if (!Alpine.store) {
                 throw new Error("Alpine store not available");
               }
 
               // Store is initialized via Alpine's store system
-              console.log("🏪 Alpine store initialized");
+              utils.debugLog("App", "🏪 Alpine store initialized");
             },
 
             /**
              * Initialize API client
              */
             async _initializeApiClient() {
-              console.log("🔌 Initializing API client...");
+              utils.debugLog("App", "🔌 Initializing API client...");
 
               // Initialize the API client with secure token provider
               await app.apiService.initClientAsync();
 
-              console.log("🔌 API client initialized successfully");
+              utils.debugLog("App", "🔌 API client initialized successfully");
             },
 
             /**
              * Initialize Supabase configuration
              */
             async _initializeSupabase() {
-              console.log("🗄️ Initializing Supabase...");
+              utils.debugLog("App", "🗄️ Initializing Supabase...");
 
               // Get Supabase configuration from settings endpoint
               const settingsResponse = await fetch("/dev/settings");
@@ -4802,14 +4936,14 @@
                 config.supabaseKey
               );
 
-              console.log("🗄️ Supabase initialized successfully - SINGLE INSTANCE");
+              utils.debugLog("App", "🗄️ Supabase initialized successfully");
             },
 
             /**
              * Initialize AuthService
              */
             async _initializeAuthService() {
-              console.log("🔐 Initializing AuthService...");
+              utils.debugLog("App", "🔐 Initializing AuthService...");
 
               const appStore = Alpine.store("app");
 
@@ -4823,27 +4957,43 @@
               authService = new AuthService({
                 supabaseUrl: appStore.supabaseUrl,
                 supabaseKey: appStore.supabaseKey,
-                debug: true,
+                // debug: uses global APP_CONFIG.DEBUG by default
 
                 // Callback configurations
                 onSuccess: (message, type, data) => {
                   app.toastService.show(message, "success");
-                  console.log(`✅ Auth Success [${type}]:`, message, data);
+                  utils.debugLog(
+                    "Auth",
+                    `✅ Success [${type}]:`,
+                    message,
+                    data
+                  );
                 },
 
                 onError: (message, type, error) => {
                   app.toastService.show(message, "error");
-                  console.error(`❌ Auth Error [${type}]:`, message, error);
+                  utils.importantLog(
+                    "error",
+                    "Auth",
+                    `Error [${type}]:`,
+                    message,
+                    error
+                  );
                 },
 
                 onWarning: (message, type) => {
                   app.toastService.show(message, "warning");
-                  console.warn(`⚠️ Auth Warning [${type}]:`, message);
+                  utils.importantLog(
+                    "warn",
+                    "Auth",
+                    `Warning [${type}]:`,
+                    message
+                  );
                 },
 
                 // Auth state change callbacks
                 onSignedIn: async (user, session) => {
-                  console.log("User signed in via AuthService:", user.email);
+                  utils.debugLog("AuthService", "User signed in:", user.email);
 
                   // Update Alpine store
                   appStore.user = user;
@@ -4861,7 +5011,9 @@
                   try {
                     const userInfo = await authService.getUserInfo();
                     if (!userInfo.success || !userInfo.session?.access_token) {
-                      console.warn("Session not fully established yet via AuthService, retrying...");
+                      console.warn(
+                        "Session not fully established yet via AuthService, retrying..."
+                      );
                       await new Promise(resolve => setTimeout(resolve, 500));
                     }
                   } catch (error) {
@@ -4877,9 +5029,17 @@
                     if (response.data?.available_roles) {
                       appStore.availableRoles = response.data.available_roles;
                     }
-                    console.log("✅ Backend SIGNED_IN callback successful");
+                    utils.debugLog(
+                      "Backend",
+                      "✅ SIGNED_IN callback successful"
+                    );
                   } catch (error) {
-                    console.warn("Backend SIGNED_IN callback failed:", error);
+                    utils.importantLog(
+                      "warn",
+                      "Backend",
+                      "SIGNED_IN callback failed:",
+                      error
+                    );
                   }
 
                   // Get default page for user
@@ -4889,26 +5049,40 @@
                       false
                     );
                     appStore.currentPage = defaultPage;
-                    console.log(`✅ Navigated to default page: ${defaultPage}`);
+                    utils.debugLog(
+                      "Navigation",
+                      `✅ Navigated to default page: ${defaultPage}`
+                    );
                   } catch (error) {
-                    console.warn("Failed to get default page, using fallback:", error);
+                    utils.importantLog(
+                      "warn",
+                      "Navigation",
+                      "Failed to get default page, using fallback:",
+                      error
+                    );
                     // Fallback to sys-health page for a functional experience
                     appStore.currentPage = "sys-health";
-                    console.log("✅ Using fallback page: sys-health");
+                    utils.debugLog(
+                      "Navigation",
+                      "✅ Using fallback page: sys-health"
+                    );
                   }
 
                   // Ensure app view is visible (remove x-cloak if needed)
                   setTimeout(() => {
                     const appView = document.querySelector('[x-show*="app"]');
-                    if (appView && appView.hasAttribute('x-cloak')) {
-                      appView.removeAttribute('x-cloak');
-                      console.log('Removed x-cloak from app view to ensure visibility');
+                    if (appView && appView.hasAttribute("x-cloak")) {
+                      appView.removeAttribute("x-cloak");
+                      utils.debugLog(
+                        "UI",
+                        "Removed x-cloak from app view to ensure visibility"
+                      );
                     }
                   }, 100);
                 },
 
                 onSignedOut: async () => {
-                  console.log("User signed out via AuthService");
+                  utils.debugLog("AuthService", "User signed out");
 
                   // Clear Alpine store
                   appStore.user = null;
@@ -4917,10 +5091,24 @@
                   Alpine.store("auth").loading = false;
 
                   // Trigger backend callback
+                  // Note: The token provider will use window.pendingSignOutToken if available
                   try {
-                    await app.apiService.client.postAuthCallback("SIGNED_OUT", {});
+                    await app.apiService.client.postAuthCallback(
+                      "SIGNED_OUT",
+                      {}
+                    );
                   } catch (error) {
-                    console.warn("Backend SIGNED_OUT callback failed:", error);
+                    // Clean up any remaining pending token
+                    if (window.pendingSignOutToken) {
+                      delete window.pendingSignOutToken;
+                    }
+
+                    utils.importantLog(
+                      "warn",
+                      "Backend",
+                      "SIGNED_OUT callback failed:",
+                      error
+                    );
                   }
 
                   // Navigate to auth
@@ -4929,7 +5117,7 @@
                 },
 
                 onTokenRefreshed: async (user, session) => {
-                  console.log("Token refreshed via AuthService");
+                  utils.debugLog("AuthService", "Token refreshed");
                   appStore.session = session;
 
                   try {
@@ -4938,15 +5126,17 @@
                       {}
                     );
                   } catch (error) {
-                    console.warn(
-                      "Backend TOKEN_REFRESHED callback failed:",
+                    utils.importantLog(
+                      "warn",
+                      "Backend",
+                      "TOKEN_REFRESHED callback failed:",
                       error
                     );
                   }
                 },
 
                 onUserUpdated: async (user, session) => {
-                  console.log("User updated via AuthService");
+                  utils.debugLog("AuthService", "User updated");
                   appStore.user = user;
                   appStore.session = session;
 
@@ -4956,21 +5146,24 @@
                       {}
                     );
                   } catch (error) {
-                    console.warn(
-                      "Backend USER_UPDATED callback failed:",
+                    utils.importantLog(
+                      "warn",
+                      "Backend",
+                      "USER_UPDATED callback failed:",
                       error
                     );
                   }
                 },
 
                 onPasswordRecovery: () => {
-                  console.log("Password recovery initiated via AuthService");
+                  utils.debugLog("AuthService", "Password recovery initiated");
                   appStore.showPasswordRecoveryModal = true;
                 },
 
                 onInitialSession: session => {
-                  console.log(
-                    "Initial session detected via AuthService:",
+                  utils.debugLog(
+                    "AuthService",
+                    "Initial session detected:",
                     session?.user?.email || "none"
                   );
 
@@ -4991,10 +5184,14 @@
 
                     // Ensure auth view is visible by removing x-cloak if needed
                     setTimeout(() => {
-                      const authView = document.querySelector('[x-show*="auth"]');
-                      if (authView && authView.hasAttribute('x-cloak')) {
-                        authView.removeAttribute('x-cloak');
-                        console.log('Removed x-cloak from auth view to ensure visibility');
+                      const authView = document.querySelector(
+                        '[x-show*="auth"]'
+                      );
+                      if (authView && authView.hasAttribute("x-cloak")) {
+                        authView.removeAttribute("x-cloak");
+                        utils.debugLog(
+                          "Removed x-cloak from auth view to ensure visibility"
+                        );
                       }
                     }, 100);
                   }
@@ -5038,7 +5235,21 @@
                     const userInfo = await authService.getUserInfo();
 
                     if (!userInfo.success) {
-                      console.warn(
+                      // Check if we have a pending sign out token for SIGNED_OUT callbacks
+                      if (window.pendingSignOutToken) {
+                        utils.debugLog(
+                          "TokenProvider",
+                          "🔐 Using pending sign out token for logout callback"
+                        );
+                        const token = window.pendingSignOutToken;
+                        // Clear the token after use to prevent reuse
+                        delete window.pendingSignOutToken;
+                        return token;
+                      }
+
+                      utils.importantLog(
+                        "warn",
+                        "TokenProvider",
                         "Failed to get user info for token provider:",
                         userInfo.error
                       );
@@ -5046,30 +5257,69 @@
                     }
 
                     if (!userInfo.session?.access_token) {
-                      console.debug("No active session available from AuthService");
+                      // Check if we have a pending sign out token for SIGNED_OUT callbacks
+                      if (window.pendingSignOutToken) {
+                        utils.debugLog(
+                          "TokenProvider",
+                          "🔐 Using pending sign out token for logout callback"
+                        );
+                        const token = window.pendingSignOutToken;
+                        // Clear the token after use to prevent reuse
+                        delete window.pendingSignOutToken;
+                        return token;
+                      }
+
+                      utils.debugLog(
+                        "TokenProvider",
+                        "No active session available from AuthService"
+                      );
                       return null;
                     }
 
-                    console.debug(
+                    utils.debugLog(
+                      "TokenProvider",
                       "🔐 Secure token retrieved via AuthService.getUserInfo()"
                     );
                     return userInfo.session.access_token;
                   } catch (error) {
-                    console.error("❌ Token provider error:", error);
+                    // Check if we have a pending sign out token for SIGNED_OUT callbacks
+                    if (window.pendingSignOutToken) {
+                      utils.debugLog(
+                        "TokenProvider",
+                        "🔐 Using pending sign out token for logout callback (error fallback)"
+                      );
+                      const token = window.pendingSignOutToken;
+                      // Clear the token after use to prevent reuse
+                      delete window.pendingSignOutToken;
+                      return token;
+                    }
+
+                    utils.importantLog(
+                      "error",
+                      "TokenProvider",
+                      "Token provider error:",
+                      error
+                    );
                     return null;
                   }
                 });
-                console.log("🔐 API client token provider configured");
+                utils.debugLog(
+                  "TokenProvider",
+                  "🔐 API client token provider configured"
+                );
               }
 
-              console.log("✅ AuthService initialized successfully");
+              utils.debugLog("App", "✅ AuthService initialized successfully");
             },
 
             /**
              * Initialize application components
              */
             async _initializeComponents() {
-              console.log("🧩 Initializing application components...");
+              utils.debugLog(
+                "App",
+                "🧩 Initializing application components..."
+              );
 
               // Initialize Lucide icons using the debounced refresh method
               app.toastService.refreshIcons();
@@ -5077,14 +5327,19 @@
               // Theme toggle is automatically initialized by Alpine.js x-init directive
               // No manual initialization needed here to prevent duplicates
 
-              console.log("🧩 Application components initialized");
+              utils.debugLog("App", "🧩 Application components initialized");
             },
 
             /**
              * Handle initialization errors
              */
             _handleInitializationError(error) {
-              console.error("🚨 Initialization error:", error);
+              utils.importantLog(
+                "error",
+                "App",
+                "🚨 Initialization error:",
+                error
+              );
 
               // Update loading message
               const appStore = Alpine.store("app");
@@ -5136,7 +5391,9 @@
               // 🛡️ SECURITY: Prevent automatic OAuth calls
               // Only allow OAuth if it's triggered by a trusted user event
               if (!this._isUserInitiated()) {
-                console.warn(`🛡️ Blocked automatic OAuth call for ${provider} - not user initiated`);
+                console.warn(
+                  `🛡️ Blocked automatic OAuth call for ${provider} - not user initiated`
+                );
                 return;
               }
 
@@ -5146,7 +5403,7 @@
                 return;
               }
 
-              console.log(
+              utils.debugLog(
                 `Attempting ${provider} OAuth login via AuthService...`
               );
               Alpine.store("auth").loading = true;
@@ -5181,22 +5438,34 @@
                 const now = Date.now();
                 const lastUserEvent = window._lastUserEventTime || 0;
                 const timeSinceLastEvent = now - lastUserEvent;
-                const lastEventType = window._lastUserEventType || 'none';
+                const lastEventType = window._lastUserEventType || "none";
 
                 // Be more strict: only allow OAuth if there was a click event within the last 500ms
                 // This prevents automatic calls triggered by other events like focus, keydown, etc.
-                if (timeSinceLastEvent < 500 && (lastEventType === 'click' || lastEventType === 'mousedown')) {
-                  console.log(`✅ OAuth call is user-initiated (${lastEventType} ${timeSinceLastEvent}ms ago)`);
+                if (
+                  timeSinceLastEvent < 500 &&
+                  (lastEventType === "click" || lastEventType === "mousedown")
+                ) {
+                  utils.debugLog(
+                    `✅ OAuth call is user-initiated (${lastEventType} ${timeSinceLastEvent}ms ago)`
+                  );
                   return true;
                 }
 
                 // Also check if we're in the middle of handling a trusted click event
-                if (window._handlingTrustedEvent && window._currentEventType === 'click') {
-                  console.log(`✅ OAuth call is within trusted click event handler`);
+                if (
+                  window._handlingTrustedEvent &&
+                  window._currentEventType === "click"
+                ) {
+                  utils.debugLog(
+                    `✅ OAuth call is within trusted click event handler`
+                  );
                   return true;
                 }
 
-                console.warn(`🛡️ Blocked automatic OAuth call - not user-initiated (last event: ${lastEventType} ${timeSinceLastEvent}ms ago)`);
+                console.warn(
+                  `🛡️ Blocked automatic OAuth call - not user-initiated (last event: ${lastEventType} ${timeSinceLastEvent}ms ago)`
+                );
                 return false;
               } catch (error) {
                 console.warn(`⚠️ Could not verify user initiation:`, error);
@@ -5230,7 +5499,10 @@
             },
 
             async signIn(authSvc) {
-              console.log("Attempting email login via AuthService...");
+              utils.debugLog(
+                "Auth",
+                "Attempting email login via AuthService..."
+              );
 
               try {
                 // Mark this as a first-time login attempt
@@ -5248,14 +5520,22 @@
                   throw new Error(result.error);
                 }
               } catch (error) {
-                console.error("Email login failed:", error);
+                utils.importantLog(
+                  "error",
+                  "Auth",
+                  "Email login failed:",
+                  error
+                );
                 // Reset flag on error - error already shown by AuthService
                 Alpine.store("app").isFirstTimeLogin = false;
               }
             },
 
             async signUp(authSvc) {
-              console.log("Attempting email signup via AuthService...");
+              utils.debugLog(
+                "Auth",
+                "Attempting email signup via AuthService..."
+              );
 
               try {
                 const result = await authSvc.register(
@@ -5270,7 +5550,12 @@
                   throw new Error(result.error);
                 }
               } catch (error) {
-                console.error("Email signup failed:", error);
+                utils.importantLog(
+                  "error",
+                  "Auth",
+                  "Email signup failed:",
+                  error
+                );
                 // Error already shown by AuthService
               }
             },
@@ -5484,11 +5769,14 @@
                     const userInfo = await authService.getUserInfo();
                     if (userInfo.success && userInfo.session?.access_token) {
                       // Store the access token temporarily for the SIGNED_OUT event
-                      window.pendingSignOutToken = userInfo.session.access_token;
+                      window.pendingSignOutToken =
+                        userInfo.session.access_token;
                     }
                   } catch (sessionError) {
                     // If getting session fails, continue with logout anyway
-                    console.warn(
+                    utils.importantLog(
+                      "warn",
+                      "Auth",
                       "Could not get session for logout:",
                       sessionError
                     );
@@ -5502,7 +5790,9 @@
                       error.message.includes("session missing") ||
                       error.message.includes("Auth session missing")
                     ) {
-                      console.warn(
+                      utils.importantLog(
+                        "warn",
+                        "Auth",
                         "Session already missing, proceeding with local logout"
                       );
                       // Force local logout
@@ -5584,7 +5874,9 @@
 
             forcePageUpdate() {
               const currentPage = Alpine.store("app").currentPage;
-              console.log(`🔄 Force updating page visibility for: ${currentPage}`);
+              // console.log(
+              //   `🔄 Force updating page visibility for: ${currentPage}`
+              // );
 
               // Hide all x-show pages first
               const allPageElements = document.querySelectorAll(
@@ -5593,8 +5885,8 @@
               allPageElements.forEach(el => {
                 el.style.display = "none";
                 // Re-add x-cloak to hidden pages to prevent flashing
-                if (!el.hasAttribute('x-cloak')) {
-                  el.setAttribute('x-cloak', '');
+                if (!el.hasAttribute("x-cloak")) {
+                  el.setAttribute("x-cloak", "");
                 }
               });
 
@@ -5604,11 +5896,13 @@
               );
               if (targetPageElement) {
                 // Remove x-cloak and show the page
-                targetPageElement.removeAttribute('x-cloak');
+                targetPageElement.removeAttribute("x-cloak");
                 targetPageElement.style.display = "block";
-                console.log(`✅ Made page visible: ${currentPage}`);
-              } else {
-                console.warn(`❌ Could not find page element for: ${currentPage}`);
+                // console.log(`✅ Made page visible: ${currentPage}`);
+                // } else {
+                //   console.warn(
+                //     `❌ Could not find page element for: ${currentPage}`
+                //   );
               }
 
               // Clean up all template-rendered content to prevent duplication
@@ -5628,8 +5922,10 @@
                     `[x-show="$store.app.currentPage === '${currentPage}'"]`
                   );
                   if (finalCheck && !finalCheck.offsetParent) {
-                    console.warn(`⚠️  Page ${currentPage} still not visible after Alpine.js processing`);
-                    finalCheck.removeAttribute('x-cloak');
+                    console.warn(
+                      `⚠️  Page ${currentPage} still not visible after Alpine.js processing`
+                    );
+                    finalCheck.removeAttribute("x-cloak");
                     finalCheck.style.display = "block";
                   }
                 }, 100);
@@ -7973,7 +8269,12 @@
 
         // Global error handlers to prevent unhandled promise rejections
         window.addEventListener("unhandledrejection", event => {
-          console.warn("Unhandled promise rejection:", event.reason);
+          utils.importantLog(
+            "warn",
+            "App",
+            "Unhandled promise rejection:",
+            event.reason
+          );
           // Prevent the error from being logged to console as uncaught
           event.preventDefault();
         });
@@ -8005,38 +8306,52 @@
          * This tracks genuine user events to ensure OAuth is only triggered by user actions
          */
         function initUserInteractionTracking() {
-          console.log("🛡️ Initializing user interaction tracking for OAuth security");
+          utils.debugLog(
+            "🛡️ Initializing user interaction tracking for OAuth security"
+          );
 
           // Track the last time a user performed a genuine interaction
           window._lastUserEventTime = 0;
-          window._lastUserEventType = 'none';
+          window._lastUserEventType = "none";
           window._handlingTrustedEvent = false;
-          window._currentEventType = 'none';
+          window._currentEventType = "none";
 
           // List of events that indicate genuine user interaction
-          const userEvents = ['click', 'keydown', 'keyup', 'mousedown', 'mouseup', 'touchstart', 'touchend'];
+          const userEvents = [
+            "click",
+            "keydown",
+            "keyup",
+            "mousedown",
+            "mouseup",
+            "touchstart",
+            "touchend"
+          ];
 
           userEvents.forEach(eventType => {
-            document.addEventListener(eventType, (event) => {
-              // Only track trusted events (not programmatically generated)
-              if (event.isTrusted) {
-                window._lastUserEventTime = Date.now();
-                window._lastUserEventType = eventType;
+            document.addEventListener(
+              eventType,
+              event => {
+                // Only track trusted events (not programmatically generated)
+                if (event.isTrusted) {
+                  window._lastUserEventTime = Date.now();
+                  window._lastUserEventType = eventType;
 
-                // Set flag during event handling
-                window._handlingTrustedEvent = true;
-                window._currentEventType = eventType;
+                  // Set flag during event handling
+                  window._handlingTrustedEvent = true;
+                  window._currentEventType = eventType;
 
-                // Clear flag after a short delay
-                setTimeout(() => {
-                  window._handlingTrustedEvent = false;
-                  window._currentEventType = 'none';
-                }, 100);
-              }
-            }, true); // Use capture phase to catch events early
+                  // Clear flag after a short delay
+                  setTimeout(() => {
+                    window._handlingTrustedEvent = false;
+                    window._currentEventType = "none";
+                  }, 100);
+                }
+              },
+              true
+            ); // Use capture phase to catch events early
           });
 
-          console.log("✅ User interaction tracking initialized");
+          utils.debugLog("✅ User interaction tracking initialized");
         }
 
         // Note: Application initialization is now handled by Alpine.js x-init on body tag
@@ -8079,7 +8394,7 @@
               // Just set a fallback timeout to show auth if nothing happens
               setTimeout(() => {
                 if (this.currentView === "loading" && !this.user) {
-                  console.log(
+                  utils.debugLog(
                     "No user detected after timeout, showing auth view"
                   );
                   this.currentView = "auth";
@@ -8097,16 +8412,24 @@
             // },
 
             selectPage(pageId) {
-              console.log(`📄 Navigating to page: ${pageId}`);
+              utils.debugLog(`📄 Navigating to page: ${pageId}`);
 
               // Validate page ID
               const validPages = [
-                "profile", "user-management", "onboarding", "sys-health",
-                "rbac", "app-state", "request-state", "metadata"
+                "profile",
+                "user-management",
+                "onboarding",
+                "sys-health",
+                "rbac",
+                "app-state",
+                "request-state",
+                "metadata"
               ];
 
               if (!validPages.includes(pageId)) {
-                console.warn(`Invalid page ID: ${pageId}. Falling back to sys-health.`);
+                console.warn(
+                  `Invalid page ID: ${pageId}. Falling back to sys-health.`
+                );
                 pageId = "sys-health";
               }
 
@@ -8126,7 +8449,11 @@
               setTimeout(() => {
                 try {
                   // Try to use pageManager if available
-                  if (window.app && window.app.pageManager && typeof window.app.pageManager === 'function') {
+                  if (
+                    window.app &&
+                    window.app.pageManager &&
+                    typeof window.app.pageManager === "function"
+                  ) {
                     const pageManagerInstance = window.app.pageManager();
                     if (pageManagerInstance.forcePageUpdate) {
                       pageManagerInstance.forcePageUpdate();
@@ -8143,16 +8470,20 @@
                     `[x-show="$store.app.currentPage === '${pageId}'"]`
                   );
                   if (pageElement) {
-                    pageElement.removeAttribute('x-cloak');
+                    pageElement.removeAttribute("x-cloak");
                     pageElement.style.display = "block";
-                    console.log(`✅ Manually made page visible: ${pageId}`);
-                  } else {
-                    console.warn(`❌ Could not find page element for: ${pageId}`);
+                    //   console.log(`✅ Manually made page visible: ${pageId}`);
+                    // } else {
+                    //   console.warn(
+                    //     `❌ Could not find page element for: ${pageId}`
+                    //   );
                   }
                 }
               }, 50);
 
-              console.log(`✅ Successfully navigated to page: ${oldPage} → ${pageId}`);
+              utils.debugLog(
+                `✅ Successfully navigated to page: ${oldPage} → ${pageId}`
+              );
             },
 
             // Utility method for external page navigation
