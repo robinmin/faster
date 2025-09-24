@@ -173,6 +173,14 @@ class AuthService(BasePlugin):
         """
         return self._router_info.find_route(method, path)
 
+    def is_public_route(self, method: str, path: str) -> bool:
+        """
+        Check if route is public.
+        Delegates to RouterInfo for implementation.
+        """
+        route_item = self.find_route(method, path)
+        return route_item is not None and hasattr(route_item, "tags") and "public" in route_item["tags"]
+
     async def check_access(self, user_roles: set[str], allowed_roles: set[str]) -> bool:
         """Check if user has access to a given list of tags."""
         return await self._router_info.check_access(user_roles, allowed_roles)
