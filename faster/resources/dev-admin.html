@@ -2820,6 +2820,22 @@
     <!-- JavaScript Application -->
     <script>
       // ===================================================================
+      // GLOBAL ERROR HANDLERS
+      // ===================================================================
+
+      // Handle unhandled promise rejections
+      window.addEventListener('unhandledrejection', function(event) {
+        console.warn('🚨 Unhandled promise rejection:', event.reason);
+        // Prevent the default browser behavior of logging to console in a disruptive way
+        event.preventDefault();
+      });
+
+      // Handle general errors
+      window.addEventListener('error', function(event) {
+        console.warn('🚨 Unhandled error:', event.error || event.message);
+      });
+
+      // ===================================================================
       // APPLICATION INITIALIZATION SYSTEM
       // ===================================================================
 
@@ -4482,8 +4498,16 @@
           async _handleSignedOut() {
             this._log("User signed out");
 
+            // Clear internal state immediately
+            this._currentUser = null;
+            this._currentSession = null;
+
             if (this.config.onSignedOut) {
-              await this.config.onSignedOut();
+              try {
+                await this.config.onSignedOut();
+              } catch (error) {
+                this._logImportant("warn", "Error in onSignedOut callback:", error);
+              }
             }
           }
 
@@ -4897,9 +4921,14 @@
               utils.debugLog("App", "🔌 Initializing API client...");
 
               // Initialize the API client with secure token provider
-              await app.apiService.initClientAsync();
-
-              utils.debugLog("App", "🔌 API client initialized successfully");
+              try {
+                await app.apiService.initClientAsync();
+                utils.debugLog("App", "🔌 API client initialized successfully");
+              } catch (error) {
+                utils.importantLog("warn", "API", "API client initialization failed, continuing without it:", error);
+                // Continue initialization even if API client fails
+                // The app can still work in limited functionality mode
+              }
             },
 
             /**
@@ -4909,14 +4938,29 @@
               utils.debugLog("App", "🗄️ Initializing Supabase...");
 
               // Get Supabase configuration from settings endpoint
-              const settingsResponse = await fetch("/dev/settings");
-              if (!settingsResponse.ok) {
+              let settingsResponse;
+              try {
+                settingsResponse = await fetch("/dev/settings");
+                if (!settingsResponse.ok) {
+                  throw new Error(
+                    `Failed to fetch settings: ${settingsResponse.status}`
+                  );
+                }
+              } catch (fetchError) {
                 throw new Error(
-                  `Failed to fetch settings: ${settingsResponse.status}`
+                  `Network error fetching settings: ${fetchError.message}`
                 );
               }
 
-              const settingsData = await settingsResponse.json();
+              let settingsData;
+              try {
+                settingsData = await settingsResponse.json();
+              } catch (jsonError) {
+                throw new Error(
+                  `Failed to parse settings response: ${jsonError.message}`
+                );
+              }
+
               const config = settingsData?.data;
 
               if (!config?.supabaseUrl || !config?.supabaseKey) {
@@ -5022,17 +5066,19 @@
 
                   // Trigger backend callback
                   try {
-                    const response = await app.apiService.client.postAuthCallback(
-                      "SIGNED_IN",
-                      {}
-                    );
-                    if (response.data?.available_roles) {
-                      appStore.availableRoles = response.data.available_roles;
+                    if (app.apiService.client && typeof app.apiService.client.postAuthCallback === 'function') {
+                      const response = await app.apiService.client.postAuthCallback(
+                        "SIGNED_IN",
+                        {}
+                      );
+                      if (response.data?.available_roles) {
+                        appStore.availableRoles = response.data.available_roles;
+                      }
+                      utils.debugLog(
+                        "Backend",
+                        "✅ SIGNED_IN callback successful"
+                      );
                     }
-                    utils.debugLog(
-                      "Backend",
-                      "✅ SIGNED_IN callback successful"
-                    );
                   } catch (error) {
                     utils.importantLog(
                       "warn",
@@ -5090,25 +5136,36 @@
                   Alpine.store("auth").user = null;
                   Alpine.store("auth").loading = false;
 
-                  // Trigger backend callback
+                  // Trigger backend callback with improved error handling
                   // Note: The token provider will use window.pendingSignOutToken if available
                   try {
-                    await app.apiService.client.postAuthCallback(
-                      "SIGNED_OUT",
-                      {}
-                    );
+                    if (app.apiService.client && typeof app.apiService.client.postAuthCallback === 'function') {
+                      await app.apiService.client.postAuthCallback(
+                        "SIGNED_OUT",
+                        {}
+                      );
+                    }
                   } catch (error) {
                     // Clean up any remaining pending token
                     if (window.pendingSignOutToken) {
                       delete window.pendingSignOutToken;
                     }
 
-                    utils.importantLog(
-                      "warn",
-                      "Backend",
-                      "SIGNED_OUT callback failed:",
-                      error
-                    );
+                    // Only log as warning for 401/403 errors, not as serious errors
+                    if (error.status === 401 || error.status === 403) {
+                      utils.debugLog(
+                        "Backend",
+                        "SIGNED_OUT callback returned 401/403 (expected for signed out user):",
+                        error.message
+                      );
+                    } else {
+                      utils.importantLog(
+                        "warn",
+                        "Backend",
+                        "SIGNED_OUT callback failed:",
+                        error
+                      );
+                    }
                   }
 
                   // Navigate to auth
@@ -5121,10 +5178,12 @@
                   appStore.session = session;
 
                   try {
-                    await app.apiService.client.postAuthCallback(
-                      "TOKEN_REFRESHED",
-                      {}
-                    );
+                    if (app.apiService.client && typeof app.apiService.client.postAuthCallback === 'function') {
+                      await app.apiService.client.postAuthCallback(
+                        "TOKEN_REFRESHED",
+                        {}
+                      );
+                    }
                   } catch (error) {
                     utils.importantLog(
                       "warn",
@@ -5141,10 +5200,12 @@
                   appStore.session = session;
 
                   try {
-                    await app.apiService.client.postAuthCallback(
-                      "USER_UPDATED",
-                      {}
-                    );
+                    if (app.apiService.client && typeof app.apiService.client.postAuthCallback === 'function') {
+                      await app.apiService.client.postAuthCallback(
+                        "USER_UPDATED",
+                        {}
+                      );
+                    }
                   } catch (error) {
                     utils.importantLog(
                       "warn",
