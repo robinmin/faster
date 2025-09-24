@@ -50,146 +50,20 @@ class TestNewAuthEndpoints:
     # =============================================================================
     # Password Management Tests
     # =============================================================================
-
-    @pytest.mark.asyncio
-    async def test_change_password_success(self, client: TestClient) -> None:
-        """Test change password endpoint with valid credentials."""
-        mock_user = self.create_mock_user()
-
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch.object(
-            AuthService.get_instance(), "change_password", new_callable=AsyncMock
-        ) as mock_change_password:
-            mock_change_password.return_value = True
-
-            response = client.post(
-                "/auth/password/change", json={"current_password": "old_password", "new_password": "new_password"}
-            )
-
-            assert response.status_code == status.HTTP_200_OK
-            data = response.json()
-            assert data["status"] == "success"
-            assert "Password changed successfully" in data["message"]
-            assert data["data"]["user_id"] == "user-123"
-
-    @pytest.mark.asyncio
-    async def test_change_password_failure(self, client: TestClient) -> None:
-        """Test change password endpoint with invalid credentials."""
-        mock_user = self.create_mock_user()
-
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        with patch.object(
-            AuthService.get_instance(), "change_password", new_callable=AsyncMock
-        ) as mock_change_password:
-            mock_change_password.return_value = False
-
-            response = client.post(
-                "/auth/password/change", json={"current_password": "wrong_password", "new_password": "new_password"}
-            )
-
-            assert response.status_code == status.HTTP_200_OK
-            data = response.json()
-            assert data["status"] == "failed"
-            assert "Failed to change password" in data["message"]
-
-    @pytest.mark.asyncio
-    async def test_change_password_missing_data(self, client: TestClient) -> None:
-        """Test change password endpoint with missing data."""
-        mock_user = self.create_mock_user()
-
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return mock_user
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        response = client.post(
-            "/auth/password/change",
-            json={"current_password": "old_password"},  # Missing new_password
-        )
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["status"] == "failed"
-        assert "required" in data["message"]
-
-    @pytest.mark.asyncio
-    async def test_change_password_unauthenticated(self, client: TestClient) -> None:
-        """Test change password endpoint without authentication."""
-
-        async def mock_dependency(request: Request) -> UserProfileData | None:
-            return None
-
-        cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
-
-        response = client.post(
-            "/auth/password/change", json={"current_password": "old_password", "new_password": "new_password"}
-        )
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["status"] == "failed"
-        assert "Authentication required" in data["message"]
-
-    @pytest.mark.asyncio
-    async def test_initiate_password_reset_success(self, client: TestClient) -> None:
-        """Test initiate password reset endpoint."""
-        with patch.object(AuthService.get_instance(), "initiate_password_reset", new_callable=AsyncMock) as mock_reset:
-            mock_reset.return_value = True
-
-            response = client.post("/auth/password/reset/initiate", json={"email": "test@example.com"})
-
-            assert response.status_code == status.HTTP_200_OK
-            data = response.json()
-            assert data["status"] == "success"
-            assert "Password reset email sent" in data["message"]
-
-    @pytest.mark.asyncio
-    async def test_initiate_password_reset_missing_email(self, client: TestClient) -> None:
-        """Test initiate password reset endpoint without email."""
-        response = client.post("/auth/password/reset/initiate", json={})
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["status"] == "failed"
-        assert "Email address is required" in data["message"]
-
-    @pytest.mark.asyncio
-    async def test_confirm_password_reset_success(self, client: TestClient) -> None:
-        """Test confirm password reset endpoint."""
-        with patch.object(AuthService.get_instance(), "confirm_password_reset", new_callable=AsyncMock) as mock_confirm:
-            mock_confirm.return_value = True
-
-            response = client.post(
-                "/auth/password/reset/confirm", json={"token": "reset_token", "new_password": "new_password"}
-            )
-
-            assert response.status_code == status.HTTP_200_OK
-            data = response.json()
-            assert data["status"] == "success"
-            assert "Password reset completed successfully" in data["message"]
-
-    @pytest.mark.asyncio
-    async def test_confirm_password_reset_invalid_token(self, client: TestClient) -> None:
-        """Test confirm password reset endpoint with invalid token."""
-        with patch.object(AuthService.get_instance(), "confirm_password_reset", new_callable=AsyncMock) as mock_confirm:
-            mock_confirm.return_value = False
-
-            response = client.post(
-                "/auth/password/reset/confirm", json={"token": "invalid_token", "new_password": "new_password"}
-            )
-
-            assert response.status_code == status.HTTP_200_OK
-            data = response.json()
-            assert data["status"] == "failed"
-            assert "Invalid or expired reset token" in data["message"]
+    #
+    # NOTE: Password management tests have been removed as password operations
+    # are now handled directly by Supabase Auth via the frontend AuthService.
+    # This follows Supabase best practices for client-side auth operations.
+    #
+    # Removed test methods:
+    # - test_change_password_success
+    # - test_change_password_failure
+    # - test_change_password_missing_data
+    # - test_change_password_unauthenticated
+    # - test_initiate_password_reset_success
+    # - test_initiate_password_reset_missing_email
+    # - test_confirm_password_reset_success
+    # - test_confirm_password_reset_invalid_token
 
     # =============================================================================
     # Account Management Tests
@@ -601,12 +475,12 @@ class TestNewAuthEndpoints:
         cast(FastAPI, client.app).dependency_overrides[get_current_user] = mock_dependency
 
         with patch.object(
-            AuthService.get_instance(), "change_password", new_callable=AsyncMock
-        ) as mock_change_password:
-            mock_change_password.side_effect = Exception("Database connection failed")
+            AuthService.get_instance(), "deactivate", new_callable=AsyncMock
+        ) as mock_deactivate:
+            mock_deactivate.side_effect = Exception("Database connection failed")
 
             response = client.post(
-                "/auth/password/change", json={"current_password": "old_password", "new_password": "new_password"}
+                "/auth/deactivate", json={"password": "test_password"}
             )
 
             assert response.status_code == status.HTTP_200_OK
