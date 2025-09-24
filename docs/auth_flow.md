@@ -228,7 +228,7 @@ sequenceDiagram
 - Frontend receives new session data automatically
 - Maintains session continuity transparently
 
-### 8. Account Deactivation Flow
+### 8. UserDeactivation Flow
 
 ```mermaid
 sequenceDiagram
