@@ -400,12 +400,36 @@ class AuthService(BasePlugin):
     ###########################################################################
     async def check_user_onboarding_complete(self, user_id: str) -> bool:
         """
-        Check if a user has completed onboarding by checking if they have a profile.
+        Check if a user has completed onboarding by checking:
+        1. User metadata has onboarding_complete: true
+        2. Fallback to checking if they have a profile in the database
         """
+        if not self._auth_client:
+            logger.error("AuthService not properly initialized")
+            return False
+
+        # First, try to get user from Supabase Auth to check metadata
+        try:
+            user_data = await self.get_user_by_id(user_id, from_cache=True)
+            if user_data and user_data.user_metadata:
+                onboarding_complete = user_data.user_metadata.get("onboarding_complete", False)
+                if onboarding_complete:
+                    logger.debug(f"User {user_id} has completed onboarding via metadata")
+                    return True
+
+        except Exception as e:
+            logger.warning(f"Failed to check user metadata for onboarding status: {e}")
+
+        # Fallback: check if user has a profile in the database
         if not self._repository:
             logger.error("AuthService repository not initialized")
             return False
-        return await self._repository.check_user_profile_exists(user_id)
+
+        profile_exists = await self._repository.check_user_profile_exists(user_id)
+        if profile_exists:
+            logger.debug(f"User {user_id} has completed onboarding via profile existence")
+
+        return profile_exists
 
     async def get_user_by_auth_id(self, auth_id: str) -> User | None:
         """Get user from database by Supabase auth ID."""

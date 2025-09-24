@@ -1849,43 +1849,154 @@
                 </p>
               </div>
 
-              <!-- Progress Indicator -->
-              <div class="card bg-base-100 shadow-xl">
+              <!-- Enhanced Progress Indicator -->
+              <div class="card bg-gradient-to-br from-base-100 to-base-200/50 shadow-2xl border-2 border-primary/10">
                 <div class="card-body">
-                  <h2 class="card-title">
-                    <i
-                      data-lucide="target"
-                      class="w-5 h-5"
-                      aria-hidden="true"
-                    ></i>
-                    Your Setup Progress
-                  </h2>
+                  <div class="text-center mb-6">
+                    <div class="inline-flex items-center gap-3 px-4 py-2 bg-primary/10 rounded-full">
+                      <i
+                        data-lucide="rocket"
+                        class="w-5 h-5 text-primary"
+                        aria-hidden="true"
+                      ></i>
+                      <h2 class="text-lg font-bold text-primary">Setup Progress</h2>
+                    </div>
+                    <p class="text-sm text-base-content/60 mt-2">Track your onboarding journey</p>
+                  </div>
+
                   <div
-                    class="space-y-4"
+                    class="grid gap-6"
                     role="group"
                     aria-label="Setup progress"
                   >
-                    <template x-for="step in progressSteps" :key="step.id">
-                      <div class="flex items-center gap-4">
-                        <div class="flex-1">
-                          <div class="flex justify-between text-sm mb-1">
-                            <span x-text="step.label"></span>
-                            <span x-text="`${step.progress}%`"></span>
+                    <template x-for="(step, index) in progressSteps" :key="step.id">
+                      <div class="relative">
+                        <!-- Progress Step Card -->
+                        <div
+                          class="flex items-center gap-4 p-4 rounded-xl transition-all duration-300"
+                          :class="step.progress === 100 ? 'bg-success/10 border-2 border-success/20 shadow-lg' : 'bg-base-200/50 border-2 border-base-300/30'"
+                        >
+                          <!-- Step Number/Icon -->
+                          <div class="flex-shrink-0">
+                            <div
+                              class="w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300"
+                              :class="step.progress === 100 ? 'bg-success text-success-content shadow-lg' : 'bg-base-300 text-base-content'"
+                            >
+                              <template x-if="step.progress === 100">
+                                <i data-lucide="check" class="w-6 h-6" aria-hidden="true"></i>
+                              </template>
+                              <template x-if="step.progress < 100">
+                                <span class="text-lg font-bold" x-text="index + 1"></span>
+                              </template>
+                            </div>
                           </div>
-                          <progress
-                            class="progress progress-primary w-full"
-                            :value="step.progress"
-                            max="100"
-                            :aria-label="`${step.label}: ${step.progress}% complete`"
-                          ></progress>
+
+                          <!-- Step Content -->
+                          <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between mb-2">
+                              <h3
+                                class="font-semibold text-base truncate"
+                                :class="step.progress === 100 ? 'text-success' : 'text-base-content'"
+                                x-text="step.label"
+                              ></h3>
+                              <div class="flex items-center gap-2">
+                                <span
+                                  class="text-sm font-medium px-2 py-1 rounded-full"
+                                  :class="step.progress === 100 ? 'bg-success/20 text-success' : 'bg-warning/20 text-warning'"
+                                  x-text="`${step.progress}%`"
+                                ></span>
+                              </div>
+                            </div>
+
+                            <!-- Enhanced Progress Bar -->
+                            <div class="relative">
+                              <div class="w-full bg-base-300 rounded-full h-3 overflow-hidden">
+                                <div
+                                  class="h-full transition-all duration-700 ease-out rounded-full"
+                                  :class="step.progress === 100 ? 'bg-gradient-to-r from-success to-success/80' : 'bg-gradient-to-r from-primary to-secondary'"
+                                  :style="`width: ${step.progress}%`"
+                                ></div>
+                              </div>
+                              <!-- Animated shine effect for completed steps -->
+                              <template x-if="step.progress === 100">
+                                <div class="absolute inset-0 rounded-full overflow-hidden">
+                                  <div class="w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse"></div>
+                                </div>
+                              </template>
+                            </div>
+                          </div>
                         </div>
-                        <i
-                          :data-lucide="step.progress === 100 ? 'check-circle' : 'circle'"
-                          :class="step.progress === 100 ? 'w-6 h-6 text-success' : 'w-6 h-6 text-base-content/50'"
-                          aria-hidden="true"
-                        ></i>
+
+                        <!-- Connection Line (except for last item) -->
+                        <template x-if="index < progressSteps.length - 1">
+                          <div
+                            class="absolute left-6 top-20 w-0.5 h-6 transition-colors duration-300"
+                            :class="step.progress === 100 ? 'bg-success/30' : 'bg-base-300'"
+                          ></div>
+                        </template>
                       </div>
                     </template>
+                  </div>
+
+                  <!-- Overall Progress Summary -->
+                  <div class="mt-6 p-4 bg-base-200/50 rounded-xl">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-sm font-medium text-base-content/70">Overall Progress</span>
+                      <span class="text-sm font-bold text-primary" x-text="`${Math.round(progressSteps.reduce((sum, step) => sum + step.progress, 0) / progressSteps.length)}%`"></span>
+                    </div>
+                    <div class="w-full bg-base-300 rounded-full h-2 overflow-hidden">
+                      <div
+                        class="h-full bg-gradient-to-r from-primary to-secondary transition-all duration-1000 ease-out rounded-full"
+                        :style="`width: ${Math.round(progressSteps.reduce((sum, step) => sum + step.progress, 0) / progressSteps.length)}%`"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Complete Onboarding Section -->
+              <div class="card bg-base-100 shadow-xl">
+                <div class="card-body text-center">
+                  <h2 class="card-title justify-center">
+                    <i
+                      data-lucide="check-circle"
+                      class="w-5 h-5"
+                      aria-hidden="true"
+                    ></i>
+                    Complete Your Setup
+                  </h2>
+                  <p class="text-base-content/70 mb-6">
+                    You're all set! Click the button below to complete your onboarding
+                    and start using the dev admin dashboard.
+                  </p>
+                  <div class="flex gap-4 justify-center">
+                    <button
+                      @click="completeOnboarding()"
+                      class="btn btn-primary btn-lg"
+                      :class="{ 'loading': completingOnboarding }"
+                      :disabled="completingOnboarding"
+                    >
+                      <i
+                        data-lucide="check"
+                        class="w-5 h-5"
+                        x-show="!completingOnboarding"
+                        aria-hidden="true"
+                      ></i>
+                      <span x-show="!completingOnboarding">Complete Onboarding</span>
+                      <span x-show="completingOnboarding">Completing...</span>
+                    </button>
+                    <button
+                      @click="skipOnboarding()"
+                      class="btn btn-ghost btn-lg"
+                      :disabled="completingOnboarding"
+                    >
+                      <i
+                        data-lucide="skip-forward"
+                        class="w-5 h-5"
+                        aria-hidden="true"
+                      ></i>
+                      Skip for Now
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3230,7 +3341,6 @@
 
           isValidPage(pageId) {
             const validPages = [
-              "onboarding",
               "profile",
               "user-management",
               "rbac",
@@ -3306,9 +3416,6 @@
             return this.navigateToPage("sys-health");
           },
 
-          goToOnboarding() {
-            return this.navigateToPage("onboarding");
-          },
 
           goToProfile() {
             return this.navigateToPage("profile");
@@ -5741,7 +5848,6 @@
           return {
             menuItems: [
               { id: "sys-health", label: "Sys Health", icon: "heart-pulse" },
-              { id: "onboarding", label: "Onboarding", icon: "user-check" },
               { id: "profile", label: "Profile", icon: "user" },
               {
                 id: "user-management",
@@ -7338,6 +7444,7 @@
             ],
             initialized: false,
             headlineMessage: "",
+            completingOnboarding: false,
 
             init() {
               if (this.initialized) {
@@ -7384,6 +7491,89 @@
 
             getUserDisplayName() {
               return app.utils.getUserDisplayName(Alpine.store("app").user);
+            },
+
+            /**
+             * Complete the onboarding process by updating user metadata in Supabase
+             */
+            async completeOnboarding() {
+              if (this.completingOnboarding) return;
+
+              this.completingOnboarding = true;
+
+              try {
+                const user = Alpine.store("app").user;
+                if (!user) {
+                  app.toastService.show("User not authenticated", "error");
+                  return;
+                }
+
+                utils.debugLog("Onboarding", "Completing onboarding for user:", user.email);
+
+                // Get Supabase client
+                const supabase = Alpine.store("app").supabase;
+                if (!supabase) {
+                  throw new Error("Supabase client not available");
+                }
+
+                // Update user metadata to mark onboarding as complete
+                const { data, error } = await supabase.auth.updateUser({
+                  data: {
+                    ...user.user_metadata,
+                    onboarding_complete: true,
+                    onboarding_completed_at: new Date().toISOString(),
+                    onboarding_version: "1.0"
+                  }
+                });
+
+                if (error) {
+                  throw error;
+                }
+
+                utils.debugLog("Onboarding", "Successfully updated user metadata:", data);
+
+                // Update all progress steps to 100%
+                this.progressSteps.forEach(step => {
+                  step.progress = 100;
+                });
+
+                // Show success message
+                app.toastService.show("Onboarding completed successfully! Welcome aboard!", "success");
+
+                // Wait a moment for the user to see the completion
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                // Navigate to sys-health page
+                Alpine.store("app").currentPage = "sys-health";
+                app.pageNavigationService.saveCurrentPage("sys-health");
+
+                utils.debugLog("Onboarding", "Navigated to sys-health page after completion");
+
+              } catch (error) {
+                console.error("Error completing onboarding:", error);
+                app.toastService.show(`Failed to complete onboarding: ${error.message}`, "error");
+              } finally {
+                this.completingOnboarding = false;
+              }
+            },
+
+            /**
+             * Skip onboarding for now (user can complete it later)
+             */
+            async skipOnboarding() {
+              try {
+                utils.debugLog("Onboarding", "User chose to skip onboarding");
+
+                app.toastService.show("Onboarding skipped. You can complete it later from the menu.", "info");
+
+                // Navigate to sys-health page
+                Alpine.store("app").currentPage = "sys-health";
+                app.pageNavigationService.saveCurrentPage("sys-health");
+
+              } catch (error) {
+                console.error("Error skipping onboarding:", error);
+                app.toastService.show("Error occurred while skipping", "error");
+              }
             }
           };
         };
@@ -8479,7 +8669,6 @@
               const validPages = [
                 "profile",
                 "user-management",
-                "onboarding",
                 "sys-health",
                 "rbac",
                 "app-state",
