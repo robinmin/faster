@@ -1083,3 +1083,132 @@ Unfortunately, we encountered some issues during the replacement process. We nee
 5. **Update Documentation**: Update the documentation to reflect the changes made.
 
 You can use MCP playwright to access the Frontend via http://127.0.0.1:8000/dev/admin. Fix all potential issues and web console errors if any.
+
+### Complete Password Management
+
+#### Backeend
+We already integrated Supabase JS with our frontend and And we also integrated Supabase with our backend.
+
+According to the latest document of Supabase via MCP Context7, we can see the best practice for managing password for Supabase based application is using Supabase JS to directly talk with Supabase Server directly instead of talking with Supabase Server via backend server.
+
+In current application implementation (inlucing the frontend source code in @faster/resources/dev-admin.html, and the maijor endpoints defined in @faster/core/auth/routers.py), we mixed both of them and none of them is a comprehensive solution. For example, we do implement some function in direct way:
+  - Login via Google OAuth
+  - Login via Email/Password
+  - Change password
+  - Send Reset Email
+But we also implement some endpoints in @faster/coree/auth/routers.py like:
+  - /password/change
+  - /password/reset/initiate
+  - /password/reset/confirm
+
+To figure out a comprehensive and mature solution, I already prepared a document for the authentication flow in file @docs/auth_fflow.md. For your reference.
+
+#### Goal
+- Reduce the non-necessary password related endpoints in @faster/coree/auth/routers.py, Including their unit tests.
+- In the frontend, implement a separated and additional module `AuthService` to process all Supabase auth related things. This new module will be the only way, that meanns all supabase.auth.* like things must be contained within this new module. When the application want to call something in Supabase JS, it must through this module. This consolidated solution will help us to develop a reusable and extendable solution to deal with Supabase Auth. `AuthService` at least provides the following things:
+  - User Registration
+  - Email/Password Login
+  - OAuth Login
+  - Password Reset
+  - Password Change
+  - Logout
+  - User UserDeactivation
+
+Meanwhile,  `AuthService` also need to accept a lots of configuration items so that we can provide a consistancy solution. For example on_success, on_error, on_warning -- with these 3 callback functions, we can call any functionality directly, no need to worry these failed cases.
+
+In addition, we also need to enable the auto-refresh session at the begining, and add listener on all auth events and define a mechanism to enable downstream user can response to these particular auth events.
+
+- Use above well designed `AuthService` module to replace current solution in @faster/resources/dev-admin.html, and refactory current frontend code, to make them a more stable and relaiable soluetion.
+
+#### verify
+I am refactoring the frontend source code in file @faster/resources/dev-admin.html
+Use MCP playwright to access the frontend via http://127.0.0.1:8000/dev/admin. Ensure every function is works well, if any issue or errors/warnings in web console, fix all of them.
+
+
+### Fix The remaining 401 authorization errors are backend-relate
+#### Background
+So far, we encountered 401 authorization errors when we use the auto-generated code to call backend APIs via '/dev/client_api_fetch.js';
+
+The reason is: by the designing of our Dynamic RBAC, only the endpoints with 'public' tag can call the backend server directly without Bearer token, the others must call the backend server must contain with the Bearer token. Despite current solution provide `options` parameter on each api function to enable the end user can attach the token, that's just a way to shift the burden to the end user. We'd better to contain this logic within the generated code itself, that will really made the generated code can be used out-of-box ready.
+
+We do have a solution now -- we defined a publicEndpoints array to represent the endpoints that can be accessed without a Bearer token in the generated code. This sounds workable but will cause some issues: In case the endpoint contains some parameter, for example `/dev/client_api_{lib}.{extname}`, we need to handle the parameter replacement logic within the generated code itself.
+
+Meanwhile, we do have a particular method AuthService.is_public_route can help to determine if the current request is public access or not.
+
+you can use `make api` to generate the code into files under folder @build.
+
+#### Goal
+- One possible way to fix above issue: For example, it can use AuthService.is_public_route to detect current request is public access or not on the fly when generating code for the specific endpoint. And then decide to call `_makeRequest` or new added `_makePublicRequest`. This new added `_makePublicRequest` will use the current logic to call the backend APIs, but the enhanced `_makeRequest` will provide default logic to add Bearer token if argument `options` dose not provide it. In this way, we will help to implement it by default.
+- Of course, if you have better way to fix this, you can suggest.
+- Enhance the code generator logic in @faster/core/client_generator.py as discussed above. Not only for fetch API with JS code, but also for all available solutions.
+- For how to retrieve the token, we can provide a option in the constructor, so that the downstream can provide the properway to retrieve the Bearer token if necessary. This will help to de-couple this implementation with the mechanism how we store the tokens.
+- Enhance the relevant unit tests for this change, and make sure both `make lint` and `make test` all pass.
+
+
+#### Fix frontend
+I am refactoring the frontend source code in file @faster/resources/dev-admin.html. Unfortunately, the first page is broken to show. And here comes the web console output, help to find the root cause and fix it. For the backend API calls to response 401, it's another issue we will fix it later, you can forget them right now.
+
+```
+🚀 DOM loaded, starting application initialization...
+admin:4390 🚀 Initializing Dev Admin Dashboard...
+admin:4446 📦 Waiting for script dependencies...
+admin:4471 📦 All script dependencies loaded successfully
+admin:4497 🏔️ Waiting for Alpine.js...
+admin:4504 🏔️ Alpine.js ready
+admin:4517 🏪 Initializing Alpine store...
+admin:4524 🏪 Alpine store initialized
+admin:4543 🗄️ Initializing Supabase...
+admin:4573 🗄️ Supabase initialized successfully
+admin:4531 🔌 Initializing API client...
+admin:3060 API client initialized successfully with secure token provider
+admin:4536 🔌 API client initialized successfully
+admin:4580 🔐 Initializing AuthService...
+admin:4349 🔐 AuthService: Initializing AuthService with Supabase...
+supabase.js:1 Multiple GoTrueClient instances detected in the same browser context. It is not an error, but this should be avoided as it may produce undefined behavior when used concurrently under the same storage key.
+overrideMethod @ hook.js:608
+ke @ supabase.js:1
+i @ supabase.js:1
+_initSupabaseAuthClient @ supabase.js:1
+(anonymous) @ supabase.js:1
+(anonymous) @ supabase.js:1
+init @ admin:3447
+_initializeAuthService @ admin:4748
+init @ admin:4416
+await in init
+(anonymous) @ admin:7649Understand this warning
+admin:4349 🔐 AuthService: Auth state change: SIGNED_IN
+admin:4349 🔐 AuthService: User signed in: minlongbing@gmail.com
+admin:4614 User signed in via AuthService: minlongbing@gmail.com
+admin:4349 🔐 AuthService: Auth state change: SIGNED_IN
+admin:4349 🔐 AuthService: User signed in: minlongbing@gmail.com
+admin:4614 User signed in via AuthService: minlongbing@gmail.com
+admin:4349 🔐 AuthService: Auth state change: INITIAL_SESSION
+admin:4349 🔐 AuthService: Unhandled auth event: INITIAL_SESSION
+admin:4349 🔐 AuthService: Existing session found for user: minlongbing@gmail.com
+admin:4349 🔐 AuthService: AuthService initialized successfully
+admin:4703 Initial session detected via AuthService: minlongbing@gmail.com
+admin:4753 ✅ AuthService initialized successfully
+admin:4760 🧩 Initializing application components...
+admin:4781 🧩 Application components initialized
+admin:4423 ✅ Dev Admin Dashboard initialization completed successfully
+admin:7654 ❌ Application initialization failed
+```
+
+You need to figure out why the application initialization failed. and provide a more solid initialization process.
+
+
+###########################
+
+#### Background
+- As we already pointed the URL to URL '/dev/client_api_fetch.js' in file @faster/resources/dev-admin.html.
+- And endpoint '/dev/client_api_fetch.js' is defined in file @faster/core/auth/routers.py.
+- You can Use MCP playwright to directly access the frontend via http://127.0.0.1:8000/dev/admin to verify whether your generated code is working or not.
+
+#### Current issue
+- Afterr the frontend's initialization, no login page(Authentication View) is displayed -- that means `$store.app.currentView === 'auth'`.
+- Find the following web console log: AuthService: Unhandled auth event: INITIAL_SESSION
+
+#### Goal
+- Find the reason and fix it to show the login page(Authentication View) by default.
+- Add new handler for event INITIAL_SESSION.
+- Use MCP playwright to access the frontend via http://127.0.0.1:8000/dev/admin. Ensure every function is works well, if any issue or errors/warnings in web console, fix all of them.
