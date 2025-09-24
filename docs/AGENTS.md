@@ -68,6 +68,14 @@ make autofix      # Auto-fix linting issues
 - ⚙️ Configuration setup guidance
 - 📖 API reference queries
 
+**Playwright Config**: When using Playwright for browser automation, ensure add all of the following options to avoid Google "This browser may not be secure" error:
+  --disable-blink-features=AutomationControlled
+  --disable-web-security
+  --disable-features=VizDisplayCompositor
+  --disable-dev-shm-usage
+  --no-sandbox
+  --disable-extensions
+
 > **Auto-Activation**: Context7 tools are automatically used without explicit requests for library/API documentation needs.
 
 [↑ Back to Top](#quick-navigation)
