@@ -37,7 +37,8 @@
       "WebFetch(domain:lucide.dev)",
       "WebFetch(domain:icones.js.org)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "mcp__playwright__browser_press_key"
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_network_requests"
     ],
     "deny": [
       "Read(.env)",
@@ -51,7 +52,9 @@
       "Read(./mcp/**)",
       "Read(./venv/**)"
     ],
-    "ask": ["Bash(python:*)"]
+    "ask": [
+      "Bash(python:*)"
+    ]
   },
   "contextFileName": "docs/AGENTS.md"
 }
