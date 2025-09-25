@@ -18,6 +18,7 @@ data/
 
 # real environment variables
 .env
+.env.backup
 
 .coverage
 

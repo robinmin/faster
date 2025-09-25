@@ -1,6 +1,17 @@
-.PHONY: help run redis-start test test-e2e test-e2e-manual test-e2e-setup test-e2e-clean lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean apis build-worker deploy deploy-staging deploy-production wrangler-login
+# ===============================
+# 🚀 FASTER - FastAPI Development Makefile
+# ===============================
 
+.PHONY: help install setup dev test test-e2e lint db-migrate db-upgrade db-reset docker-up docker-down docker-status docker-test deploy deploy-staging deploy-prod clean
+
+# Configuration
 SRC_TARGETS = faster/ tests/ main.py migrations/env.py $(wildcard migrations/versions/*.py)
+DOCKER_COMPOSE = docker-compose -f docker/docker-compose.yml
+DOCKER_TEST_COMPOSE = docker-compose -f docker/docker-compose.test.yml
+
+# ===============================
+# 📋 HELP & INFORMATION
+# ===============================
 
 help: ## Show this help message
 	@echo "Usage: make [target]"
@@ -8,317 +19,197 @@ help: ## Show this help message
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "} {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
-run: ## Run the FastAPI application
-	@lsof -ti:8000|xargs kill -9
-	uv run uvicorn main:app --host localhost --reload --reload-exclude logs
+# ===============================
+# 📦 ENVIRONMENT PREPARATION
+# ===============================
 
-test: ## Run unit tests only (no authentication required)
-	@echo "🔬 Running unit tests..."
-	PYTHONPATH=. uv run pytest tests/core --cov=faster --cov-report=html:build/htmlcov
-
-test-e2e-setup: ## Setup authentication for E2E tests (manual Google OAuth login)
-	@echo "🔐 Setting up E2E test authentication..."
-	@echo "📝 This will open a browser for manual Google OAuth login"
-	@echo "🚀 Starting server in background..."
-	@make run > /dev/null 2>&1 &
-	@echo "⏳ Waiting for server to be ready..."
-	@PYTHONPATH=. uv run python tests/e2e/wait_for_server.py
-	@echo "🌐 Server ready, running auth setup..."
-	@PYTHONPATH=. uv run python -m tests.e2e.auth_setup
-	@echo "✅ Authentication setup complete"
-	@pkill -f "uvicorn main:app" || true
-
-test-e2e: ## Run E2E tests automatically (requires existing auth session)
-	@echo "🧪 Running E2E tests in headless mode..."
-	@echo "📋 Checking for cached authentication session..."
-	@if [ ! -f "tests/e2e/playwright-auth.json" ]; then \
-		echo "❌ No authentication session found!"; \
-		echo "💡 Run 'make test-e2e-manual' first to set up authentication"; \
-		exit 1; \
+install: ## Install all dependencies and setup environment
+	@if [ -n "$$VIRTUAL_ENV" ]; then deactivate 2>/dev/null || true; fi
+	@rm -rf .venv >/dev/null 2>&1 || true
+	@uv sync >/dev/null 2>&1 || (echo "❌ Failed to install Python dependencies" && exit 1)
+	@if ! command -v wrangler >/dev/null 2>&1; then \
+		npm install -g wrangler >/dev/null 2>&1 || (echo "❌ Failed to install wrangler" && exit 1); \
 	fi
-	@echo "🚀 Starting server in background..."
-	@make run > /dev/null 2>&1 &
-	@echo "⏳ Waiting for server to be ready..."
-	@PYTHONPATH=. uv run python tests/e2e/wait_for_server.py
-	@echo "🎭 Running Playwright E2E tests (headless mode)..."
-	E2E_AUTOMATED=true PYTHONPATH=. uv run pytest tests/e2e/ --quiet
-	@echo "🛑 Stopping server..."
-	@pkill -f "uvicorn main:app" || true
+	@echo "✅ Environment ready! Run 'source .venv/bin/activate' to activate"
 
-test-e2e-manual: ## Run E2E tests with manual authentication setup
-	@echo "🧪 Running E2E tests with manual authentication..."
-	@echo "🔐 This will require manual Google OAuth login"
-	@echo "🚀 Starting server in background..."
-	@make run > /dev/null 2>&1 &
-	@echo "⏳ Waiting for server to be ready..."
-	@PYTHONPATH=. uv run python tests/e2e/wait_for_server.py
-	@echo "🌐 Setting up authentication..."
-	@PYTHONPATH=. uv run python -m tests.e2e.auth_setup || true
-	@echo "🎭 Running E2E tests..."
-	@PYTHONPATH=. uv run pytest tests/e2e/ -v --tb=short || true
-	@echo "🛑 Stopping server..."
-	@pkill -f "uvicorn main:app" || true
+setup: install ## Complete project setup (alias for install)
 
-test-e2e-clean: ## Clean E2E test artifacts and cached sessions
-	@echo "🧹 Cleaning E2E test artifacts..."
-	@rm -rf tests/e2e/test-results/
-	@rm -rf tests/e2e/screenshots/
-	@rm -f tests/e2e/playwright-auth.json
-	@rm -rf tests/e2e/__pycache__/
-	@rm -rf tests/e2e/.pytest_cache/
-	@echo "✅ E2E test artifacts cleaned"
+clean: ## Clean build artifacts and cache files
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -name "*.pyc" -delete 2>/dev/null || true
+	@find . -name "*.pyo" -delete 2>/dev/null || true
+	@rm -rf build logs .mypy_cache .pytest_cache .ruff_cache .playwright-mcp .coverage 2>/dev/null || true
+	@rm -rf tests/e2e/test-results tests/e2e/screenshots tests/e2e/__pycache__ 2>/dev/null || true
+	@echo "✅ Cleaned build artifacts and cache files"
 
-lint: ## Lint the code
+lock: ## Update dependency lock files
+	@uv lock --upgrade >/dev/null 2>&1 || (echo "❌ Failed to update lock file" && exit 1)
+	@uv pip compile pyproject.toml -o requirements.txt >/dev/null 2>&1 || true
+	@echo "✅ Dependencies locked"
+
+# ===============================
+# 🔧 LOCAL DEVELOPMENT
+# ===============================
+
+dev: ## Start development server (kills existing and starts fresh)
+	@lsof -ti:8000 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@uv run uvicorn main:app --host localhost --reload --reload-exclude logs
+
+run: dev ## Alias for dev command
+
+apis: ## Download client API files (auto-starts server if needed)
+	@mkdir -p build >/dev/null 2>&1
+	@if [ $$(lsof -ti:8000 2>/dev/null | wc -l | tr -d ' ') -eq 0 ]; then \
+		echo "🚀 Starting server..."; \
+		uv run uvicorn main:app --host localhost --reload --reload-exclude logs >/dev/null 2>&1 & \
+		sleep 3; \
+		STARTED_SERVER=1; \
+	else \
+		STARTED_SERVER=0; \
+	fi; \
+	curl -sf http://127.0.0.1:8000/dev/client_api_fetch.js -o build/client_api_fetch.js >/dev/null 2>&1; \
+	curl -sf http://127.0.0.1:8000/dev/client_api_fetch.ts -o build/client_api_fetch.ts >/dev/null 2>&1; \
+	curl -sf http://127.0.0.1:8000/dev/client_api_axios.js -o build/client_api_axios.js >/dev/null 2>&1; \
+	curl -sf http://127.0.0.1:8000/dev/client_api_axios.ts -o build/client_api_axios.ts >/dev/null 2>&1; \
+	if [ "$$STARTED_SERVER" -eq 1 ]; then \
+		lsof -ti:8000 2>/dev/null | xargs kill -9 2>/dev/null || true; \
+	fi; \
+	echo "✅ API clients downloaded"
+
+lint: ## Run all code quality checks
 	uv run ruff check $(SRC_TARGETS) --fix
 	uv run mypy $(SRC_TARGETS)
 	uv run basedpyright $(SRC_TARGETS)
 
-# format: ## Format the code
-# 	uv run ruff format $(SRC_TARGETS)
+# ===============================
+# 🗄️ DATABASE MIGRATION
+# ===============================
 
-autofix: ## Automatically fix linting errors
-	uv run ruff check $(SRC_TARGETS) --fix
-
-db-migrate: ## Create a new database migration (e.g., make db-migrate m="create users table")
+db-migrate: ## Create new migration (usage: make db-migrate m="description")
 ifndef m
-	$(error m is not set, e.g. make db-migrate m="create users table")
+	$(error Usage: make db-migrate m="migration description")
 endif
-	uv run alembic revision --autogenerate -m "$(m)"
-	@find migrations/versions -type f -name "*.py" -exec sed -i '' -e 's/sqlmodel\.sql\.sqltypes\.AutoString/sa.String/g' {} +
+	@uv run alembic revision --autogenerate -m "$(m)" || (echo "❌ Migration creation failed" && exit 1)
+	@find migrations/versions -type f -name "*.py" -exec sed -i '' -e 's/sqlmodel\.sql\.sqltypes\.AutoString/sa.String/g' {} + 2>/dev/null || true
+	@echo "✅ Migration created: $(m)"
 
-db-upgrade: ## Apply all database migrations
-	uv run alembic upgrade head
+db-upgrade: ## Apply all pending migrations
+	@uv run alembic upgrade head || (echo "❌ Migration failed" && exit 1)
+	@echo "✅ Database upgraded to latest"
 
-db-downgrade: ## Downgrade database by one revision
-	uv run alembic downgrade base
+db-reset: ## Reset database (downgrade to base then upgrade)
+	@uv run alembic downgrade base || (echo "❌ Downgrade failed" && exit 1)
+	@uv run alembic upgrade head || (echo "❌ Upgrade failed" && exit 1)
+	@echo "✅ Database reset complete"
 
-db-version: ## Show the current database revision
-	uv run alembic current
-
-# supabase-start: ## Start Supabase local development services
-# 	supabase start
-
-# supabase-stop: ## Stop Supabase local development services
-# 	supabase stop
-
-apis: ## Download all client API files to build/ folder (requires server running)
-	@echo "📦 Downloading client API files..."
-	@mkdir -p build
-
-	@echo "⬇️  Fetching JavaScript + fetch client..."
-	@curl -s http://127.0.0.1:8000/dev/client_api_fetch.js -o build/client_api_fetch.js || (echo "❌ Failed to fetch client_api_fetch.js (is server running?)" && exit 1)
-	@echo "⬇️  Fetching TypeScript + fetch client..."
-	@curl -s http://127.0.0.1:8000/dev/client_api_fetch.ts -o build/client_api_fetch.ts || (echo "❌ Failed to fetch client_api_fetch.ts" && exit 1)
-	@echo "⬇️  Fetching JavaScript + axios client..."
-	@curl -s http://127.0.0.1:8000/dev/client_api_axios.js -o build/client_api_axios.js || (echo "❌ Failed to fetch client_api_axios.js" && exit 1)
-	@echo "⬇️  Fetching TypeScript + axios client..."
-	@curl -s http://127.0.0.1:8000/dev/client_api_axios.ts -o build/client_api_axios.ts || (echo "❌ Failed to fetch client_api_axios.ts" && exit 1)
-	@echo "✅ All client API files downloaded to build/ folder:"
-
-	@ls -la build/client_api_*
-
-clean: ## Clean up build artifacts and cached files
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -name "*.pyc" -delete 2>/dev/null || true
-	@find . -name "*.pyo" -delete 2>/dev/null || true
-	@rm -rf build logs .mypy_cache .pytest_cache .ruff_cache .coverage .playwright-mcp .ultra-mcp
-
-lock: ## Update the lock file
-	uv lock --upgrade
-	uv pip compile pyproject.toml -o requirements.txt
-
-install: ## Install dependencies
-	@if [ -n "$$VIRTUAL_ENV" ]; then deactivate 2>/dev/null || true; fi
-	@rm -rf .venv >/dev/null 2>&1 || true
-	@uv sync >/dev/null 2>&1
-	@if ! command -v wrangler >/dev/null 2>&1; then npm install -g wrangler >/dev/null 2>&1; fi
-	@echo "✅ Ready! Run 'source .venv/bin/activate' to activate the virtual environment"
+db-version: ## Show current database version
+	@uv run alembic current
 
 # ===============================
-# 🚀 CLOUDFLARE WORKERS DEPLOYMENT
+# 🧪 LOCAL TESTING
 # ===============================
 
-wrangler-login: ## Login to Cloudflare via wrangler
-	@echo "🔐 Logging into Cloudflare..."
-	wrangler auth login
+test: ## Run unit tests with coverage
+	@PYTHONPATH=. uv run pytest tests/core --cov=faster --cov-report=html:build/htmlcov -q
 
-build-worker: ## Build the application for Cloudflare Workers deployment
-	@echo "🏗️  Building for Python Workers..."
-	@echo "📦 No build step required - Python Workers handle dependencies automatically"
-	@echo "✅ Ready for deployment with native Python support"
+test-e2e: ## Run E2E tests (interactive setup if needed)
+	@if [ ! -f "tests/e2e/playwright-auth.json" ]; then \
+		echo "🔐 Setting up E2E authentication..."; \
+		make dev >/dev/null 2>&1 & \
+		sleep 3; \
+		PYTHONPATH=. uv run python tests/e2e/wait_for_server.py; \
+		PYTHONPATH=. uv run python -m tests.e2e.auth_setup; \
+		pkill -f "uvicorn main:app" 2>/dev/null || true; \
+	fi
+	@echo "🧪 Running E2E tests..."
+	@make dev >/dev/null 2>&1 &
 
-deploy: build-worker ## Deploy to development environment
-	@echo "🚀 Deploying to development environment..."
-	wrangler deploy --env development
+	@sleep 3
+	@PYTHONPATH=. uv run python tests/e2e/wait_for_server.py
+	@E2E_AUTOMATED=true PYTHONPATH=. uv run pytest tests/e2e/ -q
 
-deploy-staging: build-worker ## Deploy to staging environment
-	@echo "🚀 Deploying to staging environment..."
-	wrangler deploy --env staging
+	@pkill -f "uvicorn main:app" 2>/dev/null || true
+	@echo "✅ E2E tests passed"
 
-deploy-production: build-worker ## Deploy to production environment
-	@echo "🌟 Deploying to production environment..."
+# ===============================
+# 🐳 DOCKER MANAGEMENT
+# ===============================
+
+docker-up: ## Start application with Docker Compose
+	@$(DOCKER_COMPOSE) up -d --build
+
+docker-down: ## Stop Docker services
+	@$(DOCKER_COMPOSE) down
+
+docker-logs: ## View Docker container logs
+	@$(DOCKER_COMPOSE) logs -f
+
+docker-status: ## Show status of project Docker containers and images
+	@echo "🐳 Docker Status for FASTER Project"
+	@echo ""
+	@echo "📦 Project Images:"
+	@docker images | grep -E "(docker-app|faster-)" || echo "  No project images found"
+	@echo ""
+	@echo "🏃 Running Containers:"
+	@docker ps --filter "name=faster-" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" || echo "  No project containers running"
+	@echo ""
+	@echo "💤 All Project Containers (including stopped):"
+	@docker ps -a --filter "name=faster-" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" || echo "  No project containers found"
+	@echo ""
+	@echo "🌐 Docker Networks:"
+	@docker network ls | grep -E "(docker_|test-network)" || echo "  No project networks found"
+	@echo ""
+	@echo "💾 Docker Volumes:"
+	@docker volume ls | grep -E "(docker_|test_)" || echo "  No project volumes found"
+
+docker-test: ## Run tests in Docker environment
+	@echo "🧪 Running tests in Docker..."
+	@$(DOCKER_TEST_COMPOSE) up -d --build || (echo "❌ Failed to start test environment" && exit 1)
+	@sleep 5
+	@$(DOCKER_TEST_COMPOSE) exec -T app-test uv run pytest tests/core --cov=faster -q || \
+		(echo "❌ Docker tests failed" && $(DOCKER_TEST_COMPOSE) down >/dev/null 2>&1 && exit 1)
+	@$(DOCKER_TEST_COMPOSE) down >/dev/null 2>&1
+	@echo "✅ Docker tests passed"
+
+# ===============================
+# 🚀 DEPLOYMENT
+# ===============================
+
+wrangler-login: ## Login to Cloudflare
+	@wrangler auth login
+
+wrangler-status: ## Show deployment URLs
+	@echo "📊 Deployment URLs:"
+	@echo "Development: https://faster-app-dev.$(shell wrangler whoami 2>/dev/null | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
+	@echo "Staging: https://faster-app-staging.$(shell wrangler whoami 2>/dev/null | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
+	@echo "Production: https://faster-app-prod.$(shell wrangler whoami 2>/dev/null | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
+
+deploy: ## Deploy to development environment
+	@echo "🚀 Deploying to development..."
+	@wrangler deploy --env development || (echo "❌ Deployment failed" && exit 1)
+	@echo "✅ Deployed to development"
+
+deploy-staging: ## Deploy to staging environment
+	@echo "🚀 Deploying to staging..."
+	@wrangler deploy --env staging || (echo "❌ Deployment failed" && exit 1)
+	@echo "✅ Deployed to staging"
+
+deploy-prod: ## Deploy to production (with confirmation)
 	@echo "⚠️  WARNING: This will deploy to PRODUCTION!"
-	@read -p "Are you sure you want to continue? (y/N) " confirm && [ "$$confirm" = "y" ] || exit 1
-	wrangler deploy --env production
+	@read -p "Continue? (y/N) " confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
+	@echo "🌟 Deploying to production..."
+	@wrangler deploy --env production || (echo "❌ Deployment failed" && exit 1)
+	@echo "✅ Deployed to production"
 
-wrangler-tail: ## Tail logs from the deployed worker (development)
-	@echo "📋 Tailing logs from development environment..."
-	wrangler tail --env development
 
-wrangler-tail-staging: ## Tail logs from staging environment
-	@echo "📋 Tailing logs from staging environment..."
-	wrangler tail --env staging
-
-wrangler-tail-production: ## Tail logs from production environment
-	@echo "📋 Tailing logs from production environment..."
-	wrangler tail --env production
-
-wrangler-status: ## Show deployment status
-	@echo "📊 Deployment status:"
-	@echo "Development: https://faster-app-dev.$(shell wrangler whoami | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
-	@echo "Staging: https://faster-app-staging.$(shell wrangler whoami | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
-	@echo "Production: https://faster-app-prod.$(shell wrangler whoami | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
-
-# Environment variable management
-secrets-set-dev: ## Set development secrets (interactive)
-	@echo "🔐 Setting development environment secrets..."
-	@scripts/set-secrets.sh development
-
-secrets-set-staging: ## Set staging secrets (interactive)
-	@echo "🔐 Setting staging environment secrets..."
-	@scripts/set-secrets.sh staging
-
-secrets-set-prod: ## Set production secrets (interactive)
-	@echo "🔐 Setting production environment secrets..."
-	@scripts/set-secrets.sh production
-
-# Tag and release management
-tag-release: ## Create and push a new release tag (e.g., make tag-release version=v1.0.0)
+tag-release: ## Create release tag (usage: make tag-release version=v1.0.0)
 ifndef version
-	$(error version is not set. Usage: make tag-release version=v1.0.0)
+	$(error Usage: make tag-release version=v1.0.0)
 endif
-	@echo "🏷️  Creating release tag: $(version)"
-	@git tag -a $(version) -m "Release $(version)"
-	@git push origin $(version)
-	@echo "✅ Tag $(version) created and pushed. GitHub Actions will handle deployment."
-
-tag-prerelease: ## Create and push a pre-release tag (e.g., make tag-prerelease version=v1.0.0-beta.1)
-ifndef version
-	$(error version is not set. Usage: make tag-prerelease version=v1.0.0-beta.1)
-endif
-	@echo "🏷️  Creating pre-release tag: $(version)"
-	@git tag -a $(version) -m "Pre-release $(version)"
-	@git push origin $(version)
-	@echo "✅ Pre-release tag $(version) created and pushed. Will deploy to staging."
-
-# Docker deployment tags
-tag-docker-release: ## Create Docker deployment tag (e.g., make tag-docker-release version=v1.0.0)
-ifndef version
-	$(error version is not set. Usage: make tag-docker-release version=v1.0.0)
-endif
-	@echo "🏷️  Creating Docker deployment tag: docker-$(version)"
-	@git tag -a docker-$(version) -m "Docker deployment $(version)"
-	@git push origin docker-$(version)
-	@echo "✅ Docker tag docker-$(version) created. Will trigger Docker deployment pipeline."
-
-# Deployment strategy selection
-deploy-workers: ## Deploy to Cloudflare Workers (default)
-	@echo "🚀 Deploying to Cloudflare Workers..."
-	@echo "💡 Use: make tag-release version=vX.Y.Z"
-
-deploy-docker: ## Deploy via Docker to cloud providers
-	@echo "🐳 Deploying via Docker to cloud providers..."
-	@echo "💡 Use: make tag-docker-release version=vX.Y.Z"
-
-deploy-hybrid: ## Deploy to both Workers and Docker platforms
-	@echo "🚀🐳 Deploying to both platforms..."
-	@echo "1. Cloudflare Workers: make tag-release version=vX.Y.Z"
-	@echo "2. Docker platforms: make tag-docker-release version=vX.Y.Z"
-
-docker-build: ## Build the Docker image
-	docker build -t faster-app:latest -f docker/Dockerfile .
-
-docker-up: ## Start services with Docker Compose
-	docker-compose -f docker/docker-compose.yml up -d
-
-docker-down: ## Stop services with Docker Compose
-	docker-compose -f docker/docker-compose.yml down
-
-docker-full-up: ## Start full services with Docker Compose
-	docker-compose -f docker/docker-compose-full.yml up -d
-
-docker-full-down: ## Stop full services with Docker Compose
-	docker-compose -f docker/docker-compose-full.yml down
-
-docker-logs: ## View logs from Docker containers
-	docker-compose -f docker/docker-compose.yml logs -f
+	@git tag -a $(version) -m "Release $(version)" >/dev/null 2>&1 || (echo "❌ Failed to create tag" && exit 1)
+	@git push origin $(version) >/dev/null 2>&1 || (echo "❌ Failed to push tag" && exit 1)
+	@echo "✅ Release tag $(version) created and pushed"
 
 # ===============================
-# 🧪 DOCKER TESTING ENVIRONMENT
+# 🧹 MISCELLANEOUS
 # ===============================
-
-docker-test-up: ## Start testing environment with Docker
-	@echo "🧪 Starting Docker testing environment..."
-	docker-compose -f docker/docker-compose.test.yml up -d
-	@echo "⏳ Waiting for services to be healthy..."
-	docker-compose -f docker/docker-compose.test.yml exec -T app-test sh -c "curl -f http://localhost:8000/health" || echo "⚠️  Health check failed, but continuing..."
-	@echo "✅ Docker testing environment ready at http://localhost:8001"
-
-docker-test-down: ## Stop testing environment
-	@echo "🛑 Stopping Docker testing environment..."
-	docker-compose -f docker/docker-compose.test.yml down -v
-	@echo "✅ Testing environment stopped and volumes cleaned"
-
-docker-test-logs: ## View logs from test containers
-	docker-compose -f docker/docker-compose.test.yml logs -f
-
-docker-test-exec: ## Execute commands in test container (e.g., make docker-test-exec cmd="make test")
-	docker-compose -f docker/docker-compose.test.yml exec app-test $(cmd)
-
-docker-test-shell: ## Open shell in test container
-	docker-compose -f docker/docker-compose.test.yml exec app-test /bin/bash
-
-docker-test-reset: ## Reset test environment (rebuild and restart)
-	@echo "🔄 Resetting Docker testing environment..."
-	make docker-test-down
-	docker-compose -f docker/docker-compose.test.yml build --no-cache app-test
-	make docker-test-up
-
-# Integration testing with Docker
-test-docker: docker-test-up ## Run tests in Docker environment
-	@echo "🧪 Running tests in Docker environment..."
-	docker-compose -f docker/docker-compose.test.yml exec -T app-test uv run pytest tests/core --cov=faster --cov-report=html:build/htmlcov
-	@echo "🏥 Health check already verified during startup ✅"
-	make docker-test-down
-
-test-e2e-docker: docker-test-up ## Run E2E tests in Docker environment
-	@echo "🎭 Running E2E tests in Docker environment..."
-	@echo "⚠️  E2E tests require manual authentication setup - run locally instead"
-	@echo "💡 Use: make test-e2e-setup && make test-e2e"
-	make docker-test-down
-
-# Pre-deployment validation with Docker
-validate-deployment: docker-test-up ## Validate deployment readiness with Docker
-	@echo "🔍 Validating deployment readiness..."
-	@echo "1. 🧪 Running tests..."
-	docker-compose -f docker/docker-compose.test.yml exec -T app-test uv run pytest tests/core --cov=faster --cov-report=html:build/htmlcov
-	@echo "2. 🔍 Running linting..."
-	docker-compose -f docker/docker-compose.test.yml exec -T app-test uv run ruff check faster/ tests/ --fix
-	docker-compose -f docker/docker-compose.test.yml exec -T app-test uv run mypy faster/ tests/
-	@echo "3. 🏥 Health checks..."
-	./scripts/health-check.sh localhost:8001
-	@echo "4. 🚀 Testing Workers compatibility..."
-	@echo "   ✅ FastAPI app structure validated"
-	@echo "   ✅ Dependencies verified"
-	@echo "   ✅ Environment variables tested"
-	make docker-test-down
-	@echo "🎉 Deployment validation complete - ready for Workers!"
-
-# CI/CD Integration
-ci-docker-test: ## CI/CD optimized Docker testing
-	@echo "🤖 Running CI/CD Docker tests..."
-	docker-compose -f docker/docker-compose.test.yml up -d --build
-	@echo "⏳ Waiting for services..."
-	sleep 30
-	docker-compose -f docker/docker-compose.test.yml exec -T app-test uv run pytest tests/core --cov=faster --cov-report=html:build/htmlcov || (make docker-test-down && exit 1)
-	make docker-test-down
