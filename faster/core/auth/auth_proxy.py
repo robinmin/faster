@@ -25,7 +25,7 @@ class AuthProxy:
         self,
         supabase_url: str,
         supabase_anon_key: str,
-        supabase_service_key: str,
+        supabase_service_role_key: str,
         supabase_jwks_url: str,
         supabase_audience: str,
         cache_ttl: int = 3600,
@@ -34,7 +34,7 @@ class AuthProxy:
         """Initialize the AuthProxy with configuration."""
         self._supabase_url = supabase_url
         self._supabase_anon_key = supabase_anon_key
-        self._supabase_service_key = supabase_service_key
+        self._supabase_service_role_key = supabase_service_role_key
         self._supabase_jwks_url = supabase_jwks_url
         self._supabase_audience = supabase_audience
         self._cache_ttl = cache_ttl
@@ -68,7 +68,7 @@ class AuthProxy:
     def service_client(self) -> Client:
         """Get the Supabase service client (lazy initialization)."""
         if self._service_client is None:
-            self._service_client = create_client(self._supabase_url, self._supabase_service_key)
+            self._service_client = create_client(self._supabase_url, self._supabase_service_role_key)
         return self._service_client
 
     def _extract_token_header_info(self, token: str) -> tuple[str | None, str | None]:
