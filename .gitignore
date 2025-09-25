@@ -11,6 +11,7 @@ wheels/
 .mypy_cache/
 .ultra-mcp/
 .playwright-mcp/
+data/
 
 # Virtual environments
 .venv/
