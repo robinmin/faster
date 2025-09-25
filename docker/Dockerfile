@@ -3,10 +3,11 @@ FROM ghcr.io/astral-sh/uv:python3.10-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Install system dependencies required for some Python packages
+# Install system dependencies (minimal for SQLite)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files
@@ -22,11 +23,12 @@ FROM ghcr.io/astral-sh/uv:python3.10-bookworm-slim AS runtime
 
 WORKDIR /app
 
-# Install system dependencies required for some Python packages
+# Install system dependencies (minimal for SQLite)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     curl \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -39,28 +41,20 @@ COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 # Copy project code (filtered by .dockerignore)
 COPY --chown=appuser:appuser . .
 
+# Create data directory for SQLite database
+RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
+
 # Switch to non-root user
 USER appuser
 
-# Activate virtual environment and set environment variables
+# Activate virtual environment and set basic environment variables
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app" \
     PYTHONUNBUFFERED=1 \
     UVICORN_HOST=0.0.0.0 \
-    UVICORN_PORT=8000 \
-    DATABASE_URL="sqlite+aiosqlite:///./test.db" \
-    REDIS_URL="redis://localhost:6379" \
-    REDIS_PASSWORD="" \
-    CELERY_BROKER_URL="redis://localhost:6379" \
-    CELERY_RESULT_BACKEND="redis://localhost:6379" \
-    SUPABASE_URL="http://localhost:54321" \
-    SUPABASE_ANON_KEY="your-anon-key" \
-    SUPABASE_SERVICE_KEY="your-service-key" \
-    SUPABASE_JWKS_URL="http://localhost:54321/auth/v1/.well-known/jwks.json" \
-    STRIPE_SECRET_KEY="your-stripe-secret-key" \
-    STRIPE_WEBHOOK_SECRET="your-stripe-webhook-secret" \
-    STRIPE_PUBLISHABLE_KEY="your-stripe-publishable-key" \
-    JWT_SECRET_KEY="your-jwt-secret-key"
+    UVICORN_PORT=8000
+
+# Note: All other environment variables are now configured via .env files
 
 # Expose port
 EXPOSE 8000

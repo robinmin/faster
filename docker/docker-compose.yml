@@ -1,42 +1,43 @@
-# version: '3.8'
+# Development Docker Compose - SQLite + Redis
+# Fast development setup with minimal dependencies
 
 services:
   app:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    container_name: faster-dev-app
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - .env.dev  # File-based environment configuration
     depends_on:
-      - db
       - redis
     volumes:
-      - ../:/app
-    # For development with auto-reload:
-    # command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-    # For production (uses CMD from Dockerfile):
-    # command: uv run gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 4 main:app
-
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ../:/app                    # Mount source code for development
+      - app_data:/app/data         # Persistent SQLite data
+    command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   redis:
     image: redis:7-alpine
+    container_name: faster-dev-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes  # Persistence enabled
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 volumes:
-  postgres_data:
-  redis_data:
+  app_data:      # SQLite database storage
+  redis_data:    # Redis persistence

@@ -32,20 +32,26 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: faster-app
+    container_name: faster-app-full
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.app.rule=Host(`app.localhost`)"
       - "traefik.http.routers.app.entrypoints=web"
       - "traefik.http.services.app.loadbalancer.server.port=8000"
     env_file:
-      - .env
+      - .env.prod  # File-based production environment
     depends_on:
       - redis
-      - supabase-db
-      - supabase-auth
     volumes:
-      - ../:/app
+      - ../:/app              # Mount source code
+      - app_data:/app/data   # Persistent SQLite data
+    command: uv run gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 4 main:app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     networks:
       - web
       - backend
@@ -53,75 +59,27 @@ services:
   # Redis
   redis:
     image: redis:7-alpine
-    container_name: redis-cache
+    container_name: redis-cache-full
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - backend
 
-  # Supabase Database (PostgreSQL)
-  supabase-db:
-    image: supabase/postgres:15.1.0.147
-    container_name: supabase-db
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
-      POSTGRES_USER: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - supabase_db_data:/var/lib/postgresql/data
-    networks:
-      - backend
-
-  # Supabase Auth (GoTrue)
-  supabase-auth:
-    image: supabase/gotrue:v2.164.0
-    container_name: supabase-auth
-    depends_on:
-      - supabase-db
-    environment:
-      GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://postgres:postgres@supabase-db:5432/postgres?search_path=auth
-      GOTRUE_SITE_URL: http://app.localhost
-      GOTRUE_URI_ALLOW_LIST: "*"
-      GOTRUE_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
-      GOTRUE_JWT_EXP: 3600
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      GOTRUE_EXTERNAL_PHONE_ENABLED: "true"
-      GOTRUE_SMS_AUTOCONFIRM: "true"
-      GOTRUE_MAILER_URLPATHS_INVITE: /auth/verify
-      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/verify
-      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/verify
-      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/verify
-    networks:
-      - backend
-
-  # Supabase API Gateway (Kong)
-  supabase-kong:
-    image: kong:2.8
-    container_name: supabase-kong
-    depends_on:
-      - supabase-auth
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
-      KONG_DNS_ORDER: LAST,SRV,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl
-    volumes:
-      - "./kong.yml:/var/lib/kong/kong.yml:ro"
-    ports:
-      - "8000:8000"
-      - "8443:8443"
-    networks:
-      - backend
+# Using external Supabase service from environment configuration
+# No local Supabase containers needed - app connects to cloud Supabase directly
 
 volumes:
-  redis_data:
-  supabase_db_data:
-  traefik_le:
+  app_data:        # SQLite database storage
+  redis_data:      # Redis persistence
+  traefik_le:      # Traefik Let's Encrypt certificates
 
 networks:
   web:
