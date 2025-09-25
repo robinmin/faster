@@ -117,13 +117,11 @@ def disable_sentry_for_non_sentry_tests(request: FixtureRequest) -> Generator[No
     """
     # Only disable Sentry for non-Sentry tests
     if "sentry" not in request.module.__name__:
-        with (
-            patch("faster.core.sentry.SentryManager.setup", return_value=True),
-            patch("faster.core.sentry.init") as mock_init,
-            patch("faster.core.sentry.capture_exception") as mock_capture_exception,
-            patch("faster.core.sentry.capture_message") as mock_capture_message,
-            patch("faster.core.sentry.is_initialized", return_value=False),
-        ):
+        with patch("faster.core.sentry.SentryManager.setup", return_value=True), \
+             patch("faster.core.sentry.init") as mock_init, \
+             patch("faster.core.sentry.capture_exception") as mock_capture_exception, \
+             patch("faster.core.sentry.capture_message") as mock_capture_message, \
+             patch("faster.core.sentry.is_initialized", return_value=False):
             mock_init.return_value = None
             mock_capture_exception.return_value = None
             mock_capture_message.return_value = None

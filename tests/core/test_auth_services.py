@@ -808,9 +808,14 @@ class TestAuthServiceRepositoryProxy:
     @pytest.mark.asyncio
     async def test_check_user_onboarding_complete(self, auth_service: AuthService, mock_repository: AsyncMock) -> None:
         """Test checking user onboarding complete."""
+        # Mock auth client to avoid early return
+        mock_auth_client = MagicMock()
+
         with (
             patch.object(mock_repository, "check_user_profile_exists", return_value=True) as mock_method,
             patch.object(auth_service, "_repository", mock_repository),
+            patch.object(auth_service, "_auth_client", mock_auth_client),
+            patch.object(auth_service, "get_user_by_id", return_value=None),  # Mock to skip metadata check
         ):
             result = await auth_service.check_user_onboarding_complete(TEST_USER_ID)
 
