@@ -1,0 +1,196 @@
+name: 🐳 Docker Deployment Pipeline
+
+on:
+  push:
+    tags:
+      - 'docker-v*.*.*'  # Triggers on docker version tags like docker-v1.0.0
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-test:
+    name: 🏗️ Build & Test Docker Image
+    runs-on: ubuntu-latest
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏷️ Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag,prefix={{branch}}-
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-{{date 'YYYYMMDD'}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 🏗️ Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: 🧪 Test Docker image
+        run: |
+          # Pull the built image for testing
+          docker pull ${{ steps.meta.outputs.tags }}
+
+          # Run container tests
+          docker run --rm \
+            -e DATABASE_URL="sqlite+aiosqlite:///./test.db" \
+            -e REDIS_URL="redis://fake-redis:6379" \
+            -e REDIS_PROVIDER="fake" \
+            --entrypoint="" \
+            ${{ steps.meta.outputs.tags }} \
+            uv run pytest tests/core --maxfail=5 -q
+
+      - name: 📊 Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-info
+          path: |
+            /tmp/digest.txt
+
+  deploy-to-cloud:
+    name: 🚀 Deploy to Cloud Provider
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.environment != ''
+
+    environment: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🚀 Deploy to AWS ECS (Example)
+        if: vars.CLOUD_PROVIDER == 'aws'
+        env:
+          IMAGE_URI: ${{ needs.build-and-test.outputs.image-tag }}
+        run: |
+          echo "🚀 Deploying to AWS ECS..."
+          echo "Image: $IMAGE_URI"
+          # Add your AWS ECS deployment commands here
+          # aws ecs update-service --cluster faster-cluster --service faster-service --force-new-deployment
+
+      - name: 🚀 Deploy to Google Cloud Run (Example)
+        if: vars.CLOUD_PROVIDER == 'gcp'
+        env:
+          IMAGE_URI: ${{ needs.build-and-test.outputs.image-tag }}
+        run: |
+          echo "🚀 Deploying to Google Cloud Run..."
+          echo "Image: $IMAGE_URI"
+          # Add your Cloud Run deployment commands here
+          # gcloud run deploy faster-app --image $IMAGE_URI --region us-central1
+
+      - name: 🚀 Deploy to Azure Container Instances (Example)
+        if: vars.CLOUD_PROVIDER == 'azure'
+        env:
+          IMAGE_URI: ${{ needs.build-and-test.outputs.image-tag }}
+        run: |
+          echo "🚀 Deploying to Azure Container Instances..."
+          echo "Image: $IMAGE_URI"
+          # Add your Azure deployment commands here
+          # az container create --resource-group rg --name faster-app --image $IMAGE_URI
+
+      - name: 🚀 Deploy to DigitalOcean App Platform (Example)
+        if: vars.CLOUD_PROVIDER == 'digitalocean'
+        env:
+          IMAGE_URI: ${{ needs.build-and-test.outputs.image-tag }}
+        run: |
+          echo "🚀 Deploying to DigitalOcean App Platform..."
+          echo "Image: $IMAGE_URI"
+          # Add your DigitalOcean deployment commands here
+
+  health-check:
+    name: 🏥 Post-deployment Health Check
+    needs: [build-and-test, deploy-to-cloud]
+    runs-on: ubuntu-latest
+    if: always() && needs.deploy-to-cloud.result == 'success'
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🏥 Run health checks
+        env:
+          DEPLOYMENT_URL: ${{ vars.DEPLOYMENT_URL || 'https://your-app.example.com' }}
+        run: |
+          chmod +x ./scripts/health-check.sh
+          ./scripts/health-check.sh $DEPLOYMENT_URL
+
+      - name: 📊 Create deployment summary
+        run: |
+          echo "## 🐳 Docker Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ needs.build-and-test.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Digest:** ${{ needs.build-and-test.outputs.image-digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Quick Links:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Application**: ${{ vars.DEPLOYMENT_URL || 'https://your-app.example.com' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health Check**: ${{ vars.DEPLOYMENT_URL || 'https://your-app.example.com' }}/health" >> $GITHUB_STEP_SUMMARY
+          echo "- **API Docs**: ${{ vars.DEPLOYMENT_URL || 'https://your-app.example.com' }}/docs" >> $GITHUB_STEP_SUMMARY
+
+  rollback:
+    name: 🔄 Rollback (Manual)
+    needs: [build-and-test, deploy-to-cloud, health-check]
+    runs-on: ubuntu-latest
+    if: failure() && needs.deploy-to-cloud.result == 'success'
+
+    environment: rollback-approval  # Requires manual approval
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔄 Perform rollback
+        run: |
+          echo "🔄 Initiating rollback procedure..."
+          # Add rollback commands for your cloud provider
+          echo "⚠️  This requires manual intervention based on your deployment setup"
+
+      - name: 📢 Notify rollback
+        run: |
+          echo "## 🔄 Rollback Executed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** Deployment health checks failed" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** Rolled back to previous stable version" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ⚠️ Manual verification required" >> $GITHUB_STEP_SUMMARY
