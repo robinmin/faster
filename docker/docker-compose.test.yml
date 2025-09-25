@@ -1,0 +1,87 @@
+# Testing Docker Compose - SQLite + Redis
+# Optimized for CI/CD pipeline and local testing with minimal dependencies
+
+services:
+  # Test Redis - In-memory for fast testing
+  test-redis:
+    image: redis:7-alpine
+    container_name: faster-test-redis
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    command: redis-server --save "" --appendonly no  # No persistence for tests
+    tmpfs:
+      - /data:rw,noexec,nosuid,size=50m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - test-network
+
+  # Application for Testing
+  app-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    container_name: faster-app-test
+    env_file:
+      - .env.test  # File-based test environment
+    depends_on:
+      test-redis:
+        condition: service_healthy
+    ports:
+      - "8001:8000"  # Different port for testing
+    volumes:
+      - ../:/app              # Mount source for development
+      - test_data:/app/data   # Isolated test data
+    command: >
+      sh -c "
+        echo '🧪 Starting test environment...' &&
+        echo '📁 Creating data directory...' &&
+        mkdir -p /app/data &&
+        echo '🗄️  Running database migrations...' &&
+        uv run alembic upgrade head &&
+        echo '🚀 Starting test server...' &&
+        uv run uvicorn main:app --host 0.0.0.0 --port 8000
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - test-network
+
+  # Mock Supabase for Testing (simplified)
+  test-supabase:
+    image: nginx:alpine
+    container_name: faster-test-supabase
+    ports:
+      - "54321:80"
+    command: >
+      sh -c "
+        echo 'Starting mock Supabase service...' &&
+        echo 'server { listen 80; location / { return 200 \"Mock Supabase OK\"; } }' > /etc/nginx/conf.d/default.conf &&
+        nginx -g 'daemon off;'
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - test-network
+
+# Isolated network for testing
+networks:
+  test-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  test_data:  # Isolated SQLite test data
