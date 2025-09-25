@@ -13,7 +13,7 @@ def auth_proxy() -> AuthProxy:
     return AuthProxy(
         supabase_url="https://test.supabase.co",
         supabase_anon_key="test-anon-key",
-        supabase_service_key="test-service-key",
+        supabase_service_role_key="test-service-key",
         supabase_jwks_url="https://test.supabase.co/.well-known/jwks.json",
         supabase_audience="test-audience",
         cache_ttl=3600,
