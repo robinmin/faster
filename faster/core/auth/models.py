@@ -35,7 +35,7 @@ class AuthServiceConfig(TypedDict):
     auth_enabled: bool
     supabase_url: str | None
     supabase_anon_key: str | None
-    supabase_service_key: str | None
+    supabase_service_role_key: str | None
     supabase_jwks_url: str | None
     supabase_audience: str | None
     jwks_cache_ttl_seconds: int
