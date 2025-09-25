@@ -66,13 +66,18 @@ jobs:
             ports:
               - 6379:6379
         run: |
-          uv sync --dev
+          make install
+          make db-upgrade
           make lint
           make test
         env:
           DATABASE_URL: postgresql+asyncpg://testuser:testpass@localhost:5432/testdb
           REDIS_URL: redis://localhost:6379/0
           TEST_DATABASE_URL: postgresql+asyncpg://testuser:testpass@localhost:5432/testdb
+          SUPABASE_URL: http://localhost:54321
+          SUPABASE_ANON_KEY: test-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+          SENTRY_DSN: ""  # Disable Sentry in tests
 
       # Docker-based testing (closer to production environment)
       - name: 🐳 Run Docker Tests
@@ -111,12 +116,8 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: 📦 Install dependencies
-        run: |
-          uv sync
-
-      - name: 🔧 Install Wrangler
-        run: npm install -g wrangler
+      - name: 📦 Install dependencies and tools
+        run: make install
 
       - name: 🐍 Prepare Native Python Workers
         run: |
@@ -135,7 +136,7 @@ jobs:
           echo "${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}" | wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env staging
 
           # Deploy to staging environment
-          wrangler deploy --env staging
+          make deploy-staging
 
   deploy-production:
     name: 🌟 Deploy to Production
@@ -158,12 +159,8 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: 📦 Install dependencies
-        run: |
-          uv sync
-
-      - name: 🔧 Install Wrangler
-        run: npm install -g wrangler
+      - name: 📦 Install dependencies and tools
+        run: make install
 
       - name: 🐍 Prepare Native Python Workers
         run: |
@@ -181,8 +178,8 @@ jobs:
           echo "${{ secrets.PROD_SUPABASE_ANON_KEY }}" | wrangler secret put SUPABASE_ANON_KEY --env production
           echo "${{ secrets.PROD_SUPABASE_SERVICE_ROLE_KEY }}" | wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production
 
-          # Deploy to production environment
-          wrangler deploy --env production
+          # Deploy to production environment (CI mode)
+          make deploy-prod-ci
 
       - name: 📊 Create Release
         uses: actions/create-release@v1
