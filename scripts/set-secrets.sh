@@ -97,16 +97,16 @@ echo ""
 echo -e "${BLUE}🔧 Optional Secrets${NC}"
 echo "==================="
 
+set_secret "REDIS_PASSWORD" \
+    "edis password for local, and token for Upstash" \
+    false
+
 set_secret "SENTRY_DSN" \
     "Sentry DSN for error tracking (optional)" \
     false
 
-set_secret "JWT_SECRET_KEY" \
-    "JWT secret key for token signing (auto-generated if not provided)" \
-    false
-
-set_secret "ENCRYPTION_KEY" \
-    "Encryption key for sensitive data (auto-generated if not provided)" \
+set_secret "SENTRY_CLIENT_DSN" \
+    "Client side Sentry DSN for error tracking" \
     false
 
 echo ""
