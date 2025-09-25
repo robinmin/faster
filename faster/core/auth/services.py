@@ -50,7 +50,7 @@ class AuthService(BasePlugin):
                 auth_enabled=settings.auth_enabled,
                 supabase_url=settings.supabase_url,
                 supabase_anon_key=settings.supabase_anon_key,
-                supabase_service_key=settings.supabase_service_key,
+                supabase_service_role_key=settings.supabase_service_role_key,
                 supabase_jwks_url=settings.supabase_jwks_url,
                 supabase_audience=settings.supabase_audience,
                 jwks_cache_ttl_seconds=settings.jwks_cache_ttl_seconds,
@@ -72,7 +72,7 @@ class AuthService(BasePlugin):
             self._auth_client = AuthProxy(
                 supabase_url=self._config["supabase_url"] or "",
                 supabase_anon_key=self._config["supabase_anon_key"] or "",
-                supabase_service_key=self._config["supabase_service_key"] or "",
+                supabase_service_role_key=self._config["supabase_service_role_key"] or "",
                 supabase_jwks_url=jwks_url,
                 supabase_audience=self._config["supabase_audience"] or "",
                 cache_ttl=self._config["jwks_cache_ttl_seconds"],
