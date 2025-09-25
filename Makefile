@@ -2,7 +2,7 @@
 # 🚀 FASTER - FastAPI Development Makefile
 # ===============================
 
-.PHONY: help install setup dev test test-e2e lint db-migrate db-upgrade db-reset docker-up docker-down docker-status docker-test deploy deploy-staging deploy-prod clean
+.PHONY: help install setup dev test test-e2e lint db-migrate db-upgrade db-reset docker-up docker-down docker-status docker-test ci-docker-test deploy deploy-staging deploy-prod deploy-prod-ci clean
 
 # Configuration
 SRC_TARGETS = faster/ tests/ main.py migrations/env.py $(wildcard migrations/versions/*.py)
@@ -171,6 +171,15 @@ docker-test: ## Run tests in Docker environment
 	@$(DOCKER_TEST_COMPOSE) down >/dev/null 2>&1
 	@echo "✅ Docker tests passed"
 
+ci-docker-test: ## CI/CD optimized Docker testing (for GitHub Actions)
+	@echo "🤖 Running CI/CD Docker tests..."
+	@$(DOCKER_TEST_COMPOSE) up -d --build
+	@sleep 10
+	@$(DOCKER_TEST_COMPOSE) exec -T app-test uv run pytest tests/core --cov=faster --maxfail=5 -q || \
+		(echo "❌ CI Docker tests failed" && $(DOCKER_TEST_COMPOSE) down && exit 1)
+	@$(DOCKER_TEST_COMPOSE) down
+	@echo "✅ CI Docker tests passed"
+
 # ===============================
 # 🚀 DEPLOYMENT
 # ===============================
@@ -198,6 +207,11 @@ deploy-prod: ## Deploy to production (with confirmation)
 	@echo "⚠️  WARNING: This will deploy to PRODUCTION!"
 	@read -p "Continue? (y/N) " confirm && [ "$$confirm" = "y" ] || (echo "Cancelled" && exit 1)
 	@echo "🌟 Deploying to production..."
+	@wrangler deploy --env production || (echo "❌ Deployment failed" && exit 1)
+	@echo "✅ Deployed to production"
+
+deploy-prod-ci: ## Deploy to production (non-interactive for CI/CD)
+	@echo "🌟 Deploying to production (CI/CD mode)..."
 	@wrangler deploy --env production || (echo "❌ Deployment failed" && exit 1)
 	@echo "✅ Deployed to production"
 
