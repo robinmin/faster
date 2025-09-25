@@ -34,8 +34,12 @@ services:
     ports:
       - "8001:8000"  # Different port for testing
     volumes:
-      - ../:/app              # Mount source for development
-      - test_data:/app/data   # Isolated test data
+      - ../faster:/app/faster           # Mount source code only
+      - ../tests:/app/tests             # Mount tests
+      - ../main.py:/app/main.py         # Mount main app file
+      - ../migrations:/app/migrations   # Mount migrations
+      - ../pyproject.toml:/app/pyproject.toml  # Mount project config
+      - test_data:/app/data             # Isolated test data
     command: >
       sh -c "
         echo '🧪 Starting test environment...' &&
