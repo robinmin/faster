@@ -38,7 +38,14 @@
       "WebFetch(domain:icones.js.org)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "mcp__playwright__browser_press_key",
-      "mcp__playwright__browser_network_requests"
+      "mcp__playwright__browser_network_requests",
+      "Bash(chmod:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker restart:*)",
+      "Bash(docker ps:*)",
+      "Bash(wrangler:*)",
+      "Bash(./scripts/health-check.sh:*)"
     ],
     "deny": [
       "Read(.env)",
