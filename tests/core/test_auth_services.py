@@ -22,7 +22,7 @@ def mock_settings() -> Settings:
     settings.auth_enabled = True
     settings.supabase_url = "https://test.supabase.co"
     settings.supabase_anon_key = "test-anon-key"
-    settings.supabase_service_key = "test-service-key"
+    settings.supabase_service_role_key = "test-service-key"
     settings.supabase_jwks_url = "https://test.supabase.co/.well-known/jwks.json"
     settings.supabase_audience = "test-audience"
     settings.auto_refresh_jwks = True
@@ -98,7 +98,7 @@ class TestAuthServiceInitialization:
         # Provide all required attributes even when auth is disabled
         mock_settings.supabase_url = "https://test.supabase.co"
         mock_settings.supabase_anon_key = "test-anon-key"
-        mock_settings.supabase_service_key = "test-service-key"
+        mock_settings.supabase_service_role_key = "test-service-key"
         mock_settings.supabase_jwks_url = "https://test.supabase.co/.well-known/jwks.json"
         mock_settings.supabase_audience = "test-audience"
         mock_settings.jwks_cache_ttl_seconds = 3600
@@ -161,7 +161,7 @@ class TestAuthServiceHealthCheck:
             "auth_enabled": True,
             "supabase_url": "https://test.supabase.co",
             "supabase_anon_key": "test-anon-key",
-            "supabase_service_key": "test-service-key",
+            "supabase_service_role_key": "test-service-key",
             "supabase_jwks_url": "https://test.supabase.co/.well-known/jwks.json",
             "supabase_audience": "test-audience",
             "jwks_cache_ttl_seconds": 3600,
@@ -194,7 +194,7 @@ class TestAuthServiceHealthCheck:
             "auth_enabled": True,
             "supabase_url": "https://test.supabase.co",
             "supabase_anon_key": "test-anon-key",
-            "supabase_service_key": "test-service-key",
+            "supabase_service_role_key": "test-service-key",
             "supabase_jwks_url": "https://test.supabase.co/.well-known/jwks.json",
             "supabase_audience": "test-audience",
             "jwks_cache_ttl_seconds": 3600,
