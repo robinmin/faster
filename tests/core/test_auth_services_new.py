@@ -23,7 +23,7 @@ def mock_settings() -> Settings:
     settings.auth_enabled = True
     settings.supabase_url = "https://test.supabase.co"
     settings.supabase_anon_key = "test-anon-key"
-    settings.supabase_service_key = "test-service-key"
+    settings.supabase_service_role_key = "test-service-key"
     settings.supabase_jwks_url = "https://test.supabase.co/.well-known/jwks.json"
     settings.supabase_audience = "test-audience"
     settings.auto_refresh_jwks = True
