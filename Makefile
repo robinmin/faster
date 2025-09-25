@@ -1,4 +1,4 @@
-.PHONY: help run redis-start test test-e2e test-e2e-manual test-e2e-setup test-e2e-clean lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean apis build-worker deploy deploy-staging deploy-production wrangler-login wrangler-check
+.PHONY: help run redis-start test test-e2e test-e2e-manual test-e2e-setup test-e2e-clean lint format autofix db-migrate db-upgrade db-downgrade db-version supabase-start supabase-stop clean apis build-worker deploy deploy-staging deploy-production wrangler-login
 
 SRC_TARGETS = faster/ tests/ main.py migrations/env.py $(wildcard migrations/versions/*.py)
 
@@ -127,15 +127,18 @@ lock: ## Update the lock file
 	uv lock --upgrade
 	uv pip compile pyproject.toml -o requirements.txt
 
+install: ## Install dependencies
+	@if [ -n "$$VIRTUAL_ENV" ]; then deactivate 2>/dev/null || true; fi
+	@rm -rf .venv >/dev/null 2>&1 || true
+	@uv sync >/dev/null 2>&1
+	@if ! command -v wrangler >/dev/null 2>&1; then npm install -g wrangler >/dev/null 2>&1; fi
+	@echo "✅ Ready! Run 'source .venv/bin/activate' to activate the virtual environment"
+
 # ===============================
 # 🚀 CLOUDFLARE WORKERS DEPLOYMENT
 # ===============================
 
-wrangler-check: ## Check if wrangler is installed
-	@command -v wrangler >/dev/null 2>&1 || { echo "❌ Wrangler not found. Install with: npm install -g wrangler"; exit 1; }
-	@echo "✅ Wrangler is installed"
-
-wrangler-login: wrangler-check ## Login to Cloudflare via wrangler
+wrangler-login: ## Login to Cloudflare via wrangler
 	@echo "🔐 Logging into Cloudflare..."
 	wrangler auth login
 
@@ -144,48 +147,48 @@ build-worker: ## Build the application for Cloudflare Workers deployment
 	@echo "📦 No build step required - Python Workers handle dependencies automatically"
 	@echo "✅ Ready for deployment with native Python support"
 
-deploy: wrangler-check build-worker ## Deploy to development environment
+deploy: build-worker ## Deploy to development environment
 	@echo "🚀 Deploying to development environment..."
 	wrangler deploy --env development
 
-deploy-staging: wrangler-check build-worker ## Deploy to staging environment
+deploy-staging: build-worker ## Deploy to staging environment
 	@echo "🚀 Deploying to staging environment..."
 	wrangler deploy --env staging
 
-deploy-production: wrangler-check build-worker ## Deploy to production environment
+deploy-production: build-worker ## Deploy to production environment
 	@echo "🌟 Deploying to production environment..."
 	@echo "⚠️  WARNING: This will deploy to PRODUCTION!"
 	@read -p "Are you sure you want to continue? (y/N) " confirm && [ "$$confirm" = "y" ] || exit 1
 	wrangler deploy --env production
 
-wrangler-tail: wrangler-check ## Tail logs from the deployed worker (development)
+wrangler-tail: ## Tail logs from the deployed worker (development)
 	@echo "📋 Tailing logs from development environment..."
 	wrangler tail --env development
 
-wrangler-tail-staging: wrangler-check ## Tail logs from staging environment
+wrangler-tail-staging: ## Tail logs from staging environment
 	@echo "📋 Tailing logs from staging environment..."
 	wrangler tail --env staging
 
-wrangler-tail-production: wrangler-check ## Tail logs from production environment
+wrangler-tail-production: ## Tail logs from production environment
 	@echo "📋 Tailing logs from production environment..."
 	wrangler tail --env production
 
-wrangler-status: wrangler-check ## Show deployment status
+wrangler-status: ## Show deployment status
 	@echo "📊 Deployment status:"
 	@echo "Development: https://faster-app-dev.$(shell wrangler whoami | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
 	@echo "Staging: https://faster-app-staging.$(shell wrangler whoami | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
 	@echo "Production: https://faster-app-prod.$(shell wrangler whoami | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
 
 # Environment variable management
-secrets-set-dev: wrangler-check ## Set development secrets (interactive)
+secrets-set-dev: ## Set development secrets (interactive)
 	@echo "🔐 Setting development environment secrets..."
 	@scripts/set-secrets.sh development
 
-secrets-set-staging: wrangler-check ## Set staging secrets (interactive)
+secrets-set-staging: ## Set staging secrets (interactive)
 	@echo "🔐 Setting staging environment secrets..."
 	@scripts/set-secrets.sh staging
 
-secrets-set-prod: wrangler-check ## Set production secrets (interactive)
+secrets-set-prod: ## Set production secrets (interactive)
 	@echo "🔐 Setting production environment secrets..."
 	@scripts/set-secrets.sh production
 
@@ -231,9 +234,6 @@ deploy-hybrid: ## Deploy to both Workers and Docker platforms
 	@echo "🚀🐳 Deploying to both platforms..."
 	@echo "1. Cloudflare Workers: make tag-release version=vX.Y.Z"
 	@echo "2. Docker platforms: make tag-docker-release version=vX.Y.Z"
-
-install:
-	uv sync
 
 docker-build: ## Build the Docker image
 	docker build -t faster-app:latest -f docker/Dockerfile .
