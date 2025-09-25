@@ -51,23 +51,23 @@ class Settings(BaseSettings):
     redis_decode_responses: bool = Field(default=True, description="Automatically decode Redis responses")
     redis_enabled: bool = Field(default=True, description="Whether Redis is enabled")
 
-    # Celery settings
-    celery_broker_url: str | None = Field(default=None, description="Celery Broker URL")
-    celery_result_backend: str | None = Field(default=None, description="Celery result backend")
-    celery_task_always_eager: bool = Field(default=False, description="Execute Celery tasks synchronously")
+    # # Celery settings
+    # celery_broker_url: str | None = Field(default=None, description="Celery Broker URL")
+    # celery_result_backend: str | None = Field(default=None, description="Celery result backend")
+    # celery_task_always_eager: bool = Field(default=False, description="Execute Celery tasks synchronously")
 
     # Supabase settings
     supabase_url: str | None = Field(default=None, description="Supabase project URL")
     supabase_anon_key: str | None = Field(default=None, description="Supabase anonymous key")
-    supabase_service_key: str | None = Field(default=None, description="Supabase service key")
+    supabase_service_role_key: str | None = Field(default=None, description="Supabase service role key")
     supabase_jwks_url: str | None = Field(default=None, description="Supabase JWKs URL")
     supabase_audience: str | None = Field(default="authenticated", description="Supabase audience")
     auto_refresh_jwks: bool = Field(default=True, description="Auto refresh JWKs from Supabase")
 
     # Stripe settings
-    stripe_secret_key: str | None = Field(default=None, description="Stripe secret key")
-    stripe_webhook_secret: str | None = Field(default=None, description="Stripe webhook secret")
-    stripe_publishable_key: str | None = Field(default=None, description="Stripe publishable key")
+    # stripe_secret_key: str | None = Field(default=None, description="Stripe secret key")
+    # stripe_webhook_secret: str | None = Field(default=None, description="Stripe webhook secret")
+    # stripe_publishable_key: str | None = Field(default=None, description="Stripe publishable key")
 
     # Security settings
     auth_enabled: bool = Field(default=True, description="Enable authentication")
@@ -140,8 +140,8 @@ class Settings(BaseSettings):
             # "redis_password",
             "supabase_url",
             "supabase_anon_key",
-            "supabase_service_key",
-            "sentry_dsn",
+            "supabase_service_role_key",
+            # "sentry_dsn",  # Sentry DSN is optional - moved to comment
             # "sentry_client_dsn",
         ]
 
