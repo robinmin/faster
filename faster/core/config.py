@@ -136,15 +136,15 @@ class Settings(BaseSettings):
         super().model_post_init(__context)
         required_fields = [
             "database_url",
-            # "celery_broker_url",
-            # "celery_result_backend",
+            "redis_url",
+            # "redis_password",
             "supabase_url",
             "supabase_anon_key",
             "supabase_service_key",
-            # "stripe_secret_key",
-            # "stripe_webhook_secret",
-            # "stripe_publishable_key",
+            "sentry_dsn",
+            # "sentry_client_dsn",
         ]
+
         for field_name in required_fields:
             if getattr(self, field_name) is None:
                 raise ValueError(f"Missing required configuration: {field_name}")
