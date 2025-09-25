@@ -45,7 +45,8 @@
       "Bash(docker restart:*)",
       "Bash(docker ps:*)",
       "Bash(wrangler:*)",
-      "Bash(./scripts/health-check.sh:*)"
+      "Bash(./scripts/health-check.sh:*)",
+      "Bash(docker-compose:*)"
     ],
     "deny": [
       "Read(.env)",
