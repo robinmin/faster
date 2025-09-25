@@ -43,8 +43,12 @@ services:
     depends_on:
       - redis
     volumes:
-      - ../:/app              # Mount source code
-      - app_data:/app/data   # Persistent SQLite data
+      - ../faster:/app/faster           # Mount source code only
+      - ../tests:/app/tests             # Mount tests
+      - ../main.py:/app/main.py         # Mount main app file
+      - ../migrations:/app/migrations   # Mount migrations
+      - ../pyproject.toml:/app/pyproject.toml  # Mount project config
+      - app_data:/app/data              # Persistent SQLite data
     command: uv run gunicorn -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --workers 4 main:app
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
