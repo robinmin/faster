@@ -46,7 +46,8 @@
       "Bash(docker ps:*)",
       "Bash(wrangler:*)",
       "Bash(./scripts/health-check.sh:*)",
-      "Bash(docker-compose:*)"
+      "Bash(docker-compose:*)",
+      "Bash(PYTHONPATH=. uv run basedpyright faster/core/database.py)"
     ],
     "deny": [
       "Read(.env)",
