@@ -95,22 +95,102 @@ set_github_secret() {
 echo -e "${BLUE}🐙 GitHub Actions Authentication${NC}"
 echo "=================================="
 
-set_github_secret "CLOUDFLARE_API_TOKEN" \
-    "Cloudflare API token for deployment" \
-    true
+# Set Cloudflare credentials without environment prefix (used for all environments)
+echo ""
+echo -e "${YELLOW}📝 Setting CLOUDFLARE_API_TOKEN (no environment prefix)${NC}"
+echo "Description: Cloudflare API token for deployment"
+echo -n "Enter value (required): "
+read -r api_token_value
+if [ -z "$api_token_value" ]; then
+    echo -e "${RED}❌ Error: CLOUDFLARE_API_TOKEN is required${NC}"
+    exit 1
+fi
+echo "$api_token_value" | gh secret set "CLOUDFLARE_API_TOKEN"
+echo -e "${GREEN}✅ CLOUDFLARE_API_TOKEN set successfully${NC}"
 
-set_github_secret "CLOUDFLARE_ACCOUNT_ID" \
-    "Cloudflare account ID" \
-    true
+echo ""
+echo -e "${YELLOW}📝 Setting CLOUDFLARE_ACCOUNT_ID (no environment prefix)${NC}"
+echo "Description: Cloudflare account ID"
+echo -n "Enter value (required): "
+read -r account_id_value
+if [ -z "$account_id_value" ]; then
+    echo -e "${RED}❌ Error: CLOUDFLARE_ACCOUNT_ID is required${NC}"
+    exit 1
+fi
+echo "$account_id_value" | gh secret set "CLOUDFLARE_ACCOUNT_ID"
+echo -e "${GREEN}✅ CLOUDFLARE_ACCOUNT_ID set successfully${NC}"
+
+# D1 Database IDs for placeholder replacement
+echo ""
+echo -e "${BLUE}🗄️ D1 Database Configuration${NC}"
+echo "============================="
+
+case $ENVIRONMENT in
+    development)
+        set_github_secret "DEV_DATABASE_ID" \
+            "D1 Database ID for development environment" \
+            false
+        ;;
+    staging)
+        set_github_secret "STAGING_DATABASE_ID" \
+            "D1 Database ID for staging environment" \
+            false
+        ;;
+    production)
+        set_github_secret "PROD_DATABASE_ID" \
+            "D1 Database ID for production environment" \
+            false
+        ;;
+esac
 
 # Application secrets (environment-specific)
 echo ""
 echo -e "${BLUE}📋 Application Secrets${NC}"
 echo "======================="
 
-set_github_secret "DATABASE_URL" \
-    "Database connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
-    true
+echo ""
+echo -e "${YELLOW}🗄️ Database Configuration${NC}"
+echo "Please choose your database option:"
+echo "1) Traditional Database (PostgreSQL/SQLite)"
+echo "2) Cloudflare D1 Database (Recommended for Workers)"
+echo -n "Enter choice (1 or 2): "
+read -r db_choice
+
+case $db_choice in
+    1)
+        echo -e "${BLUE}Setting up Traditional Database${NC}"
+        set_github_secret "DATABASE_URL" \
+            "PostgreSQL/SQLite connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
+            true
+        ;;
+    2)
+        echo -e "${BLUE}Setting up Cloudflare D1 Database${NC}"
+        echo "For D1, we'll set up Workers Binding mode (recommended for production)"
+        set_github_secret "DATABASE_URL" \
+            "D1 connection string (use: d1+binding://DB for Workers binding)" \
+            false
+
+        echo ""
+        echo -e "${YELLOW}💡 For D1 HTTP mode (development/testing), also set these optional secrets:${NC}"
+        set_github_secret "CLOUDFLARE_ACCOUNT_ID" \
+            "Your Cloudflare Account ID (from wrangler whoami)" \
+            false
+
+        set_github_secret "CLOUDFLARE_API_TOKEN" \
+            "Your Cloudflare API Token with D1 permissions" \
+            false
+
+        set_github_secret "D1_DATABASE_ID" \
+            "Your D1 Database ID for this environment" \
+            false
+        ;;
+    *)
+        echo -e "${YELLOW}⚠️  Invalid choice. Defaulting to traditional database.${NC}"
+        set_github_secret "DATABASE_URL" \
+            "Database connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
+            true
+        ;;
+esac
 
 set_github_secret "REDIS_URL" \
     "Redis connection string (e.g., redis://host:6379/0)" \
@@ -147,6 +227,43 @@ set_github_secret "SENTRY_CLIENT_DSN" \
 
 echo ""
 echo -e "${GREEN}🎉 All GitHub Actions secrets have been configured for ${ENVIRONMENT} environment!${NC}"
+
+# Verification section
+echo ""
+echo -e "${BLUE}🔍 Verification: Checking configured secrets...${NC}"
+echo "========================================"
+
+if gh secret list &> /dev/null; then
+    SECRETS_LIST=$(gh secret list 2>/dev/null || echo "Unable to retrieve secrets list")
+    if [ "$SECRETS_LIST" != "Unable to retrieve secrets list" ] && [ -n "$SECRETS_LIST" ]; then
+        echo -e "${GREEN}✅ GitHub secrets successfully configured:${NC}"
+        echo "$SECRETS_LIST"
+
+        # Check for environment-specific secrets
+        echo ""
+        echo -e "${BLUE}🔍 Environment-specific secrets for ${ENVIRONMENT}:${NC}"
+        case $ENVIRONMENT in
+            development)
+                echo "Looking for DEV_* secrets..."
+                echo "$SECRETS_LIST" | grep "DEV_" || echo "No DEV_* secrets found"
+                ;;
+            staging)
+                echo "Looking for STAGING_* secrets..."
+                echo "$SECRETS_LIST" | grep "STAGING_" || echo "No STAGING_* secrets found"
+                ;;
+            production)
+                echo "Looking for PROD_* secrets..."
+                echo "$SECRETS_LIST" | grep "PROD_" || echo "No PROD_* secrets found"
+                ;;
+        esac
+    else
+        echo -e "${YELLOW}⚠️  No secrets found or unable to list secrets${NC}"
+    fi
+else
+    echo -e "${RED}❌ Unable to verify secrets. Check your GitHub CLI authentication:${NC}"
+    echo "Run: gh auth status"
+fi
+
 echo ""
 echo -e "${BLUE}📊 Next steps:${NC}"
 echo "1. Push a tag to trigger GitHub Actions: make tag-release version=v1.0.0"
@@ -154,3 +271,11 @@ echo "2. Check GitHub Actions workflow: gh run list"
 echo "3. Monitor deployment: gh run watch"
 echo ""
 echo -e "${YELLOW}💡 Tip: Use ./scripts/set-secrets.sh to set Cloudflare Workers secrets${NC}"
+
+# Additional verification tips
+echo ""
+echo -e "${BLUE}🔧 Verification Commands:${NC}"
+echo "• List all GitHub secrets: gh secret list"
+echo "• Check GitHub auth: gh auth status"
+echo "• View recent workflow runs: gh run list"
+echo "• Test workflow: Push a tag or create a pull request"
