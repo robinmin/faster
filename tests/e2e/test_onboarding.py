@@ -111,11 +111,11 @@ async def test_onboarding_responsive_layout(auth_page: Page) -> None:
     user_menu_btn = auth_page.locator("[aria-label='User menu']")
     await user_menu_btn.click()
     onboarding_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Onboarding")
-    
+
     # Check if onboarding menu item exists (it may not be available for existing users)
     if await onboarding_menu_item.count() == 0:
         pytest.skip("Onboarding menu item not available - may only be shown for new users")
-    
+
     await expect(onboarding_menu_item).to_be_visible(timeout=2000)
     await onboarding_menu_item.click()
     await auth_page.locator("[x-show*='onboarding']").wait_for(state="visible", timeout=5000)
@@ -136,11 +136,11 @@ async def test_onboarding_accessibility_features(auth_page: Page) -> None:
     user_menu_btn = auth_page.locator("[aria-label='User menu']")
     await user_menu_btn.click()
     onboarding_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Onboarding")
-    
+
     # Check if onboarding menu item exists (it may not be available for existing users)
     if await onboarding_menu_item.count() == 0:
         pytest.skip("Onboarding menu item not available - may only be shown for new users")
-    
+
     await expect(onboarding_menu_item).to_be_visible(timeout=2000)
     await onboarding_menu_item.click()
     await auth_page.locator("[x-show*='onboarding']").wait_for(state="visible", timeout=5000)
