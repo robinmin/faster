@@ -2,7 +2,7 @@
 # 🚀 FASTER - FastAPI Development Makefile
 # ===============================
 
-.PHONY: help install setup dev test test-e2e lint db-migrate db-upgrade db-reset docker-up docker-down docker-status docker-test ci-docker-test deploy deploy-staging deploy-prod deploy-prod-ci clean
+.PHONY: help install setup dev test test-e2e test-e2e-auth test-e2e-check lint db-migrate db-upgrade db-reset docker-up docker-down docker-status docker-test ci-docker-test deploy deploy-staging deploy-prod deploy-prod-ci clean
 
 # Configuration
 SRC_TARGETS = faster/ tests/ main.py migrations/env.py $(wildcard migrations/versions/*.py)
@@ -112,24 +112,26 @@ db-version: ## Show current database version
 test: ## Run unit tests with coverage
 	@PYTHONPATH=. uv run pytest tests/core --cov=faster --cov-report=html:build/htmlcov -q
 
-test-e2e: ## Run E2E tests (interactive setup if needed)
-	@if [ ! -f "tests/e2e/playwright-auth.json" ]; then \
-		echo "🔐 Setting up E2E authentication..."; \
-		make dev >/dev/null 2>&1 & \
-		sleep 3; \
-		PYTHONPATH=. uv run python tests/e2e/wait_for_server.py; \
-		PYTHONPATH=. uv run python -m tests.e2e.auth_setup; \
-		pkill -f "uvicorn main:app" 2>/dev/null || true; \
-	fi
+test-e2e: ## Run E2E tests (shows output for debugging)
 	@echo "🧪 Running E2E tests..."
 	@make dev >/dev/null 2>&1 &
-
 	@sleep 3
-	@PYTHONPATH=. uv run python tests/e2e/wait_for_server.py
-	@E2E_AUTOMATED=true PYTHONPATH=. uv run pytest tests/e2e/ -q
-
+	@PYTHONPATH=. uv run python tests/e2e/wait_for_server.py >/dev/null 2>&1
+	@E2E_AUTOMATED=true PYTHONPATH=. uv run pytest tests/e2e/ -v || \
+		(echo "❌ E2E tests failed - check authentication with 'make test-e2e-check'" && pkill -f "uvicorn main:app" 2>/dev/null || true && exit 1)
 	@pkill -f "uvicorn main:app" 2>/dev/null || true
 	@echo "✅ E2E tests passed"
+
+test-e2e-auth: ## Regenerate E2E authentication credentials
+	@echo "🔐 Regenerating E2E authentication credentials..."
+	@make dev >/dev/null 2>&1 &
+	@sleep 3
+	@PYTHONPATH=. uv run python tests/e2e/wait_for_server.py >/dev/null 2>&1
+	@PYTHONPATH=. uv run python tests/e2e/regenerate_auth.py
+	@pkill -f "uvicorn main:app" 2>/dev/null || true
+
+test-e2e-check: ## Check E2E authentication status
+	@PYTHONPATH=. uv run python tests/e2e/regenerate_auth.py --check
 
 # ===============================
 # 🐳 DOCKER MANAGEMENT
