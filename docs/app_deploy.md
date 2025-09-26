@@ -42,18 +42,21 @@ This guide provides a complete deployment pipeline for the **Faster Framework** 
 
 ```mermaid
 graph TB
-    A[Developer] -->|Push Tag| B[GitHub Repository]
+    A[Developer] -->|Push Tag| B[🐙GitHub Repository]
     B -->|Trigger| C[GitHub Actions]
     C -->|Run Tests| D[Test Suite]
     D -->|✅ Pass| E[🐍 Native Python Workers]
     E -->|Direct Deploy| F[Cloudflare Workers]
     F -->|Deploy| G[Environment]
+    A --> K
+    A --> M
+    A --> L
 
     G -->|Development| H[dev.workers.dev]
     G -->|Staging| I[staging.workers.dev]
     G -->|Production| J[prod.workers.dev]
 
-    K[Makefile] -->|Local Deploy| E
+    K[⚙️Makefile] -->|Local Deploy| E
     L[Scripts] -->|Secret Management| F
     M[FastAPI App] -->|Native Integration| E
 ```
@@ -63,7 +66,7 @@ graph TB
 1. **Code Development** → Local testing with `make test`
 2. **Quality Checks** → Automated linting and type checking
 3. **Tag Creation** → `make tag-release version=vX.Y.Z`
-4. **🐍 Native Python Workers** → Direct FastAPI deployment (no JavaScript bridge!)
+4. **🐍 Native Python Workers** → Direct FastAPI deployment
 5. **GitHub Actions** → Automated testing and deployment
 6. **Health Verification** → Post-deployment health checks
 7. **Monitoring** → Continuous monitoring and alerts
@@ -691,9 +694,9 @@ curl -v https://faster-app-dev.<account>.workers.dev/health  # Manual test
 make wrangler-status      # Check deployment URLs
 ```
 
-#### 5. **Database Connection Issues**
+#### 7. **Database Connection Issues**
 ```bash
-# Problem: Database connection fails
+# Problem: Traditional database connection fails
 # Solutions:
 - Verify DATABASE_URL format: postgresql+asyncpg://user:pass@host:port/db
 - Check database server accessibility
@@ -867,6 +870,10 @@ wrangler whoami                       # Show current Cloudflare account info
 # 🧹 Maintenance
 make clean                 # Clean build artifacts and cache files
 make lock                  # Update dependency lock files
+
+# 🔧 Deployment Testing & Validation
+wrangler publish --dry-run                         # Test deployment configuration
+wrangler dev                                       # Local development server
 ```
 
 ---
