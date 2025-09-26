@@ -1,5 +1,6 @@
 from collections.abc import Callable, MutableMapping
 import logging
+import os
 from pathlib import Path
 import sys
 from typing import Any, Literal
@@ -213,7 +214,9 @@ def setup_logger(
     root_logger.addHandler(console_handler)
 
     # --- File handler ---
-    if cfg["file"]["enabled"]:
+    # Disable file logging in Cloudflare Workers environment due to filesystem restrictions
+    is_workers = is_cf_worker()
+    if cfg["file"]["enabled"] and not is_workers:
         log_path = Path(log_file or cfg["file"]["path"])
         log_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(
@@ -233,6 +236,10 @@ def setup_logger(
         )
         file_handler.setFormatter(file_formatter)
         root_logger.addHandler(file_handler)
+    elif cfg["file"]["enabled"] and is_workers:
+        # Log a warning that file logging is disabled in Workers environment
+        console_logger = structlog.get_logger("logger.setup")
+        console_logger.warning("File logging disabled in Cloudflare Workers environment due to filesystem restrictions")
 
     # Make external loggers flow into root
     for name in cfg["external_loggers"]["propagate"]:
@@ -250,3 +257,12 @@ def setup_logger(
 def get_logger(name: str) -> Any:
     """External interface to get a structlog logger."""
     return structlog.get_logger(name)
+
+
+def is_cf_worker() -> bool:
+    """Check if running on Cloudflare Workers.
+
+    Returns:
+        bool: True if running on Cloudflare Workers
+    """
+    return bool(os.getenv("CF_PAGES") or os.getenv("CF_WORKER"))
