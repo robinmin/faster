@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import time
 from typing import Any, cast
+from urllib.parse import urlparse
 
 from playwright.async_api import Page
 
@@ -56,10 +57,8 @@ class SupabaseAuthHandler:
 
             # Try to extract supabase session from localStorage
             supabase_session = None
-            auth_token_key = None
-            for key, value in local_storage.items():
+            for key, value in local_storage.items():  # pyright: ignore[reportUnknownVariableType]
                 if "auth-token" in key:
-                    auth_token_key = key
                     try:
                         supabase_session = json.loads(value)
                         break
@@ -71,7 +70,7 @@ class SupabaseAuthHandler:
                 "local_storage": local_storage,
                 "cookies": file_data.get("cookies", []),
                 "supabase_session": supabase_session,
-                "url": "http://127.0.0.1:8000/dev/admin"
+                "url": "http://127.0.0.1:8000/dev/admin",
             }
 
         # If neither format, return as-is
@@ -113,8 +112,7 @@ class SupabaseAuthHandler:
         url = session_data.get("url", "http://127.0.0.1:8000")
 
         # Parse URL to get origin
-        from urllib.parse import urlparse
-        parsed_url = urlparse(url)
+        parsed_url = urlparse(url)  # pyright: ignore[reportUnknownVariableType]
         origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
         # Convert to Playwright format
@@ -123,12 +121,9 @@ class SupabaseAuthHandler:
             "origins": [
                 {
                     "origin": origin,
-                    "localStorage": [
-                        {"name": key, "value": value}
-                        for key, value in local_storage.items()
-                    ]
+                    "localStorage": [{"name": key, "value": value} for key, value in local_storage.items()],
                 }
-            ]
+            ],
         }
 
         return playwright_format
