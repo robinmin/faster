@@ -126,6 +126,7 @@ make test                   # Should pass all tests
 
 ### 🗄️ Step 4: Database Setup
 
+#### Option A: Traditional Database (PostgreSQL/SQLite)
 ```bash
 # Setup database migrations
 make db-upgrade             # Apply all database migrations
@@ -133,6 +134,134 @@ make db-upgrade             # Apply all database migrations
 # Verify database is working
 make dev                    # Start local server
 # Visit http://localhost:8000/health to verify
+```
+
+#### Option B: Cloudflare D1 Database (Recommended for Workers)
+```bash
+# Create D1 databases for each environment
+wrangler d1 create faster-app-dev       # Development database
+wrangler d1 create faster-app-staging   # Staging database
+wrangler d1 create faster-app-prod      # Production database
+
+# Note the database IDs from the output and update wrangler.toml
+# Copy the database_id values to your wrangler.toml file
+
+# Apply migrations to D1 databases
+wrangler d1 migrations apply faster-app-dev --local      # Local first
+wrangler d1 migrations apply faster-app-dev              # Then remote
+wrangler d1 migrations apply faster-app-staging
+wrangler d1 migrations apply faster-app-prod
+
+# Verify D1 database is working
+make dev                    # Start local server with D1
+# Visit http://localhost:8000/health to verify
+```
+
+---
+
+## 🗄️ Cloudflare D1 Database Setup
+
+### 🎯 D1 Overview
+
+Cloudflare D1 is a serverless SQL database that perfectly complements Workers. The Faster Framework supports both connection modes:
+
+- **🔗 HTTP Client Mode**: For local development and external access
+- **⚡ Workers Binding Mode**: For production deployment in Cloudflare Workers
+
+### 🏗️ D1 Architecture
+
+```mermaid
+graph TB
+    A[Faster App] -->|Hybrid Support| B[Database Abstraction]
+    B -->|Local Dev| C[HTTP Client Mode]
+    B -->|Production| D[Workers Binding Mode]
+
+    C -->|HTTP API| E[D1 Database]
+    D -->|Direct Binding| E
+
+    E -->|Development| F[faster-app-dev]
+    E -->|Staging| G[faster-app-staging]
+    E -->|Production| H[faster-app-prod]
+```
+
+### 📋 D1 Database Creation
+
+```bash
+# Step 1: Create D1 databases for each environment
+wrangler d1 create faster-app-dev
+wrangler d1 create faster-app-staging
+wrangler d1 create faster-app-prod
+
+# Step 2: Note the database IDs from output like:
+# ✅ Successfully created DB 'faster-app-dev' in region WEUR
+# Created your database using D1's new storage backend. The new storage backend is not yet recommended for production workloads, but backs up your data via point-in-time restore.
+#
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "faster-app-dev"
+# database_id = "12345678-abcd-efgh-ijkl-123456789012"
+
+# Step 3: Update wrangler.toml with the database IDs (see wrangler.toml section below)
+```
+
+### 🔄 D1 Connection String Formats
+
+The Faster Framework supports two D1 connection modes:
+
+#### 🔗 HTTP Client Mode (Development)
+```bash
+# Format: d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN
+DATABASE_URL="d1+aiosqlite://12345678-abcd-efgh-ijkl-123456789012?account_id=your-account-id&api_token=your-api-token"
+```
+
+#### ⚡ Workers Binding Mode (Production)
+```bash
+# Format: d1+binding://BINDING_NAME
+DATABASE_URL="d1+binding://DB"
+```
+
+### 🚀 D1 Migrations
+
+```bash
+# Apply migrations to D1 databases
+# Always test locally first
+wrangler d1 migrations apply faster-app-dev --local
+
+# Then apply to remote D1
+wrangler d1 migrations apply faster-app-dev
+wrangler d1 migrations apply faster-app-staging
+wrangler d1 migrations apply faster-app-prod
+
+# View migration history
+wrangler d1 migrations list faster-app-prod
+```
+
+### 🔍 D1 Database Management
+
+```bash
+# Execute queries directly
+wrangler d1 execute faster-app-dev --command="SELECT COUNT(*) FROM users"
+
+# Interactive SQL console
+wrangler d1 execute faster-app-dev
+
+# Export data
+wrangler d1 export faster-app-prod --output=backup.sql
+
+# View database info
+wrangler d1 info faster-app-prod
+```
+
+### 🧪 Testing D1 Integration
+
+```bash
+# Test local D1 connection (HTTP mode)
+export DATABASE_URL="d1+aiosqlite://your-db-id?account_id=your-account&api_token=your-token"
+make test
+
+# Test Workers binding (requires deployment)
+make deploy  # Uses d1+binding://DB automatically
+curl https://faster-app-dev.workers.dev/health
 ```
 
 ---
@@ -157,6 +286,7 @@ make dev                    # Start local server
    ```
 4. **Save the token** - you'll need it for GitHub Actions
 
+
 ### 🌐 Step 3: Configure Wrangler Authentication
 
 ```bash
@@ -174,22 +304,45 @@ wrangler whoami             # Should show your account info
 
 ### 📝 Step 4: Configure wrangler.toml
 
-Ensure your `wrangler.toml` is properly configured:
+Ensure your `wrangler.toml` is properly configured with D1 database bindings:
 
 ```toml
 name = "faster-app"
 main = "main.py"
 compatibility_date = "2024-09-24"
 
+# D1 Databases - Replace with your actual database IDs
+[[d1_databases]]
+binding = "DB"
+database_name = "faster-app-dev"
+database_id = "DEV_DATABASE_ID_PLACEHOLDER"
+
 [env.development]
 name = "faster-app-dev"
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "faster-app-dev"
+database_id = "DEV_DATABASE_ID_PLACEHOLDER"
 
 [env.staging]
 name = "faster-app-staging"
 
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "faster-app-staging"
+database_id = "STAGING_DATABASE_ID_PLACEHOLDER"
+
 [env.production]
 name = "faster-app-prod"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "faster-app-prod"
+database_id = "PROD_DATABASE_ID_PLACEHOLDER"
 ```
+
+> **📝 Note**: The `*_DATABASE_ID_PLACEHOLDER` values will be automatically replaced with actual database IDs during deployment using GitHub Actions secrets.
 
 ### 🧪 Step 5: Test Remote Connection
 
@@ -291,9 +444,34 @@ wrangler tail --env production
 
 Copy `.env.workers` and configure for each environment:
 
+#### 🗄️ Database Configuration Options
+
+**Option A: Traditional Database**
 ```bash
-# Database Configuration
+# PostgreSQL
 DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
+
+# SQLite (for local development)
+DATABASE_URL=sqlite+aiosqlite:///./app.db
+```
+
+**Option B: Cloudflare D1 Database**
+```bash
+# D1 HTTP Client Mode (for development/testing)
+DATABASE_URL=d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN
+
+# D1 Workers Binding Mode (for production deployment)
+DATABASE_URL=d1+binding://DB
+
+# D1 Credentials (for HTTP mode)
+CLOUDFLARE_ACCOUNT_ID=your-account-id
+CLOUDFLARE_API_TOKEN=your-api-token
+D1_DATABASE_ID=your-database-id
+```
+
+#### 🔧 Additional Configuration
+```bash
+# Redis
 REDIS_URL=redis://host:6379/0
 
 # Supabase Authentication
