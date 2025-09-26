@@ -212,6 +212,13 @@ wrangler-status: ## Show deployment URLs
 	@echo "Staging: https://faster-app-staging.$(shell wrangler whoami 2>/dev/null | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
 	@echo "Production: https://faster-app-prod.$(shell wrangler whoami 2>/dev/null | grep 'Account ID' | cut -d: -f2 | xargs).workers.dev"
 
+github-status: ## Show GitHub status
+	@echo "📊 Github Status:"
+	@gh auth status
+
+status: wrangler-status github-status ## Show all necessary status information
+	@echo "✅ All status information is up-to-date"
+
 deploy: ## Deploy to development environment
 	@echo "🚀 Deploying to development..."
 	@wrangler deploy --env development || (echo "❌ Deployment failed" && exit 1)
