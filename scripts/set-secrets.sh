@@ -28,7 +28,7 @@ if [[ "$ENVIRONMENT" != "development" && "$ENVIRONMENT" != "staging" && "$ENVIRO
     exit 1
 fi
 
-echo -e "${BLUE}🔐 Setting secrets for ${ENVIRONMENT} environment${NC}"
+echo -e "${BLUE}🔐 Setting Cloudflare Workers secrets for ${ENVIRONMENT} environment${NC}"
 echo "======================================================"
 
 # Check if wrangler is installed
@@ -110,11 +110,11 @@ set_secret "SENTRY_CLIENT_DSN" \
     false
 
 echo ""
-echo -e "${GREEN}🎉 All secrets have been configured for ${ENVIRONMENT} environment!${NC}"
+echo -e "${GREEN}🎉 All Cloudflare Workers secrets have been configured for ${ENVIRONMENT} environment!${NC}"
 echo ""
 echo -e "${BLUE}📊 Next steps:${NC}"
 echo "1. Deploy your application: make deploy-${ENVIRONMENT}"
 echo "2. Check deployment status: make wrangler-status"
 echo "3. View logs: make wrangler-tail-${ENVIRONMENT}"
 echo ""
-echo -e "${YELLOW}💡 Tip: You can run this script again anytime to update secrets${NC}"
+echo -e "${YELLOW}💡 Tip: Use ./scripts/set-secrets-github.sh to set GitHub Actions secrets${NC}"

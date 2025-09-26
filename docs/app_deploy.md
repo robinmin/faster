@@ -431,9 +431,9 @@ git push origin v1.0.0           # Auto-deploys to production
 
 ### 🛠️ Secret Management Tools
 
-#### 1. **Interactive Script** (Recommended for Local Setup)
+#### 1. **Cloudflare Workers Secrets** (Interactive Script)
 ```bash
-# Use the interactive script for each environment
+# Set secrets in Cloudflare Workers for each environment
 ./scripts/set-secrets.sh development
 ./scripts/set-secrets.sh staging
 ./scripts/set-secrets.sh production
@@ -444,12 +444,31 @@ git push origin v1.0.0           # Auto-deploys to production
 # - SUPABASE_URL
 # - SUPABASE_ANON_KEY
 # - SUPABASE_SERVICE_ROLE_KEY
-# - JWT_SECRET_KEY
-# - ENCRYPTION_KEY
+# - REDIS_PASSWORD (optional)
 # - SENTRY_DSN (optional)
+# - SENTRY_CLIENT_DSN (optional)
 ```
 
-#### 2. **Manual Wrangler Commands**
+#### 2. **GitHub Actions Secrets** (Interactive Script)
+```bash
+# Set secrets for GitHub Actions CI/CD for each environment
+./scripts/set-secrets-github.sh development
+./scripts/set-secrets-github.sh staging
+./scripts/set-secrets-github.sh production
+
+# The script will prompt you for:
+# GitHub Actions Authentication:
+# - CLOUDFLARE_API_TOKEN
+# - CLOUDFLARE_ACCOUNT_ID
+#
+# Application Secrets (prefixed with environment):
+# - DATABASE_URL -> PROD_DATABASE_URL, STAGING_DATABASE_URL, DEV_DATABASE_URL
+# - REDIS_URL -> PROD_REDIS_URL, STAGING_REDIS_URL, DEV_REDIS_URL
+# - SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+# - Optional: REDIS_PASSWORD, SENTRY_DSN, SENTRY_CLIENT_DSN
+```
+
+#### 3. **Manual Wrangler Commands**
 ```bash
 # Set individual secrets manually
 echo "postgresql+asyncpg://user:pass@host:5432/db" | wrangler secret put DATABASE_URL --env production
@@ -463,8 +482,18 @@ wrangler secret list --env production
 wrangler secret delete SECRET_NAME --env production
 ```
 
-#### 3. **GitHub Secrets** (for CI/CD Automation)
-Configure these in your GitHub repository settings (**Settings** → **Secrets and variables** → **Actions**):
+#### 4. **Manual GitHub CLI Commands** (Alternative to Script)
+```bash
+# Set GitHub secrets manually using GitHub CLI
+echo "your-api-token" | gh secret set CLOUDFLARE_API_TOKEN
+echo "your-account-id" | gh secret set CLOUDFLARE_ACCOUNT_ID
+echo "postgresql+asyncpg://user:pass@host:5432/db" | gh secret set PROD_DATABASE_URL
+
+# Or configure via GitHub web interface:
+# Go to: Settings → Secrets and variables → Actions
+```
+
+The following secrets need to be configured in your GitHub repository:
 
 **Cloudflare Authentication:**
 - `CLOUDFLARE_API_TOKEN` - Your Cloudflare API token
@@ -850,11 +879,21 @@ make deploy-prod-ci        # Deploy to production (non-interactive for CI/CD)
 make wrangler-status       # Show deployment URLs for all environments
 
 # 🔐 Secret Management
-./scripts/set-secrets.sh development   # Set development secrets (interactive)
-./scripts/set-secrets.sh staging       # Set staging secrets (interactive)
-./scripts/set-secrets.sh production    # Set production secrets (interactive)
-wrangler secret list --env production  # List secrets for environment
-wrangler secret delete SECRET_NAME --env production  # Delete secret
+# Cloudflare Workers secrets
+./scripts/set-secrets.sh development               # Set Cloudflare secrets (interactive)
+./scripts/set-secrets.sh staging                   # Set Cloudflare secrets (interactive)
+./scripts/set-secrets.sh production                # Set Cloudflare secrets (interactive)
+
+# GitHub Actions secrets
+./scripts/set-secrets-github.sh development        # Set GitHub secrets (interactive)
+./scripts/set-secrets-github.sh staging            # Set GitHub secrets (interactive)
+./scripts/set-secrets-github.sh production         # Set GitHub secrets (interactive)
+
+# Manual secret management
+wrangler secret list --env production              # List Cloudflare secrets
+wrangler secret delete SECRET_NAME --env production # Delete Cloudflare secret
+gh secret list                                     # List GitHub secrets
+gh secret delete SECRET_NAME                       # Delete GitHub secret
 
 # 📊 Monitoring & Logs
 wrangler tail --env development        # Real-time logs (development)
