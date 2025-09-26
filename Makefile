@@ -105,6 +105,23 @@ db-reset: ## Reset database (downgrade to base then upgrade)
 db-version: ## Show current database version
 	@uv run alembic current
 
+# # D1 Database Commands
+# d1-create: ## Create D1 databases for all environments
+# 	@echo "🗄️ Creating D1 databases..."
+# 	@wrangler d1 create faster-app-dev || echo "⚠️  faster-app-dev may already exist"
+# 	@wrangler d1 create faster-app-staging || echo "⚠️  faster-app-staging may already exist"
+# 	@wrangler d1 create faster-app-prod || echo "⚠️  faster-app-prod may already exist"
+# 	@echo "✅ D1 databases created (update wrangler.toml with database IDs)"
+
+# d1-query: ## Execute SQL query on D1 database (usage: make d1-query env=dev query="SELECT COUNT(*) FROM users")
+# ifndef env
+# 	$(error Usage: make d1-query env=dev query="SELECT * FROM users")
+# endif
+# ifndef query
+# 	$(error Usage: make d1-query env=dev query="SELECT * FROM users")
+# endif
+# 	@wrangler d1 execute faster-app-$(env) --command="$(query)"
+
 # ===============================
 # 🧪 LOCAL TESTING
 # ===============================
