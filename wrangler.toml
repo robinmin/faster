@@ -13,12 +13,22 @@ command = "echo 'No build step required for Python Workers'"
 ENVIRONMENT = "development"
 LOG_LEVEL = "info"
 
+# D1 Databases - Configured for each environment
+# The database_id placeholders will be replaced during deployment
+[[d1_databases]]
+binding = "DB"
+database_name = "faster-app-dev"
+database_id = "DEV_DATABASE_ID_PLACEHOLDER"
+
 # Secrets (configured via wrangler secret put or GitHub secrets)
-# DATABASE_URL - PostgreSQL connection string
+# DATABASE_URL - Database connection string (PostgreSQL, SQLite, or D1)
 # REDIS_URL - Redis connection string
 # SUPABASE_URL - Supabase project URL
 # SUPABASE_ANON_KEY - Supabase anonymous key
 # SUPABASE_SERVICE_ROLE_KEY - Supabase service role key
+# CLOUDFLARE_ACCOUNT_ID - For D1 HTTP mode (optional)
+# CLOUDFLARE_API_TOKEN - For D1 HTTP mode (optional)
+# D1_DATABASE_ID - For D1 HTTP mode (optional)
 
 # Resource limits
 [limits]
@@ -33,12 +43,22 @@ cpu_ms = 10000
 [env.development]
 name = "faster-app-dev"
 
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "faster-app-dev"
+database_id = "DEV_DATABASE_ID_PLACEHOLDER"
+
 # Staging environment
 [env.staging]
 name = "faster-app-staging"
 
 [env.staging.vars]
 ENVIRONMENT = "staging"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "faster-app-staging"
+database_id = "STAGING_DATABASE_ID_PLACEHOLDER"
 
 # Production environment
 [env.production]
@@ -47,3 +67,8 @@ name = "faster-app-prod"
 [env.production.vars]
 ENVIRONMENT = "production"
 LOG_LEVEL = "warn"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "faster-app-prod"
+database_id = "PROD_DATABASE_ID_PLACEHOLDER"
