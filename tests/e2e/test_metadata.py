@@ -85,9 +85,9 @@ async def test_metadata_header_displays_correctly(auth_page: Page) -> None:
     await metadata_menu_item.click()
     await auth_page.locator("[x-show*='metadata']").wait_for(state="visible", timeout=5000)
 
-    # Verify header navbar
-    header_navbar = auth_page.locator(".navbar.bg-base-100.shadow-lg.rounded-box")
-    await expect(header_navbar).to_be_visible()
+    # Verify header card (metadata uses card, not navbar)
+    header_card = auth_page.locator("[x-show*='metadata'] .card.bg-base-100.shadow-xl").first
+    await expect(header_card).to_be_visible()
 
 
 @pytest.mark.metadata
@@ -105,8 +105,8 @@ async def test_metadata_responsive_layout(auth_page: Page) -> None:
     await metadata_menu_item.click()
     await auth_page.locator("[x-show*='metadata']").wait_for(state="visible", timeout=5000)
 
-    # Verify main container
-    main_container = auth_page.locator(".max-w-4xl.mx-auto")
+    # Verify main container (use the correct max-width class for metadata view)
+    main_container = auth_page.locator("[x-show*='metadata'] .max-w-7xl.mx-auto").first
     await expect(main_container).to_be_visible()
 
 

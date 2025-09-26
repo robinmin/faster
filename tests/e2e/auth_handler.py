@@ -25,7 +25,10 @@ class SupabaseAuthHandler:
 
         try:
             with open(self.auth_file_path) as f:
-                session_data = cast(dict[str, Any], json.load(f))
+                file_data = cast(dict[str, Any], json.load(f))
+
+            # Convert from Playwright format if needed
+            session_data = self._convert_from_playwright_format(file_data)
 
             # Check if session is expired
             if self._is_session_expired(session_data):
@@ -35,6 +38,44 @@ class SupabaseAuthHandler:
         except Exception as e:
             print(f"Error loading cached session: {e}")
             return None
+
+    def _convert_from_playwright_format(self, file_data: dict[str, Any]) -> dict[str, Any]:
+        """Convert Playwright storage_state format back to custom format for compatibility."""
+        # Check if it's already in custom format
+        if "supabase_session" in file_data and "local_storage" in file_data:
+            return file_data
+
+        # Convert from Playwright format
+        if "origins" in file_data and "cookies" in file_data:
+            local_storage = {}
+
+            # Extract localStorage from origins
+            for origin in file_data.get("origins", []):
+                for item in origin.get("localStorage", []):
+                    local_storage[item["name"]] = item["value"]
+
+            # Try to extract supabase session from localStorage
+            supabase_session = None
+            auth_token_key = None
+            for key, value in local_storage.items():
+                if "auth-token" in key:
+                    auth_token_key = key
+                    try:
+                        supabase_session = json.loads(value)
+                        break
+                    except json.JSONDecodeError:
+                        continue
+
+            return {
+                "timestamp": time.time(),
+                "local_storage": local_storage,
+                "cookies": file_data.get("cookies", []),
+                "supabase_session": supabase_session,
+                "url": "http://127.0.0.1:8000/dev/admin"
+            }
+
+        # If neither format, return as-is
+        return file_data
 
     def _is_session_expired(self, session_data: dict[str, Any]) -> bool:
         """Check if the session is expired."""
@@ -51,13 +92,46 @@ class SupabaseAuthHandler:
         return time.time() >= (cast(float, expires_at) - 300)
 
     async def save_session(self, session_data: dict[str, Any]) -> None:
-        """Save session data to JSON file."""
+        """Save session data to JSON file in Playwright storage_state format."""
         try:
             self.auth_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Convert custom format to Playwright storage_state format
+            playwright_format = self._convert_to_playwright_format(session_data)
+
             with open(self.auth_file_path, "w") as f:
-                json.dump(session_data, f, indent=2)
+                json.dump(playwright_format, f, indent=2)
+            print(f"✅ Session saved to {self.auth_file_path}")
         except Exception as e:
             print(f"Error saving session: {e}")
+
+    def _convert_to_playwright_format(self, session_data: dict[str, Any]) -> dict[str, Any]:
+        """Convert custom session format to Playwright storage_state format."""
+        # Extract data from custom format
+        local_storage = session_data.get("local_storage", {})
+        cookies = session_data.get("cookies", [])
+        url = session_data.get("url", "http://127.0.0.1:8000")
+
+        # Parse URL to get origin
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url)
+        origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+        # Convert to Playwright format
+        playwright_format = {
+            "cookies": cookies,
+            "origins": [
+                {
+                    "origin": origin,
+                    "localStorage": [
+                        {"name": key, "value": value}
+                        for key, value in local_storage.items()
+                    ]
+                }
+            ]
+        }
+
+        return playwright_format
 
     async def perform_google_oauth_login(self, page: Page) -> dict[str, Any]:
         """

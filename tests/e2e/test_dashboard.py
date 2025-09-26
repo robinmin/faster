@@ -400,9 +400,13 @@ async def test_dashboard_loading_states(page: Page) -> None:
     """Test dashboard loading states and transitions."""
     _ = await page.goto("/dev/admin")
 
-    # Initially should show loading or auth view
-    initial_view = page.locator("[x-show*='currentView']")
-    await expect(initial_view.first).to_be_visible()
+    # Initially should show loading, auth, or app view (loading is very brief with cached auth)
+    # Just verify that some view is active - loading state may be too fast to catch
+    await page.wait_for_load_state("networkidle")
+
+    # Check that Alpine.js has loaded and some view is active
+    current_view = await page.evaluate('() => Alpine && Alpine.store && Alpine.store("app") ? Alpine.store("app").currentView : null')
+    assert current_view is not None, "No current view detected - Alpine.js may not be loaded"
 
     # Check if we're on auth view (expected for non-authenticated users)
     auth_view = page.locator("[x-show*='auth']")

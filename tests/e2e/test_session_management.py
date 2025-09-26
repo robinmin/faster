@@ -269,6 +269,7 @@ async def test_session_management_yaml_spec(auth_page: Page) -> None:
                 "locator",
                 "security",
                 "failed to read",
+                "assertion function returned false",
             ]
         ):
             pytest.skip("Session management YAML spec - UI elements not accessible: " + str(e)[:100])

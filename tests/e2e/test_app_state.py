@@ -66,7 +66,7 @@ async def test_app_state_page_loads_correctly(auth_page: Page) -> None:
     await auth_page.locator("[x-show*='app-state']").wait_for(state="visible", timeout=5000)
 
     # Verify app_state page is active
-    app_state_view = auth_page.locator("[x-show*='app_state']")
+    app_state_view = auth_page.locator("[x-show*='app-state']")
     await expect(app_state_view).to_be_visible()
 
 
@@ -85,8 +85,8 @@ async def test_app_state_header_displays_correctly(auth_page: Page) -> None:
     await app_state_menu_item.click()
     await auth_page.locator("[x-show*='app-state']").wait_for(state="visible", timeout=5000)
 
-    # Verify header navbar
-    header_navbar = auth_page.locator(".navbar.bg-base-100.shadow-lg.rounded-box")
+    # Verify header navbar (make selector more specific to avoid strict mode violation)
+    header_navbar = auth_page.locator("[x-show*='app-state'] .navbar.bg-base-100.shadow-lg.rounded-box").first
     await expect(header_navbar).to_be_visible()
 
 
@@ -105,8 +105,8 @@ async def test_app_state_responsive_layout(auth_page: Page) -> None:
     await app_state_menu_item.click()
     await auth_page.locator("[x-show*='app-state']").wait_for(state="visible", timeout=5000)
 
-    # Verify main container
-    main_container = auth_page.locator(".max-w-4xl.mx-auto")
+    # Verify main container (use the correct max-width class for app-state view)
+    main_container = auth_page.locator("[x-show*='app-state'] .max-w-7xl.mx-auto").first
     await expect(main_container).to_be_visible()
 
 

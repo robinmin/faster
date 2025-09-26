@@ -85,8 +85,8 @@ async def test_rbac_header_displays_correctly(auth_page: Page) -> None:
     await rbac_menu_item.click()
     await auth_page.locator("[x-show*='rbac']").wait_for(state="visible", timeout=5000)
 
-    # Verify header navbar
-    header_navbar = auth_page.locator(".navbar.bg-base-100.shadow-lg.rounded-box")
+    # Verify header navbar (make selector more specific to avoid strict mode violation)
+    header_navbar = auth_page.locator("[x-show*='rbac'] .navbar.bg-base-100.shadow-lg.rounded-box").first
     await expect(header_navbar).to_be_visible()
 
 
@@ -105,8 +105,8 @@ async def test_rbac_responsive_layout(auth_page: Page) -> None:
     await rbac_menu_item.click()
     await auth_page.locator("[x-show*='rbac']").wait_for(state="visible", timeout=5000)
 
-    # Verify main container
-    main_container = auth_page.locator(".max-w-4xl.mx-auto")
+    # Verify main container (use the correct max-width class for rbac view)
+    main_container = auth_page.locator("[x-show*='rbac'] .max-w-7xl.mx-auto").first
     await expect(main_container).to_be_visible()
 
 
@@ -125,7 +125,7 @@ async def test_rbac_accessibility_features(auth_page: Page) -> None:
     await rbac_menu_item.click()
     await auth_page.locator("[x-show*='rbac']").wait_for(state="visible", timeout=5000)
 
-    # Verify main container
+    # Verify main container (use the correct max-width class for rbac view)
     main = auth_page.locator("main.container")
     await expect(main).to_be_visible()
 

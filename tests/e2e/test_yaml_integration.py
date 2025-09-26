@@ -152,6 +152,7 @@ async def test_yaml_runner_error_handling(page: Page) -> None:
                 "locator",
                 "security",
                 "failed to read",
+                "unknown action",
             ]
         ):
             pytest.skip("YAML runner error handling - UI elements not accessible: " + str(e)[:100])

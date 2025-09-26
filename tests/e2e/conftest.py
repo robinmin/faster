@@ -108,28 +108,45 @@ async def authenticated_context(
     Create a browser context with authentication state.
     This fixture ensures all pages in the context are authenticated.
     """
-    # Load cached session data
+    # Load cached session data and check if it's valid
     session_data = await auth_handler.load_cached_session()
+    has_valid_session = session_data is not None
 
-    if not session_data:
-        # No authenticated session available - create context without authentication
-        # Tests using this fixture should handle unauthenticated state appropriately
-        pass
+    if not has_valid_session:
+        print("⚠️  No valid authentication session found!")
+        print("🔧 Run 'python -m tests.e2e.auth_setup' to generate new credentials")
+        print("📝 Or ask the user to help generate login credentials")
 
     # Get context options from config
     config = PlaywrightConfig()
     browser_config = config.get_browser_config("chromium")
     context_options = browser_config["context_options"].copy()
 
-    # Add authentication state
-    context_options["storage_state"] = auth_handler.auth_file_path
+    # Only add authentication state if we have a valid session
+    if has_valid_session and auth_handler.auth_file_path.exists():
+        context_options["storage_state"] = auth_handler.auth_file_path
+        print("✅ Using cached authentication session")
+    else:
+        print("🔓 Creating unauthenticated context - some tests may fail")
 
     # Create context with stored authentication state
     # Playwright's storage_state automatically restores localStorage and cookies
     context = await browser.new_context(**context_options)
 
+    # Add session validity info to context for tests to check
+    context._auth_session_valid = has_valid_session  # type: ignore
+
     yield context
     await context.close()
+
+
+def require_authentication(context: BrowserContext) -> None:
+    """
+    Helper function to check if authentication is available and skip test if not.
+    Usage: require_authentication(authenticated_context)
+    """
+    if not getattr(context, '_auth_session_valid', False):
+        pytest.skip("Authentication session not available. Run 'python -m tests.e2e.auth_setup' to generate credentials.")
 
 
 @pytest_asyncio.fixture
@@ -138,6 +155,9 @@ async def auth_page(authenticated_context: BrowserContext) -> AsyncGenerator[Pag
     Provide an authenticated page instance.
     This is the main fixture to use for tests requiring authentication.
     """
+    # Check if authentication is available
+    require_authentication(authenticated_context)
+
     page = await authenticated_context.new_page()
 
     # Navigate to base URL and verify authentication

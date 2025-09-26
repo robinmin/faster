@@ -72,12 +72,12 @@ async def test_user_management_page_loads_correctly(auth_page: Page) -> None:
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
 
-    # Wait for user management page to load
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    # Wait for user management page to load by checking for specific elements
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
-    # Verify user management page is active
-    user_mgmt_view = auth_page.locator("[x-show*='user-management']")
-    await expect(user_mgmt_view).to_be_visible()
+    # Verify user management page is active by checking for key elements
+    user_lookup_section = auth_page.locator("h2").filter(has_text="User Lookup")
+    await expect(user_lookup_section).to_be_visible()
 
 
 @pytest.mark.user_management
@@ -101,10 +101,10 @@ async def test_user_management_header_displays_correctly(auth_page: Page) -> Non
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
-    # Verify header card
-    header_card = auth_page.locator(".card.bg-base-100.shadow-xl").first
+    # Verify header card (use content-based selector)
+    header_card = auth_page.locator(".card.bg-base-100.shadow-xl").filter(has_text="User Management")
     await expect(header_card).to_be_visible()
 
     # Verify title
@@ -137,10 +137,10 @@ async def test_user_lookup_section_displays_correctly(auth_page: Page) -> None:
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
     # Find user lookup card
-    lookup_card = auth_page.locator(".card.bg-base-100.shadow-xl").nth(1)
+    lookup_card = auth_page.locator(".card.bg-base-100.shadow-xl").filter(has_text="User Lookup")
     await expect(lookup_card).to_be_visible()
 
     # Verify section title
@@ -181,7 +181,7 @@ async def test_user_lookup_input_validation(auth_page: Page) -> None:
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
     # Find target user input
     target_user_input = auth_page.locator("input[placeholder*='Enter user ID']")
@@ -225,7 +225,7 @@ async def test_user_information_display_section(auth_page: Page) -> None:
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
     # User information section should be present but initially hidden
     # Don't assert visibility since it shows conditionally when user info is loaded
@@ -254,7 +254,7 @@ async def test_adjust_roles_modal_functionality(auth_page: Page) -> None:
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
     # Click adjust roles button (should be disabled initially)
     adjust_roles_btn = auth_page.locator("button").filter(has_text="Adjust Roles")
@@ -286,7 +286,7 @@ async def test_ban_user_modal_functionality(auth_page: Page) -> None:
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
     # Ban button should not be visible initially (no user loaded)
     ban_btn = auth_page.locator("button").filter(has_text="Ban User")
@@ -311,7 +311,7 @@ async def test_unban_user_modal_functionality(auth_page: Page) -> None:
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
     # Unban button should not be visible initially (no user loaded)
     unban_btn = auth_page.locator("button").filter(has_text="Unban User")
@@ -336,7 +336,7 @@ async def test_user_management_responsive_layout(auth_page: Page) -> None:
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
     # Verify main container
     main_container = auth_page.locator(".max-w-4xl.mx-auto")
@@ -367,7 +367,7 @@ async def test_user_management_accessibility_features(auth_page: Page) -> None:
     user_mgmt_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="User Management")
     await expect(user_mgmt_menu_item).to_be_visible(timeout=2000)
     await user_mgmt_menu_item.click()
-    await auth_page.locator("[x-show*='user-management']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h2").filter(has_text="User Lookup").wait_for(state="visible", timeout=5000)
 
     # Verify main container
     main = auth_page.locator("main.container")

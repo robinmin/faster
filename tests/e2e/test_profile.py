@@ -77,11 +77,11 @@ async def test_profile_page_loads_correctly(auth_page: Page) -> None:
     await profile_menu_item.click()
 
     # Wait for profile page to load by checking for profile-specific elements
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
-    # Verify profile page is active
-    profile_view = auth_page.locator("[x-show*='profile']")
-    await expect(profile_view).to_be_visible()
+    # Verify profile page is active by checking for profile-specific content
+    profile_card = auth_page.locator(".card.bg-base-100.shadow-xl").filter(has_text="Robin Min").first
+    await expect(profile_card).to_be_visible()
 
 
 @pytest.mark.profile
@@ -102,10 +102,10 @@ async def test_profile_header_displays_correctly(auth_page: Page) -> None:
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
     # Wait for profile page to load by checking for profile-specific elements
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
-    # Verify profile header card
-    header_card = auth_page.locator(".card.bg-base-100.shadow-xl").first
+    # Verify profile header card (use the card containing user name)
+    header_card = auth_page.locator(".card.bg-base-100.shadow-xl").filter(has_text="Robin Min").first
     await expect(header_card).to_be_visible()
 
     # Verify user avatar
@@ -142,10 +142,10 @@ async def test_personal_information_section(auth_page: Page) -> None:
     profile_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Profile")
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
-    # Find personal information card
-    personal_card = auth_page.locator(".card.bg-base-100.shadow-xl").nth(1)
+    # Find personal information card (use content-based selector)
+    personal_card = auth_page.locator(".card.bg-base-100.shadow-xl").filter(has_text="Personal Information")
     await expect(personal_card).to_be_visible()
 
     # Verify card title
@@ -181,10 +181,10 @@ async def test_account_information_section(auth_page: Page) -> None:
     profile_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Profile")
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
-    # Find account information card
-    account_card = auth_page.locator(".card.bg-base-100.shadow-xl").nth(2)
+    # Find account information card (use content-based selector)
+    account_card = auth_page.locator(".card.bg-base-100.shadow-xl").filter(has_text="Account Information")
     await expect(account_card).to_be_visible()
 
     # Verify card title
@@ -216,10 +216,10 @@ async def test_password_management_section(auth_page: Page) -> None:
     profile_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Profile")
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
-    # Find password management card
-    password_card = auth_page.locator(".card.bg-base-100.shadow-xl").nth(3)
+    # Find password management card (use content-based selector)
+    password_card = auth_page.locator(".card.bg-base-100.shadow-xl").filter(has_text="Password Management")
     await expect(password_card).to_be_visible()
 
     # Verify card title
@@ -256,10 +256,10 @@ async def test_account_operations_section(auth_page: Page) -> None:
     profile_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Profile")
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
-    # Find account operations card
-    operations_card = auth_page.locator(".card.bg-base-100.shadow-xl").nth(4)
+    # Find account operations card (use content-based selector)
+    operations_card = auth_page.locator(".card.bg-base-100.shadow-xl").filter(has_text="Account Operations")
     await expect(operations_card).to_be_visible()
 
     # Verify card title
@@ -296,7 +296,7 @@ async def test_change_password_modal_functionality(auth_page: Page) -> None:
     profile_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Profile")
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
     # Click change password button
     change_password_btn = auth_page.locator("button").filter(has_text="Change Password")
@@ -354,7 +354,7 @@ async def test_deactivate_account_modal_functionality(auth_page: Page) -> None:
     profile_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Profile")
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
     # Click deactivate account button
     deactivate_btn = auth_page.locator("button").filter(has_text="Deactivate Account")
@@ -412,10 +412,10 @@ async def test_profile_responsive_layout(auth_page: Page) -> None:
     profile_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Profile")
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
     # Verify main container
-    main_container = auth_page.locator(".max-w-4xl.mx-auto")
+    main_container = auth_page.locator(".max-w-4xl.mx-auto").first
     await expect(main_container).to_be_visible()
 
     # Verify grid layout for information sections
@@ -443,7 +443,7 @@ async def test_profile_accessibility_features(auth_page: Page) -> None:
     profile_menu_item = auth_page.locator("ul.dropdown-content li a").filter(has_text="Profile")
     await expect(profile_menu_item).to_be_visible(timeout=2000)
     await profile_menu_item.click()
-    await auth_page.locator("[x-show*='profile']").wait_for(state="visible", timeout=5000)
+    await auth_page.locator("h1").filter(has_text="Robin Min").wait_for(state="visible", timeout=5000)
 
     # Verify main container
     main = auth_page.locator("main.container")

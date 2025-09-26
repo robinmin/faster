@@ -66,7 +66,7 @@ async def test_sys_health_page_loads_correctly(auth_page: Page) -> None:
     await auth_page.locator("[x-show*='sys-health']").wait_for(state="visible", timeout=5000)
 
     # Verify sys_health page is active
-    sys_health_view = auth_page.locator("[x-show*='sys_health']")
+    sys_health_view = auth_page.locator("[x-show*='sys-health']")
     await expect(sys_health_view).to_be_visible()
 
 
@@ -85,8 +85,8 @@ async def test_sys_health_header_displays_correctly(auth_page: Page) -> None:
     await sys_health_menu_item.click()
     await auth_page.locator("[x-show*='sys-health']").wait_for(state="visible", timeout=5000)
 
-    # Verify header navbar
-    header_navbar = auth_page.locator(".navbar.bg-base-100.shadow-lg.rounded-box")
+    # Verify header navbar (make selector more specific to avoid strict mode violation)
+    header_navbar = auth_page.locator("[x-show*='sys-health'] .navbar.bg-base-100.shadow-lg.rounded-box").first
     await expect(header_navbar).to_be_visible()
 
 
@@ -105,8 +105,8 @@ async def test_sys_health_responsive_layout(auth_page: Page) -> None:
     await sys_health_menu_item.click()
     await auth_page.locator("[x-show*='sys-health']").wait_for(state="visible", timeout=5000)
 
-    # Verify main container
-    main_container = auth_page.locator(".max-w-4xl.mx-auto")
+    # Verify main container (use the correct max-width class for sys-health view)
+    main_container = auth_page.locator("[x-show*='sys-health'] .max-w-7xl.mx-auto").first
     await expect(main_container).to_be_visible()
 
 
@@ -125,7 +125,7 @@ async def test_sys_health_accessibility_features(auth_page: Page) -> None:
     await sys_health_menu_item.click()
     await auth_page.locator("[x-show*='sys-health']").wait_for(state="visible", timeout=5000)
 
-    # Verify main container
+    # Verify main container (use the correct max-width class for sys_health view)
     main = auth_page.locator("main.container")
     await expect(main).to_be_visible()
 
