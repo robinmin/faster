@@ -72,9 +72,49 @@ set_secret() {
 echo -e "${BLUE}📋 Required Secrets${NC}"
 echo "==================="
 
-set_secret "DATABASE_URL" \
-    "PostgreSQL connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
-    true
+echo ""
+echo -e "${YELLOW}🗄️ Database Configuration${NC}"
+echo "Please choose your database option:"
+echo "1) Traditional Database (PostgreSQL/SQLite)"
+echo "2) Cloudflare D1 Database (Recommended for Workers)"
+echo -n "Enter choice (1 or 2): "
+read -r db_choice
+
+case $db_choice in
+    1)
+        echo -e "${BLUE}Setting up Traditional Database${NC}"
+        set_secret "DATABASE_URL" \
+            "PostgreSQL/SQLite connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
+            true
+        ;;
+    2)
+        echo -e "${BLUE}Setting up Cloudflare D1 Database${NC}"
+        echo "For D1, we'll set up Workers Binding mode (recommended for production)"
+        set_secret "DATABASE_URL" \
+            "D1 connection string (use: d1+binding://DB for Workers binding)" \
+            false
+
+        echo ""
+        echo -e "${YELLOW}💡 For D1 HTTP mode (development/testing), also set:${NC}"
+        set_secret "CLOUDFLARE_ACCOUNT_ID" \
+            "Your Cloudflare Account ID (from wrangler whoami)" \
+            false
+
+        set_secret "CLOUDFLARE_API_TOKEN" \
+            "Your Cloudflare API Token with D1 permissions" \
+            false
+
+        set_secret "D1_DATABASE_ID" \
+            "Your D1 Database ID for this environment" \
+            false
+        ;;
+    *)
+        echo -e "${YELLOW}⚠️  Invalid choice. Defaulting to traditional database.${NC}"
+        set_secret "DATABASE_URL" \
+            "Database connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
+            true
+        ;;
+esac
 
 set_secret "REDIS_URL" \
     "Redis connection string (e.g., redis://host:6379/0)" \
@@ -111,6 +151,25 @@ set_secret "SENTRY_CLIENT_DSN" \
 
 echo ""
 echo -e "${GREEN}🎉 All Cloudflare Workers secrets have been configured for ${ENVIRONMENT} environment!${NC}"
+
+# Verification section
+echo ""
+echo -e "${BLUE}🔍 Verification: Checking configured secrets...${NC}"
+echo "========================================"
+
+if wrangler secret list --env "${ENVIRONMENT}" &> /dev/null; then
+    SECRETS_LIST=$(wrangler secret list --env "${ENVIRONMENT}")
+    if [ -n "$SECRETS_LIST" ]; then
+        echo -e "${GREEN}✅ Secrets successfully configured:${NC}"
+        echo "$SECRETS_LIST"
+    else
+        echo -e "${YELLOW}⚠️  No secrets found for ${ENVIRONMENT} environment${NC}"
+    fi
+else
+    echo -e "${RED}❌ Unable to verify secrets. Check your authentication:${NC}"
+    echo "Run: wrangler auth list"
+fi
+
 echo ""
 echo -e "${BLUE}📊 Next steps:${NC}"
 echo "1. Deploy your application: make deploy-${ENVIRONMENT}"
@@ -118,3 +177,10 @@ echo "2. Check deployment status: make wrangler-status"
 echo "3. View logs: make wrangler-tail-${ENVIRONMENT}"
 echo ""
 echo -e "${YELLOW}💡 Tip: Use ./scripts/set-secrets-github.sh to set GitHub Actions secrets${NC}"
+
+# Additional verification tips
+echo ""
+echo -e "${BLUE}🔧 Verification Commands:${NC}"
+echo "• List all secrets: wrangler secret list --env ${ENVIRONMENT}"
+echo "• Test deployment: make deploy"
+echo "• Check logs: wrangler tail --env ${ENVIRONMENT}"
