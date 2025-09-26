@@ -2,19 +2,22 @@
 
 import asyncio
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlmodel import Field, SQLModel
 
 from faster.core.config import Settings
-from faster.core.database import DatabaseManager
+from faster.core.database import D1Session, DatabaseManager, parse_d1_url
 from faster.core.exceptions import DBError
 
 # Constants for database URLs
 TEST_MASTER_URL = "postgresql+asyncpg://test:test@localhost/master"
 TEST_REPLICA_URL = "postgresql+asyncpg://test:test@localhost/replica"
 TEST_SQLITE_URL = "sqlite+aiosqlite:///test.db"
+TEST_D1_HTTP_URL = "d1+aiosqlite://test-db-id?account_id=test-account&api_token=test-token"
+TEST_D1_BINDING_URL = "d1+binding://MY_D1_DB"
 
 
 @pytest.fixture
@@ -169,7 +172,7 @@ class TestDatabaseManagerInitialization:
         settings = Settings(database_url=TEST_MASTER_URL)
         success = await db_manager.setup(settings)
         assert success is False
-        mock_logger.error.assert_called_with("Failed to initialize database engines: Connection refused")
+        mock_logger.error.assert_called_with("Failed to initialize database: Connection refused")
 
     @patch("faster.core.database.logger")
     @pytest.mark.asyncio
@@ -419,3 +422,398 @@ class TestDatabaseManagerModelsAndHealth:
             "replica_response": False,
             "reason": "Plugin not ready",
         }
+
+
+###############################################################################
+# Cloudflare D1 Tests
+###############################################################################
+
+
+class TestD1UrlParsing:
+    """Tests for D1 URL parsing functionality."""
+
+    def test_parse_d1_binding_url(self) -> None:
+        """
+        Arrange: A D1 binding URL.
+        Act: Parse the URL.
+        Assert: Correctly extracts binding name and sets binding mode.
+        """
+        connection_info = parse_d1_url(TEST_D1_BINDING_URL)
+        assert connection_info["database_id"] == "MY_D1_DB"
+        assert connection_info["binding_name"] == "MY_D1_DB"
+        assert connection_info["is_binding"] is True
+        assert connection_info["account_id"] is None
+        assert connection_info["api_token"] is None
+
+    def test_parse_d1_http_url_with_params(self) -> None:
+        """
+        Arrange: A D1 HTTP URL with query parameters.
+        Act: Parse the URL.
+        Assert: Correctly extracts database ID and credentials.
+        """
+        connection_info = parse_d1_url(TEST_D1_HTTP_URL)
+        assert connection_info["database_id"] == "test-db-id"
+        assert connection_info["account_id"] == "test-account"
+        assert connection_info["api_token"] == "test-token"
+        assert connection_info["is_binding"] is False
+        assert connection_info["binding_name"] is None
+
+    @patch.dict("os.environ", {"CLOUDFLARE_ACCOUNT_ID": "env-account", "CLOUDFLARE_API_TOKEN": "env-token"})
+    def test_parse_d1_http_url_with_env_vars(self) -> None:
+        """
+        Arrange: A D1 HTTP URL without credentials and environment variables set.
+        Act: Parse the URL.
+        Assert: Correctly extracts credentials from environment.
+        """
+        url = "d1+aiosqlite://test-db-id"
+        connection_info = parse_d1_url(url)
+        assert connection_info["database_id"] == "test-db-id"
+        assert connection_info["account_id"] == "env-account"
+        assert connection_info["api_token"] == "env-token"
+        assert connection_info["is_binding"] is False
+
+    def test_parse_invalid_d1_url(self) -> None:
+        """
+        Arrange: An invalid D1 URL scheme.
+        Act: Parse the URL.
+        Assert: Raises DBError.
+        """
+        with pytest.raises(DBError, match="Invalid D1 URL scheme"):
+            _ = parse_d1_url("invalid+scheme://database")
+
+
+class TestD1DatabaseManagerSetup:
+    """Tests for DatabaseManager D1 setup functionality."""
+
+    @patch("faster.core.database.D1Client")
+    @pytest.mark.asyncio
+    async def test_setup_d1_http_mode_success(self, mock_d1_client_class: MagicMock, db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager and mocked D1Client.
+        Act: Setup with D1 HTTP URL.
+        Assert: D1 mode is enabled and client is initialized.
+        """
+        mock_d1_client = MagicMock()
+        mock_d1_client_class.return_value = mock_d1_client
+
+        settings = Settings(database_url=TEST_D1_HTTP_URL)
+        result = await db_manager.setup(settings)
+
+        assert result is True
+        assert db_manager.is_d1_mode is True
+        assert db_manager.d1_master_client is mock_d1_client
+        assert db_manager.master_engine is None
+        assert db_manager.master_session is None
+        mock_d1_client_class.assert_called_once()
+
+    @patch("faster.core.database.D1Client")
+    @pytest.mark.asyncio
+    async def test_setup_d1_binding_mode_success(self, mock_d1_client_class: MagicMock, db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager and mocked D1Client.
+        Act: Setup with D1 binding URL.
+        Assert: D1 mode is enabled and client is initialized.
+        """
+        mock_d1_client = MagicMock()
+        mock_d1_client_class.return_value = mock_d1_client
+
+        settings = Settings(database_url=TEST_D1_BINDING_URL)
+        result = await db_manager.setup(settings)
+
+        assert result is True
+        assert db_manager.is_d1_mode is True
+        assert db_manager.d1_master_client is mock_d1_client
+        mock_d1_client_class.assert_called_once()
+
+    @patch("faster.core.database.D1Client")
+    @pytest.mark.asyncio
+    async def test_setup_d1_client_creation_failure(self, mock_d1_client_class: MagicMock, db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager with D1Client that raises an exception.
+        Act: Setup with D1 URL.
+        Assert: Setup returns False and error is logged.
+        """
+        mock_d1_client_class.side_effect = DBError("Invalid credentials")
+
+        settings = Settings(database_url=TEST_D1_HTTP_URL)
+        result = await db_manager.setup(settings)
+
+        assert result is False
+        assert db_manager.is_ready is False
+
+    def test_is_d1_url_detection(self, db_manager: DatabaseManager) -> None:
+        """
+        Arrange: Various URL formats.
+        Act: Check if they are D1 URLs.
+        Assert: Correctly identifies D1 URLs.
+        """
+        assert db_manager._is_d1_url(TEST_D1_HTTP_URL) is True  # pyright: ignore[reportPrivateUsage]
+        assert db_manager._is_d1_url(TEST_D1_BINDING_URL) is True  # pyright: ignore[reportPrivateUsage]
+        assert db_manager._is_d1_url(TEST_SQLITE_URL) is False  # pyright: ignore[reportPrivateUsage]
+        assert db_manager._is_d1_url(TEST_MASTER_URL) is False  # pyright: ignore[reportPrivateUsage]
+
+
+class TestD1SessionAndTransactionManagement:
+    """Tests for D1 session and transaction functionality."""
+
+    @pytest.fixture
+    def mock_d1_client(self, mocker: Any) -> Any:
+        """Create a mock D1Client."""
+        mock = mocker.MagicMock()
+        mock.execute_query = mocker.AsyncMock()
+        return mock
+
+    @pytest.fixture
+    def d1_session(self, mock_d1_client: Any) -> Any:
+        """Create a D1Session with mock client."""
+        return D1Session(mock_d1_client)
+
+    @pytest.mark.asyncio
+    async def test_d1_session_exec_query(self, d1_session: Any, mock_d1_client: Any) -> None:
+        """
+        Arrange: A D1Session with mock client.
+        Act: Execute a query.
+        Assert: Client execute_query is called with compiled SQL.
+        """
+        mock_statement = MagicMock()
+        mock_compiled = MagicMock()
+        type(mock_compiled).__str__ = lambda self: "SELECT * FROM users"  # type: ignore[method-assign]
+        mock_statement.compile.return_value = mock_compiled
+        mock_d1_client.execute_query.return_value = {"results": []}
+
+        await d1_session.exec(mock_statement)
+
+        mock_d1_client.execute_query.assert_called_once_with("SELECT * FROM users")
+
+    @pytest.mark.asyncio
+    async def test_d1_session_get_entity(self, d1_session: Any, mock_d1_client: Any) -> None:
+        """
+        Arrange: A D1Session with mock client returning user data.
+        Act: Get entity by ID.
+        Assert: Returns constructed model instance.
+        """
+        class TestUser1(SQLModel, table=True):
+            __tablename__ = "test_users_1"
+            id: int | None = Field(default=None, primary_key=True)
+            name: str
+
+        mock_d1_client.execute_query.return_value = {
+            "results": [{"id": 1, "name": "John Doe"}]
+        }
+
+        result = await d1_session.get(TestUser1, 1)
+
+        assert result is not None
+        assert result.id == 1
+        assert result.name == "John Doe"
+        mock_d1_client.execute_query.assert_called_once_with("SELECT * FROM test_users_1 WHERE id = ?", [1])
+
+    @pytest.mark.asyncio
+    async def test_d1_session_get_entity_not_found(self, d1_session: Any, mock_d1_client: Any) -> None:
+        """
+        Arrange: A D1Session with mock client returning no results.
+        Act: Get entity by ID.
+        Assert: Returns None.
+        """
+        class TestUser2(SQLModel, table=True):
+            __tablename__ = "test_users_2"
+            id: int | None = Field(default=None, primary_key=True)
+            name: str
+
+        mock_d1_client.execute_query.return_value = {"results": []}
+
+        result = await d1_session.get(TestUser2, 999)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_d1_session_add_and_flush(self, d1_session: Any, mock_d1_client: MagicMock) -> None:
+        """
+        Arrange: A D1Session with mock client.
+        Act: Add entity and flush.
+        Assert: Insert query is executed.
+        """
+        class TestUser3(SQLModel, table=True):
+            __tablename__ = "test_users_3"
+            id: int | None = Field(default=None, primary_key=True)
+            name: str
+
+        user = TestUser3(name="Jane Doe")
+        d1_session.add(user)
+        await d1_session.flush()
+
+        mock_d1_client.execute_query.assert_called_once_with(
+            "INSERT INTO test_users_3 (name) VALUES (?)",
+            ["Jane Doe"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_d1_session_delete_entity(self, d1_session: Any, mock_d1_client: MagicMock) -> None:
+        """
+        Arrange: A D1Session with mock client.
+        Act: Delete entity.
+        Assert: Delete query is executed.
+        """
+        class TestUser4(SQLModel, table=True):
+            __tablename__ = "test_users_4"
+            id: int | None = Field(default=None, primary_key=True)
+            name: str
+
+        user = TestUser4(id=1, name="John Doe")
+        await d1_session.delete(user)
+
+        mock_d1_client.execute_query.assert_called_once_with("DELETE FROM test_users_4 WHERE id = ?", [1])
+
+    @pytest.mark.asyncio
+    async def test_d1_session_transaction_success(self, d1_session: Any, mock_d1_client: MagicMock) -> None:
+        """
+        Arrange: A D1Session with mock client.
+        Act: Use transaction context manager successfully.
+        Assert: Transaction auto-commits on success.
+        """
+        class TestUser5(SQLModel, table=True):
+            __tablename__ = "test_users_5"
+            id: int | None = Field(default=None, primary_key=True)
+            name: str
+
+        async with d1_session.begin() as session:
+            user = TestUser5(name="Transaction User")
+            session.add(user)
+
+        # Should have auto-flushed on successful exit
+        mock_d1_client.execute_query.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_d1_session_closed_operations_raise_error(self, d1_session: Any) -> None:
+        """
+        Arrange: A closed D1Session.
+        Act: Attempt operations on closed session.
+        Assert: DBError is raised.
+        """
+        await d1_session.close()
+
+        with pytest.raises(DBError, match="Session is closed"):
+            await d1_session.exec(MagicMock())
+
+        with pytest.raises(DBError, match="Session is closed"):
+            await d1_session.get(MagicMock(), 1)
+
+        with pytest.raises(DBError, match="Session is closed"):
+            d1_session.add(MagicMock())
+
+
+class TestD1DatabaseManagerOperations:
+    """Tests for DatabaseManager D1-specific operations."""
+
+    @pytest.fixture
+    def d1_db_manager(self, mocker: Any) -> DatabaseManager:
+        """Create a DatabaseManager in D1 mode."""
+        db_manager = DatabaseManager()
+        mock_d1_client = MagicMock()
+        mock_d1_client.execute_query = AsyncMock()
+        mock_d1_client.close = AsyncMock()
+
+        # Set up D1 mode manually
+        db_manager.is_d1_mode = True
+        db_manager.d1_master_client = mock_d1_client
+        db_manager.is_ready = True
+
+        return db_manager
+
+    @pytest.mark.asyncio
+    async def test_d1_get_session_factory(self, d1_db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager in D1 mode.
+        Act: Get session factory.
+        Assert: Returns factory that creates D1Session.
+        """
+        session_factory = d1_db_manager.get_session_factory()
+        session = session_factory()
+
+        assert isinstance(session, D1Session)
+
+    @pytest.mark.asyncio
+    async def test_d1_execute_raw_query(self, d1_db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager in D1 mode.
+        Act: Execute raw query.
+        Assert: D1Client execute_query is called with correct parameters.
+        """
+        query = "SELECT * FROM users WHERE name = ? AND age = ?"
+        params = {"name": "John", "age": 30}
+
+        await d1_db_manager.execute_raw_query(query, params)
+
+        assert d1_db_manager.d1_master_client is not None
+        d1_db_manager.d1_master_client.execute_query.assert_called_once_with(  # type: ignore[attr-defined]
+            query, ["John", 30]
+        )
+
+    @pytest.mark.asyncio
+    async def test_d1_health_check_success(self, d1_db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager in D1 mode with working client.
+        Act: Check health.
+        Assert: Returns healthy status for D1.
+        """
+        assert d1_db_manager.d1_master_client is not None
+        d1_db_manager.d1_master_client.execute_query.return_value = {"results": [{"result": 1}]}  # type: ignore[attr-defined]
+
+        result = await d1_db_manager.check_health()
+
+        assert result["is_ready"] is True
+        assert result["master_schema"] == "d1"
+        assert result["master_response"] is True
+        assert result["replica_schema"] is None
+        assert result["replica_response"] is False
+
+    @patch("faster.core.database.logger")
+    @pytest.mark.asyncio
+    async def test_d1_health_check_failure(self, mock_logger: MagicMock, d1_db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager in D1 mode with failing client.
+        Act: Check health.
+        Assert: Returns failed status and logs error.
+        """
+        error = Exception("D1 connection failed")
+        assert d1_db_manager.d1_master_client is not None
+        d1_db_manager.d1_master_client.execute_query.side_effect = error  # type: ignore[attr-defined]
+
+        result = await d1_db_manager.check_health()
+
+        assert result["master_response"] is False
+        mock_logger.exception.assert_called_once_with(f"Health check failed for master D1: {error}")
+
+    @patch("faster.core.database.generate_ddl")
+    @pytest.mark.asyncio
+    async def test_d1_init_db_models_create_tables(self, mock_generate_ddl: MagicMock, d1_db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager in D1 mode.
+        Act: Initialize database models.
+        Assert: DDL statements are executed via D1Client.
+        """
+        mock_generate_ddl.return_value = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT); CREATE INDEX idx_name ON users(name);"
+
+        await d1_db_manager.init_db_models()
+
+        # Should call execute_query for each DDL statement
+        assert d1_db_manager.d1_master_client is not None
+        assert d1_db_manager.d1_master_client.execute_query.call_count == 2  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_d1_teardown_closes_clients(self, d1_db_manager: DatabaseManager) -> None:
+        """
+        Arrange: A DatabaseManager in D1 mode.
+        Act: Teardown.
+        Assert: D1 clients are closed and state is reset.
+        """
+        # Store reference to client before teardown
+        d1_client = d1_db_manager.d1_master_client
+
+        result = await d1_db_manager.teardown()
+
+        assert result is True
+        assert d1_db_manager.is_d1_mode is False
+        assert d1_db_manager.d1_master_client is None
+        assert d1_client is not None
+        d1_client.close.assert_called_once()  # type: ignore[attr-defined]
