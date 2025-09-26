@@ -406,7 +406,7 @@ async def test_profile_responsive_layout(auth_page: Page) -> None:
 
     # Verify gap spacing (check if class contains gap-6)
     grid_classes = await grid_container.get_attribute("class")
-    assert "gap-6" in grid_classes, f"Expected 'gap-6' class, got: {grid_classes}"
+    assert grid_classes is not None and "gap-6" in grid_classes, f"Expected 'gap-6' class, got: {grid_classes}"
 
 
 @pytest.mark.profile
