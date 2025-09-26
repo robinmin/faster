@@ -123,6 +123,16 @@ jobs:
         run: |
           echo "✅ No build step needed - using native Python Workers!"
 
+      - name: 🗄️ Configure D1 Database IDs
+        run: |
+          # Replace D1 database ID placeholders with actual values from secrets
+          if [ -n "${{ secrets.STAGING_DATABASE_ID }}" ]; then
+            echo "📝 Replacing STAGING_DATABASE_ID_PLACEHOLDER with actual database ID"
+            sed -i 's/STAGING_DATABASE_ID_PLACEHOLDER/${{ secrets.STAGING_DATABASE_ID }}/g' wrangler.toml
+          else
+            echo "⚠️  STAGING_DATABASE_ID secret not set, keeping placeholder"
+          fi
+
       - name: 🚀 Deploy to Staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -134,6 +144,17 @@ jobs:
           echo "${{ secrets.STAGING_SUPABASE_URL }}" | wrangler secret put SUPABASE_URL --env staging
           echo "${{ secrets.STAGING_SUPABASE_ANON_KEY }}" | wrangler secret put SUPABASE_ANON_KEY --env staging
           echo "${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}" | wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env staging
+
+          # Set optional D1 secrets if present
+          if [ -n "${{ secrets.STAGING_CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "${{ secrets.STAGING_CLOUDFLARE_ACCOUNT_ID }}" | wrangler secret put CLOUDFLARE_ACCOUNT_ID --env staging
+          fi
+          if [ -n "${{ secrets.STAGING_CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "${{ secrets.STAGING_CLOUDFLARE_API_TOKEN }}" | wrangler secret put CLOUDFLARE_API_TOKEN --env staging
+          fi
+          if [ -n "${{ secrets.STAGING_D1_DATABASE_ID }}" ]; then
+            echo "${{ secrets.STAGING_D1_DATABASE_ID }}" | wrangler secret put D1_DATABASE_ID --env staging
+          fi
 
           # Deploy to staging environment
           make deploy-staging
@@ -166,6 +187,16 @@ jobs:
         run: |
           echo "✅ No build step needed - using native Python Workers!"
 
+      - name: 🗄️ Configure D1 Database IDs
+        run: |
+          # Replace D1 database ID placeholders with actual values from secrets
+          if [ -n "${{ secrets.PROD_DATABASE_ID }}" ]; then
+            echo "📝 Replacing PROD_DATABASE_ID_PLACEHOLDER with actual database ID"
+            sed -i 's/PROD_DATABASE_ID_PLACEHOLDER/${{ secrets.PROD_DATABASE_ID }}/g' wrangler.toml
+          else
+            echo "⚠️  PROD_DATABASE_ID secret not set, keeping placeholder"
+          fi
+
       - name: 🌟 Deploy to Production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -177,6 +208,17 @@ jobs:
           echo "${{ secrets.PROD_SUPABASE_URL }}" | wrangler secret put SUPABASE_URL --env production
           echo "${{ secrets.PROD_SUPABASE_ANON_KEY }}" | wrangler secret put SUPABASE_ANON_KEY --env production
           echo "${{ secrets.PROD_SUPABASE_SERVICE_ROLE_KEY }}" | wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production
+
+          # Set optional D1 secrets if present
+          if [ -n "${{ secrets.PROD_CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "${{ secrets.PROD_CLOUDFLARE_ACCOUNT_ID }}" | wrangler secret put CLOUDFLARE_ACCOUNT_ID --env production
+          fi
+          if [ -n "${{ secrets.PROD_CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "${{ secrets.PROD_CLOUDFLARE_API_TOKEN }}" | wrangler secret put CLOUDFLARE_API_TOKEN --env production
+          fi
+          if [ -n "${{ secrets.PROD_D1_DATABASE_ID }}" ]; then
+            echo "${{ secrets.PROD_D1_DATABASE_ID }}" | wrangler secret put D1_DATABASE_ID --env production
+          fi
 
           # Deploy to production environment (CI mode)
           make deploy-prod-ci
