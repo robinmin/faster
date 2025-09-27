@@ -10,7 +10,8 @@
 - [📦 Local Environment Preparation](#-local-environment-preparation)
 - [☁️ Cloudflare Remote Preparation](#%EF%B8%8F-cloudflare-remote-preparation)
 - [🚀 Quick Start Deployment](#-quick-start-deployment)
-- [🔧 Configuration](#-configuration)
+- [🔧 Configuration
+- [](#-configuration)
 - [📦 Deployment Process](#-deployment-process)
 - [🌍 Environments](#-environments)
 - [🔐 Secret Management](#-secret-management)
@@ -202,23 +203,38 @@ wrangler d1 create faster-app-prod
 # database_id = "12345678-abcd-efgh-ijkl-123456789012"
 
 # Step 3: Update wrangler.toml with the database IDs (see wrangler.toml section below)
+
+# list all databases, this will show all database_ids
+wrangler d1 list
 ```
 
 ### 🔄 D1 Connection String Formats
 
-The Faster Framework supports two D1 connection modes:
+The Faster Framework uses environment-specific D1 connection strategies:
 
-#### 🔗 HTTP Client Mode (Development)
+#### 💻 Local Development (No Cloudflare)
+```bash
+# SQLite for local testing
+DATABASE_URL="sqlite+aiosqlite:///./app.db"
+```
+
+#### 🔗 HTTP Client Mode (Development & Staging on Cloudflare)
 ```bash
 # Format: d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN
 DATABASE_URL="d1+aiosqlite://12345678-abcd-efgh-ijkl-123456789012?account_id=your-account-id&api_token=your-api-token"
+
+# For database_id: Use `wrangler d1 list` to get it
+# For account_id: Use `wrangler whoami` to find it
+# For api_token: Use the token created in Step 2 of Remote Preparation
 ```
 
-#### ⚡ Workers Binding Mode (Production)
+#### ⚡ Workers Binding Mode (Production Only)
 ```bash
-# Format: d1+binding://BINDING_NAME
+# Format: d1+binding://BINDING_NAME (no credentials needed)
 DATABASE_URL="d1+binding://DB"
 ```
+
+> **📝 Strategy**: Local uses SQLite, Dev/Staging use D1 HTTP, Production uses D1 binding for optimal performance and security.
 
 ### 🚀 D1 Migrations
 
@@ -234,6 +250,7 @@ wrangler d1 migrations apply faster-app-prod
 
 # View migration history
 wrangler d1 migrations list faster-app-prod
+
 ```
 
 ### 🔍 D1 Database Management
@@ -279,12 +296,30 @@ curl https://faster-app-dev.workers.dev/health
 1. Go to **My Profile** → **API Tokens**
 2. Click **Create Token**
 3. Use **Custom token** template with these permissions:
+
+   **Account Permissions:**
+   ```
+   Account:Account Settings:Read
+   Workers Scripts:Edit
+   Cloudflare D1:Edit
+   ```
+
+   **Zone Permissions:**
    ```
    Zone:Zone Settings:Edit
    Zone:Zone:Read
-   Account:Cloudflare Workers:Edit
+   Zone:Workers Routes:Edit
    ```
+
+   **Account Resources:**
+   - Include: All accounts
+
+   **Zone Resources:**
+   - Include: All zones
+
 4. **Save the token** - you'll need it for GitHub Actions
+
+> **💡 Alternative**: Use the **"Workers Deploy"** template if available, which automatically includes all necessary permissions for Workers and D1 deployment.
 
 
 ### 🌐 Step 3: Configure Wrangler Authentication
@@ -344,7 +379,52 @@ database_id = "PROD_DATABASE_ID_PLACEHOLDER"
 
 > **📝 Note**: The `*_DATABASE_ID_PLACEHOLDER` values will be automatically replaced with actual database IDs during deployment using GitHub Actions secrets.
 
-### 🧪 Step 5: Test Remote Connection
+### 🔐 Step 5: Configure Secrets
+
+Before deploying, you need to configure secrets for both Cloudflare Workers and GitHub Actions:
+
+#### 5a. Set Cloudflare Workers Secrets
+```bash
+# Configure secrets for each environment interactively
+./scripts/set-secrets.sh development   # D1 HTTP mode (d1+aiosqlite://)
+./scripts/set-secrets.sh staging       # D1 HTTP mode (d1+aiosqlite://)
+./scripts/set-secrets.sh production    # D1 binding mode (d1+binding://DB)
+
+# Environment-specific DATABASE_URL configuration:
+# • Development: d1+aiosqlite://database_id?account_id=...&api_token=...
+# • Staging:     d1+aiosqlite://database_id?account_id=...&api_token=...
+# • Production:  d1+binding://DB (Workers binding - no credentials needed)
+
+# Additional secrets for all environments:
+# - Redis connection, Supabase auth keys, Sentry (optional)
+```
+
+#### 5b. Set GitHub Actions Secrets
+```bash
+# Configure CI/CD secrets for automated deployment
+./scripts/set-secrets-github.sh development   # Sets DEV_DATABASE_URL (d1+aiosqlite://)
+./scripts/set-secrets-github.sh staging       # Sets STAGING_DATABASE_URL (d1+aiosqlite://)
+./scripts/set-secrets-github.sh production    # Sets PROD_DATABASE_URL (d1+binding://DB)
+
+# This configures:
+# - CLOUDFLARE_API_TOKEN & CLOUDFLARE_ACCOUNT_ID (for deployment)
+# - Environment-specific DATABASE_URL secrets (DEV_*, STAGING_*, PROD_*)
+# - D1 credentials and database IDs for HTTP mode (dev/staging)
+# - Other environment-specific secrets (Redis, Supabase, etc.)
+```
+
+#### 5c. Verify Secret Configuration
+```bash
+# Verify Cloudflare Workers secrets
+wrangler secret list --env development
+
+# Verify GitHub Actions secrets
+gh secret list
+
+# Both scripts include verification sections with troubleshooting
+```
+
+### 🧪 Step 6: Test Remote Connection
 
 ```bash
 # Test deployment to development environment
@@ -359,7 +439,7 @@ curl https://faster-app-dev.<your-account>.workers.dev/health
 
 ## 🚀 Quick Start Deployment
 
-> **Prerequisites**: Complete [Local Environment Preparation](#-local-environment-preparation) and [Cloudflare Remote Preparation](#%EF%B8%8F-cloudflare-remote-preparation) first.
+> **Prerequisites**: Complete [Local Environment Preparation](#-local-environment-preparation) and [Cloudflare Remote Preparation](#%EF%B8%8F-cloudflare-remote-preparation) first (including secret configuration).
 
 ### 1. 🔧 Environment Setup
 ```bash
@@ -384,16 +464,13 @@ curl http://localhost:8000/health  # Should return {"status": "healthy"}
 pkill -f uvicorn           # Stop background server
 ```
 
-### 3. 🔐 Configure Secrets
+### 3. 🔐 Verify Secret Configuration
 ```bash
-# Set up secrets for each environment
-# This will prompt you interactively for each secret
-./scripts/set-secrets.sh development
-./scripts/set-secrets.sh staging      # Optional
-./scripts/set-secrets.sh production
-
-# Verify secrets are set
+# Verify secrets are properly configured (should be done in Remote Preparation)
 wrangler secret list --env development
+gh secret list
+
+# If secrets are missing, go back to Step 5 in Remote Preparation
 ```
 
 ### 4. 🧪 Test Deployment
@@ -455,15 +532,21 @@ DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
 DATABASE_URL=sqlite+aiosqlite:///./app.db
 ```
 
-**Option B: Cloudflare D1 Database**
+**Option B: Cloudflare D1 Database (Environment-Specific)**
 ```bash
-# D1 HTTP Client Mode (for development/testing)
+# Local Development (not on Cloudflare)
+DATABASE_URL=sqlite+aiosqlite:///./app.db
+
+# Development Environment (Cloudflare Workers - HTTP mode)
 DATABASE_URL=d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN
 
-# D1 Workers Binding Mode (for production deployment)
+# Staging Environment (Cloudflare Workers - HTTP mode)
+DATABASE_URL=d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN
+
+# Production Environment (Cloudflare Workers - binding mode)
 DATABASE_URL=d1+binding://DB
 
-# D1 Credentials (for HTTP mode)
+# D1 Credentials (for HTTP mode in dev/staging)
 CLOUDFLARE_ACCOUNT_ID=your-account-id
 CLOUDFLARE_API_TOKEN=your-api-token
 D1_DATABASE_ID=your-database-id
@@ -612,6 +695,7 @@ git push origin v1.0.0           # Auto-deploys to production
 #### 1. **Cloudflare Workers Secrets** (Interactive Script)
 ```bash
 # Set secrets in Cloudflare Workers for each environment
+# (This should be done during Step 5 of Remote Preparation)
 ./scripts/set-secrets.sh development
 ./scripts/set-secrets.sh staging
 ./scripts/set-secrets.sh production
@@ -630,6 +714,7 @@ git push origin v1.0.0           # Auto-deploys to production
 #### 2. **GitHub Actions Secrets** (Interactive Script)
 ```bash
 # Set secrets for GitHub Actions CI/CD for each environment
+# (This should be done during Step 5 of Remote Preparation)
 ./scripts/set-secrets-github.sh development
 ./scripts/set-secrets-github.sh staging
 ./scripts/set-secrets-github.sh production
