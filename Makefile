@@ -26,6 +26,7 @@ help: ## Show this help message
 install: ## Install all dependencies and setup environment
 	@if [ -n "$$VIRTUAL_ENV" ]; then deactivate 2>/dev/null || true; fi
 	@rm -rf .venv >/dev/null 2>&1 || true
+	@uv venv .venv --python 3.10
 	@uv sync >/dev/null 2>&1 || (echo "❌ Failed to install Python dependencies" && exit 1)
 	@if ! command -v wrangler >/dev/null 2>&1; then \
 		npm install -g wrangler >/dev/null 2>&1 || (echo "❌ Failed to install wrangler" && exit 1); \
