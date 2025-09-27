@@ -74,45 +74,64 @@ echo "==================="
 
 echo ""
 echo -e "${YELLOW}🗄️ Database Configuration${NC}"
-echo "Please choose your database option:"
-echo "1) Traditional Database (PostgreSQL/SQLite)"
-echo "2) Cloudflare D1 Database (Recommended for Workers)"
-echo -n "Enter choice (1 or 2): "
-read -r db_choice
+echo "Setting up environment-specific D1 database configuration..."
 
-case $db_choice in
-    1)
-        echo -e "${BLUE}Setting up Traditional Database${NC}"
+case $ENVIRONMENT in
+    development)
+        echo -e "${BLUE}Development Environment: D1 HTTP Client Mode${NC}"
+        echo "Using d1+aiosqlite:// for HTTP access to D1 database"
+
         set_secret "DATABASE_URL" \
-            "PostgreSQL/SQLite connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
+            "D1 HTTP connection string (format: d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN)" \
             true
-        ;;
-    2)
-        echo -e "${BLUE}Setting up Cloudflare D1 Database${NC}"
-        echo "For D1, we'll set up Workers Binding mode (recommended for production)"
-        set_secret "DATABASE_URL" \
-            "D1 connection string (use: d1+binding://DB for Workers binding)" \
-            false
 
         echo ""
-        echo -e "${YELLOW}💡 For D1 HTTP mode (development/testing), also set:${NC}"
+        echo -e "${YELLOW}💡 Additional D1 credentials for HTTP mode:${NC}"
         set_secret "CLOUDFLARE_ACCOUNT_ID" \
-            "Your Cloudflare Account ID (from wrangler whoami)" \
-            false
+            "Your Cloudflare Account ID (from: wrangler whoami)" \
+            true
 
         set_secret "CLOUDFLARE_API_TOKEN" \
             "Your Cloudflare API Token with D1 permissions" \
-            false
+            true
 
         set_secret "D1_DATABASE_ID" \
-            "Your D1 Database ID for this environment" \
-            false
-        ;;
-    *)
-        echo -e "${YELLOW}⚠️  Invalid choice. Defaulting to traditional database.${NC}"
-        set_secret "DATABASE_URL" \
-            "Database connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
+            "Your D1 Database ID for development (from: wrangler d1 list)" \
             true
+        ;;
+    staging)
+        echo -e "${BLUE}Staging Environment: D1 HTTP Client Mode${NC}"
+        echo "Using d1+aiosqlite:// for HTTP access to D1 database"
+
+        set_secret "DATABASE_URL" \
+            "D1 HTTP connection string (format: d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN)" \
+            true
+
+        echo ""
+        echo -e "${YELLOW}💡 Additional D1 credentials for HTTP mode:${NC}"
+        set_secret "CLOUDFLARE_ACCOUNT_ID" \
+            "Your Cloudflare Account ID (from: wrangler whoami)" \
+            true
+
+        set_secret "CLOUDFLARE_API_TOKEN" \
+            "Your Cloudflare API Token with D1 permissions" \
+            true
+
+        set_secret "D1_DATABASE_ID" \
+            "Your D1 Database ID for staging (from: wrangler d1 list)" \
+            true
+        ;;
+    production)
+        echo -e "${BLUE}Production Environment: D1 Workers Binding Mode${NC}"
+        echo "Using d1+binding://DB for direct Workers binding (recommended for production)"
+
+        set_secret "DATABASE_URL" \
+            "D1 Workers binding string (use: d1+binding://DB)" \
+            true
+
+        echo ""
+        echo -e "${GREEN}✅ Production uses Workers binding - no additional D1 credentials needed${NC}"
+        echo "D1 database access is handled via wrangler.toml binding configuration"
         ;;
 esac
 
@@ -138,7 +157,7 @@ echo -e "${BLUE}🔧 Optional Secrets${NC}"
 echo "==================="
 
 set_secret "REDIS_PASSWORD" \
-    "edis password for local, and token for Upstash" \
+    "Redis password for local, and token for Upstash" \
     false
 
 set_secret "SENTRY_DSN" \
