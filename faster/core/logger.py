@@ -215,7 +215,16 @@ def setup_logger(
 
     # --- File handler ---
     # Disable file logging in Cloudflare Workers environment due to filesystem restrictions
-    is_workers = is_cf_worker()
+    deployment_platform = os.getenv("DEPLOYMENT_PLATFORM", "auto")
+
+    # Detect Cloudflare Workers environment
+    is_workers = False
+    if deployment_platform == "cloudflare-workers":
+        is_workers = True
+    elif deployment_platform == "auto":
+        # Auto-detect based on environment variables
+        is_workers = bool(os.getenv("CF_PAGES") or os.getenv("CF_WORKER"))
+
     if cfg["file"]["enabled"] and not is_workers:
         log_path = Path(log_file or cfg["file"]["path"])
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -259,10 +268,3 @@ def get_logger(name: str) -> Any:
     return structlog.get_logger(name)
 
 
-def is_cf_worker() -> bool:
-    """Check if running on Cloudflare Workers.
-
-    Returns:
-        bool: True if running on Cloudflare Workers
-    """
-    return bool(os.getenv("CF_PAGES") or os.getenv("CF_WORKER"))
