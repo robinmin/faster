@@ -150,47 +150,42 @@ echo "======================="
 
 echo ""
 echo -e "${YELLOW}🗄️ Database Configuration${NC}"
-echo "Please choose your database option:"
-echo "1) Traditional Database (PostgreSQL/SQLite)"
-echo "2) Cloudflare D1 Database (Recommended for Workers)"
-echo -n "Enter choice (1 or 2): "
-read -r db_choice
+echo "Setting up environment-specific D1 database configuration for GitHub Actions..."
 
-case $db_choice in
-    1)
-        echo -e "${BLUE}Setting up Traditional Database${NC}"
+case $ENVIRONMENT in
+    development)
+        echo -e "${BLUE}Development Environment: D1 HTTP Client Mode${NC}"
         set_github_secret "DATABASE_URL" \
-            "PostgreSQL/SQLite connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
+            "D1 HTTP connection string (format: d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN)" \
             true
         ;;
-    2)
-        echo -e "${BLUE}Setting up Cloudflare D1 Database${NC}"
-        echo "For D1, we'll set up Workers Binding mode (recommended for production)"
+    staging)
+        echo -e "${BLUE}Staging Environment: D1 HTTP Client Mode${NC}"
         set_github_secret "DATABASE_URL" \
-            "D1 connection string (use: d1+binding://DB for Workers binding)" \
-            false
-
-        echo ""
-        echo -e "${YELLOW}💡 For D1 HTTP mode (development/testing), also set these optional secrets:${NC}"
-        set_github_secret "CLOUDFLARE_ACCOUNT_ID" \
-            "Your Cloudflare Account ID (from wrangler whoami)" \
-            false
-
-        set_github_secret "CLOUDFLARE_API_TOKEN" \
-            "Your Cloudflare API Token with D1 permissions" \
-            false
-
-        set_github_secret "D1_DATABASE_ID" \
-            "Your D1 Database ID for this environment" \
-            false
+            "D1 HTTP connection string (format: d1+aiosqlite://database_id?account_id=ACCOUNT_ID&api_token=API_TOKEN)" \
+            true
         ;;
-    *)
-        echo -e "${YELLOW}⚠️  Invalid choice. Defaulting to traditional database.${NC}"
+    production)
+        echo -e "${BLUE}Production Environment: D1 Workers Binding Mode${NC}"
         set_github_secret "DATABASE_URL" \
-            "Database connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)" \
+            "D1 Workers binding string (use: d1+binding://DB)" \
             true
         ;;
 esac
+
+echo ""
+echo -e "${YELLOW}💡 D1 Credentials (shared across environments):${NC}"
+set_github_secret "CLOUDFLARE_ACCOUNT_ID" \
+    "Your Cloudflare Account ID (from: wrangler whoami)" \
+    false
+
+set_github_secret "CLOUDFLARE_API_TOKEN" \
+    "Your Cloudflare API Token with D1 permissions" \
+    false
+
+set_github_secret "D1_DATABASE_ID" \
+    "Your D1 Database ID for this environment (from: wrangler d1 list)" \
+    false
 
 set_github_secret "REDIS_URL" \
     "Redis connection string (e.g., redis://host:6379/0)" \
