@@ -47,7 +47,8 @@
       "Bash(wrangler:*)",
       "Bash(./scripts/health-check.sh:*)",
       "Bash(docker-compose:*)",
-      "Bash(PYTHONPATH=. uv run basedpyright faster/core/database.py)"
+      "Bash(PYTHONPATH=. uv run basedpyright faster/core/database.py)",
+      "WebFetch(domain:developers.cloudflare.com)"
     ],
     "deny": [
       "Read(.env)",
